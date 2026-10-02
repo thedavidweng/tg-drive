@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -17,6 +18,9 @@ func MapError(err error) error {
 	}
 	if ae, ok := apperr.As(err); ok {
 		return ae
+	}
+	if errors.Is(err, context.Canceled) {
+		return apperr.Cancelled()
 	}
 
 	var fw *FloodWaitError

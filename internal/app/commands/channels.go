@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -27,7 +26,7 @@ func NewChannelsCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			chs, err := app.ListChannels(context.Background(), onlyDrive)
+			chs, err := app.ListChannels(cmd.Context(), onlyDrive)
 			if err != nil {
 				return r.Error(err)
 			}
@@ -57,7 +56,7 @@ func NewChannelsCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			res, err := app.LinkDiscussionGroup(context.Background())
+			res, err := app.LinkDiscussionGroup(cmd.Context())
 			if err != nil {
 				return r.Error(err)
 			}
@@ -83,7 +82,7 @@ func NewStatusCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.Status(context.Background())
+			data, err := app.Status(cmd.Context())
 			if err != nil {
 				return r.Error(err)
 			}

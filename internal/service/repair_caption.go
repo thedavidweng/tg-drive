@@ -89,6 +89,9 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 	items := make([]captionRepairItem, 0, len(targets))
 	cleaned, planned, skipped, failed := 0, 0, 0, 0
 	for _, target := range targets {
+		if err := cancelled(ctx); err != nil {
+			return nil, err
+		}
 		item := captionRepairItem{
 			Path:      target.path,
 			MessageID: target.messageID,

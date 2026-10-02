@@ -40,6 +40,9 @@ func (a *App) collectDiscussionComments(ctx context.Context, r *scanRun) (int, e
 	}
 	var comments []pendingComment
 	threadMeta, threadErr := a.TG.StreamThreadHistory(ctx, r.tgChID, discAfter, func(tm telegram.ThreadMessage) error {
+		if err := cancelled(ctx); err != nil {
+			return err
+		}
 		tm.Data = nil
 		if tm.ID > discMaxID {
 			discMaxID = tm.ID

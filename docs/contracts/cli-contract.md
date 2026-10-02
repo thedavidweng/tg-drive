@@ -143,6 +143,15 @@ change stdout.
 `--confirm` is required for `td rm`, `td mv`, `td cp --replace`, `td adopt`,
 `td import saved` (unless `--dry-run`), and `td repair --delete-orphaned`.
 
+SIGINT (Ctrl-C) and SIGTERM cancel the running command. It stops at the
+next item or transfer part, releases its operation locks, and exits 130
+with `ERR_CANCELLED` (an error envelope on stdout under `--json`). An
+interrupted large upload keeps its confirmed parts, so running the same
+`td cp` again resumes it. A prompt waiting for input is cancelled too. An
+interruption that leaves state needing repair still reports
+`ERR_ORPHANED_UPLOAD` or `ERR_REPAIR_REQUIRED`, so the remedy is not lost. A
+second signal terminates the process at once.
+
 JSON envelopes include `meta` as specified in `docs/contracts/json-contract.md`. The short envelopes below omit `meta` for brevity.
 
 ## Global JSON success envelope
@@ -206,6 +215,7 @@ ERR_SESSION_LOCKED
 ERR_ORPHANED_UPLOAD
 ERR_REPAIR_REQUIRED
 ERR_SLUG_COLLISION
+ERR_CANCELLED
 ERR_UNKNOWN
 ```
 
@@ -220,3 +230,4 @@ ERR_UNKNOWN
 | 4 | Telegram/platform error | `ERR_CHANNEL_NOT_FOUND`, `ERR_CHANNEL_PERMISSION`, `ERR_FILE_TOO_LARGE`, `ERR_MESSAGE_NOT_EDITABLE`, `ERR_TELEGRAM_RATE_LIMITED`, `ERR_TELEGRAM_RPC` |
 | 5 | DB/index/repair error | `ERR_DB`, `ERR_SCAN_FAILED`, `ERR_MANIFEST_INVALID`, `ERR_ALBUM_INVENTORY_INVALID`, `ERR_SCAN_INCOMPLETE`, `ERR_OPERATION_LOCKED`, `ERR_SESSION_LOCKED`, `ERR_ORPHANED_UPLOAD`, `ERR_REPAIR_REQUIRED`, `ERR_CAPTION_TOO_LONG` |
 | 10 | Confirmation/safety error | `ERR_CONFIRMATION_REQUIRED` |
+| 130 | Cancelled by SIGINT or SIGTERM | `ERR_CANCELLED` |

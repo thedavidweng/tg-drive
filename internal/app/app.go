@@ -1,9 +1,12 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,23 +18,41 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/internal/version"
 )
 
-// Execute runs the root command.
+// Execute runs the root command. SIGINT and SIGTERM cancel the command's
+// context; the command stops at its next cancellation point and exits with
+// ERR_CANCELLED.
 func Execute() error {
-	cmd := NewRootCommand()
-	if err := cmd.Execute(); err != nil {
-		code := apperr.ExitCode(err)
-		if _, ok := apperr.As(err); !ok {
-			// Cobra usage errors (unknown command/flag, wrong arg count) are
-			// not rendered by command handlers; render as a usage error so
-			// --json consumers still get an envelope.
-			_ = output.New(argvWantsJSON()).Error(apperr.New(apperr.ErrUsage, err.Error()))
-			code = 2
-		} else if code == 0 {
-			code = 1
-		}
+	if code := run(); code != 0 {
 		os.Exit(code)
 	}
 	return nil
+}
+
+func run() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		// Restore default signal handling once cancelled, so a second
+		// interrupt terminates a command stuck past its cancellation points.
+		<-ctx.Done()
+		stop()
+	}()
+	cmd := NewRootCommand()
+	err := cmd.ExecuteContext(ctx)
+	if err == nil {
+		return 0
+	}
+	if _, ok := apperr.As(err); !ok {
+		// Cobra usage errors (unknown command/flag, wrong arg count) are
+		// not rendered by command handlers; render as a usage error so
+		// --json consumers still get an envelope.
+		_ = output.New(argvWantsJSON()).Error(apperr.New(apperr.ErrUsage, err.Error()))
+		return 2
+	}
+	if code := apperr.ExitCode(err); code != 0 {
+		return code
+	}
+	return 1
 }
 
 // argvWantsJSON detects --json for errors that occur before flag parsing
@@ -88,6 +109,7 @@ Get started:
 	cmd.PersistentFlags().BoolVar(&opts.wait, "wait", false, "wait through safe Telegram flood waits")
 	cmd.PersistentFlags().BoolVar(&opts.noWait, "no-wait", false, "fail immediately on Telegram flood waits")
 	cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
+		opts.ctx = c.Context()
 		opts.start = time.Now()
 		opts.requestID = uuid.NewString()
 		opts.command = c.CommandPath()
@@ -156,6 +178,9 @@ type runtimeOpts struct {
 	command     string
 	requestID   string
 	start       time.Time
+	// ctx is the command context; renderers map errors that follow its
+	// cancellation to ERR_CANCELLED.
+	ctx context.Context
 }
 
 func envBool(name string) bool {
@@ -191,6 +216,7 @@ func (o *runtimeOpts) Renderer() *output.Renderer {
 	r.Command = o.command
 	r.RequestID = o.requestID
 	r.Start = o.start
+	r.Ctx = o.ctx
 	return r
 }
 

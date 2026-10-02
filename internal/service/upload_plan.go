@@ -108,8 +108,11 @@ func (a *App) hashUpload(ctx context.Context, localPath string, noHash bool, siz
 	if err != nil {
 		return "", apperr.Wrap(apperr.ErrLocalNotFound, "hash file", err)
 	}
-	contentHash, err := computeHash(hashReader, hashEnabled)
+	contentHash, err := computeHash(contextReader{ctx: ctx, r: hashReader}, hashEnabled)
 	_ = hashReader.Close()
+	if err := cancelled(ctx); err != nil {
+		return "", err
+	}
 	if err != nil {
 		return "", apperr.Wrap(apperr.ErrLocalNotFound, "hash file", err)
 	}

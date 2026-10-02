@@ -142,6 +142,9 @@ func (a *App) RepairPending(ctx context.Context, obs Observer) (*RepairPendingRe
 	_ = rows.Close()
 	repaired, invalid, orphaned, skipped := 0, 0, 0, 0
 	for _, r := range pending {
+		if err := cancelled(ctx); err != nil {
+			return nil, err
+		}
 		it := Item{Source: r.local.String, Path: r.path}
 		skip := func() {
 			skipped++
@@ -261,6 +264,9 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool, obs Observ
 	now := time.Now().UTC().Format(time.RFC3339)
 	repaired, deleted, invalid := 0, 0, 0
 	for _, r := range orphans {
+		if err := cancelled(ctx); err != nil {
+			return nil, err
+		}
 		it := Item{Path: r.path, MessageID: int(r.msgID.Int64)}
 		if !r.msgID.Valid {
 			_ = a.DB.MarkInvalid(ctx, r.id, now)

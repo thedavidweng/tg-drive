@@ -53,6 +53,10 @@ type Client struct {
 	failUploadAfterParts int
 	partSubmissions      int64
 
+	// transferDelay is how long each resumable part and each media download
+	// takes; the wait ends early with the context's error on cancellation.
+	transferDelay time.Duration
+
 	// truncateHistory limits history reads to the newest N messages without
 	// reporting completion, simulating a Telegram pagination quirk. 0 disables.
 	truncateHistory int
@@ -447,6 +451,9 @@ func (c *Client) uploadResumable(ctx context.Context, req telegram.UploadRequest
 			}
 			return nil, fmt.Errorf("upload interrupted after %d confirmed parts", confirmedCount)
 		}
+		if err := c.transfer(ctx); err != nil {
+			return nil, err
+		}
 		confirmed[i] = true
 		confirmedCount++
 		if err := c.saveUploadState(ctx, req, state, confirmed); err != nil {
@@ -469,6 +476,25 @@ func (c *Client) uploadResumable(ctx context.Context, req telegram.UploadRequest
 		return nil, err
 	}
 	return data, nil
+}
+
+// transfer models one part or download RPC: it fails once ctx is cancelled,
+// as a real request would, and takes transferDelay.
+func (c *Client) transfer(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.transferDelay <= 0 {
+		return nil
+	}
+	t := time.NewTimer(c.transferDelay)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (c *Client) saveUploadState(ctx context.Context, req telegram.UploadRequest, state *telegram.UploadState, confirmed map[int]bool) error {
@@ -559,6 +585,9 @@ func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID i
 	for _, m := range c.messages[channelID] {
 		if m.ID != messageID {
 			continue
+		}
+		if err := c.transfer(ctx); err != nil {
+			return err
 		}
 		if len(m.Data) > 0 {
 			_, err := dst.Write(m.Data)

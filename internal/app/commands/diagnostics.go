@@ -1,13 +1,13 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
+	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
@@ -25,7 +25,7 @@ func NewDoctorCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.Doctor(context.Background())
+			data, err := app.Doctor(cmd.Context())
 			if err != nil {
 				return r.Error(err)
 			}
@@ -74,7 +74,7 @@ func NewDoctorPathCodecCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.PathCodecDoctor(context.Background())
+			data, err := app.PathCodecDoctor(cmd.Context())
 			if err != nil {
 				return r.Error(err)
 			}
@@ -106,9 +106,11 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 			}
 			if showSecrets && !confirm && !rt.JSON() && stdinIsInteractive() {
 				fmt.Fprint(os.Stderr, "show secrets? [y/N] ")
-				var ans string
-				_, _ = fmt.Scanln(&ans)
-				get.Confirmed = strings.ToLower(ans) == "y"
+				ans, err := readLine(cmd.Context())
+				if apperr.IsCancelled(err) {
+					return r.Error(err)
+				}
+				get.Confirmed = strings.ToLower(strings.TrimSpace(ans)) == "y"
 				get.ShowSecrets = get.Confirmed
 			}
 			view, err := service.GetConfig(rt.Options(), get)

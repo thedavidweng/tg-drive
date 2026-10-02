@@ -106,6 +106,9 @@ func (a *App) RepairHash(ctx context.Context, remotePath string, obs Observer) (
 	items := make([]hashBackfillItem, 0, len(targets))
 	backfilled, failed := 0, 0
 	for _, r := range targets {
+		if err := cancelled(ctx); err != nil {
+			return nil, err
+		}
 		item := hashBackfillItem{Path: r.path}
 		lockErr := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
 			return a.repairHashTarget(ctx, r, channelID, tgChID, existingSlugs, now, obs)

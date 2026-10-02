@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -27,7 +26,7 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 		Short: "Configure Telegram API credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			data, err := service.SetupTelegram(rt.Options(), promptTelegram())
+			data, err := service.SetupTelegram(rt.Options(), promptTelegram(cmd.Context()))
 			if err != nil {
 				return r.Error(err)
 			}
@@ -51,7 +50,7 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 			"require logging in again.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, _, err := service.ConfigureTelegram(rt.Options(), true, promptTelegram())
+			cfg, _, err := service.ConfigureTelegram(rt.Options(), true, promptTelegram(cmd.Context()))
 			if err != nil {
 				return r.Error(err)
 			}
@@ -60,7 +59,6 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			reader := bufio.NewReader(os.Stdin)
 			codeFn := func(p telegram.CodePrompt) (string, error) {
 				switch {
 				case p.Attempt > 1:
@@ -73,7 +71,10 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 				default:
 					fmt.Fprint(os.Stderr, "Telegram sent a login code to your phone.\ncode: ")
 				}
-				s, _ := reader.ReadString('\n')
+				s, err := readLine(cmd.Context())
+				if apperr.IsCancelled(err) {
+					return "", err
+				}
 				return strings.TrimSpace(s), nil
 			}
 			pwAttempt := 0
@@ -84,10 +85,13 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 				} else {
 					fmt.Fprint(os.Stderr, "2fa password: ")
 				}
-				s, _ := reader.ReadString('\n')
+				s, err := readLine(cmd.Context())
+				if apperr.IsCancelled(err) {
+					return "", err
+				}
 				return strings.TrimSpace(s), nil
 			}
-			data, err := app.AuthLogin(context.Background(), codeFn, pwFn, telegram.LoginOptions{ForceNewCode: resend})
+			data, err := app.AuthLogin(cmd.Context(), codeFn, pwFn, telegram.LoginOptions{ForceNewCode: resend})
 			if err != nil {
 				if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrTelegramRateLimited && !rt.JSON() {
 					fmt.Fprintln(os.Stderr, "Telegram rate-limits accounts after repeated login code requests.")
@@ -119,7 +123,7 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.AuthStatus(context.Background())
+			data, err := app.AuthStatus(cmd.Context())
 			if err != nil {
 				return r.Error(err)
 			}
@@ -147,7 +151,7 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			if err := app.AuthLogout(context.Background()); err != nil {
+			if err := app.AuthLogout(cmd.Context()); err != nil {
 				return r.Error(err)
 			}
 			if rt.JSON() {
@@ -190,7 +194,7 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 					createCh = service.DefaultChannelTitle(args[0])
 				}
 			}
-			ctx := context.Background()
+			ctx := cmd.Context()
 			bindChannel := bindCh
 			if bindCh == bindChannelPick || (createCh == "" && bindCh == "" && rt.Channel() == "") {
 				choices, err := app.InitChoices(ctx, args[0])
@@ -204,7 +208,7 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 				if len(chs) == 0 {
 					return r.Error(apperr.New(apperr.ErrChannelNotFound, "no existing channels to bind; create one with: td init "+args[0]+" --create-channel"))
 				}
-				selected, err := selectChannelInteractively(bufio.NewReader(os.Stdin), chs)
+				selected, err := selectChannelInteractively(ctx, chs)
 				if err != nil {
 					return r.Error(err)
 				}
@@ -246,13 +250,16 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 	return c
 }
 
-func selectChannelInteractively(reader *bufio.Reader, chs []telegram.Channel) (*telegram.Channel, error) {
+func selectChannelInteractively(ctx context.Context, chs []telegram.Channel) (*telegram.Channel, error) {
 	_, _ = fmt.Fprintln(os.Stderr, "Select a channel:")
 	for i, ch := range chs {
 		_, _ = fmt.Fprintf(os.Stderr, "  %d. %s (id %d)\n", i+1, ch.Title, ch.ID)
 	}
 	_, _ = fmt.Fprint(os.Stderr, "Enter number: ")
-	s, _ := reader.ReadString('\n')
+	s, err := readLine(ctx)
+	if apperr.IsCancelled(err) {
+		return nil, err
+	}
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil || n < 1 || n > len(chs) {
 		return nil, apperr.New(apperr.ErrUsage, "invalid channel selection")

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
@@ -34,9 +35,17 @@ type persistedState struct {
 //   - TD_FAKE_FAIL_UPLOAD_AFTER_PARTS: fail the first resumable upload once
 //     this many parts are confirmed (state stays persisted for resume); the
 //     knob disables itself after firing once so a retry can succeed.
+//   - TD_FAKE_TRANSFER_DELAY: a Go duration each resumable upload part and
+//     each media download waits before completing, honoring cancellation,
+//     so tests can interrupt a transfer midway.
 func NewPersistent(path string) *Client {
 	c := New()
 	c.statePath = path
+	if v := os.Getenv("TD_FAKE_TRANSFER_DELAY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			c.transferDelay = d
+		}
+	}
 	if v := os.Getenv("TD_FAKE_PART_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.partSize = n
