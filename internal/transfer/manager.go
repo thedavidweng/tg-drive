@@ -29,8 +29,8 @@ const progressInterval = 250 * time.Millisecond
 type Observer struct {
 	// OnStage reports a Transfer entering a stage, queued included.
 	OnStage func(Transfer)
-	// OnProgress reports a Transfer's byte progress, at most as often as it
-	// is written to the index.
+	// OnProgress reports a Transfer's byte or item progress, at most as
+	// often as it is written to the index.
 	OnProgress func(Transfer)
 }
 
@@ -88,6 +88,19 @@ type uploadOptions struct {
 	Threads           int                    `json:"threads,omitempty"`
 	PartSizeKB        int                    `json:"part_size_kb,omitempty"`
 	ConfirmReplace    bool                   `json:"confirm_replace,omitempty"`
+	// Sources are an album upload's local files; a single-file upload keeps
+	// its one source in the Transfer's Source.
+	Sources []string `json:"sources,omitempty"`
+}
+
+// marshalUploadOptions is the uploadOptions of one upload request.
+func marshalUploadOptions(policy service.ConflictPolicy, noHash bool, pres service.Presentation, opts service.UploadOptions) uploadOptions {
+	return uploadOptions{
+		Policy: policy, NoHash: noHash,
+		Kind: pres.Kind, DurationSeconds: pres.DurationSeconds, Width: pres.Width, Height: pres.Height,
+		SupportsStreaming: pres.SupportsStreaming, ThumbPath: pres.ThumbPath,
+		Threads: opts.Threads, PartSizeKB: opts.PartSizeKB, ConfirmReplace: opts.ConfirmReplace,
+	}
 }
 
 // pinChannel resolves the bound drive channel's Telegram ID for the
@@ -121,13 +134,7 @@ func (m *Manager) SubmitUpload(ctx context.Context, req Upload) (*Handle[*servic
 	if st, err := os.Stat(source); err == nil && st.Mode().IsRegular() {
 		size = st.Size()
 	}
-	pres := req.Presentation
-	options, _ := json.Marshal(uploadOptions{
-		Policy: req.Policy, NoHash: req.NoHash,
-		Kind: pres.Kind, DurationSeconds: pres.DurationSeconds, Width: pres.Width, Height: pres.Height,
-		SupportsStreaming: pres.SupportsStreaming, ThumbPath: pres.ThumbPath,
-		Threads: req.Options.Threads, PartSizeKB: req.Options.PartSizeKB, ConfirmReplace: req.Options.ConfirmReplace,
-	})
+	options, _ := json.Marshal(marshalUploadOptions(req.Policy, req.NoHash, req.Presentation, req.Options))
 	t := Transfer{
 		Kind: KindUpload, Channel: channel, Source: source, Dest: req.Dest,
 		BytesTotal: size, ItemsTotal: 1,
@@ -140,6 +147,40 @@ func (m *Manager) SubmitUpload(ctx context.Context, req Upload) (*Handle[*servic
 			tr.landed(res.Path, res.Size, !res.Skipped)
 		}
 		return res, err
+	})
+}
+
+// AlbumUpload asks for several local files to be uploaded as Telegram
+// albums sharing one remote directory, as service.App.UploadFilesAs does.
+// The whole call is one Transfer whose item counts track the member files.
+type AlbumUpload struct {
+	Sources []string
+	// Dest is the remote directory as the command was given it.
+	Dest         string
+	Policy       service.ConflictPolicy
+	NoHash       bool
+	Presentation service.Presentation
+	// Options are the upload call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.UploadOptions
+}
+
+// SubmitAlbumUpload records the album upload as a queued Transfer and
+// starts it, under the same ctx contract as SubmitUpload. The Transfer's
+// Source is empty: the sources are many, and the stored options list them.
+func (m *Manager) SubmitAlbumUpload(ctx context.Context, req AlbumUpload) (*Handle[*service.AlbumUploadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	stored := marshalUploadOptions(req.Policy, req.NoHash, req.Presentation, req.Options)
+	stored.Sources = req.Sources
+	options, _ := json.Marshal(stored)
+	t := Transfer{
+		Kind: KindAlbumUpload, Channel: channel, Dest: req.Dest,
+		ItemsTotal: len(req.Sources),
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.AlbumUploadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		return m.app.UploadFilesAs(ctx, req.Sources, req.Dest, req.Policy, req.NoHash, req.Presentation, opts)
 	})
 }
 
@@ -218,7 +259,10 @@ func submit[T any](ctx context.Context, m *Manager, t Transfer, options string,
 	if err := m.app.DB.InsertTransfer(ctx, row); err != nil {
 		return nil, err
 	}
-	tr := &tracker{m: m, t: t, written: now, ctx: context.WithoutCancel(ctx)}
+	// A Transfer submitted without an item total (the recursive kinds, whose
+	// item count only the walk discovers) grows it as items report; one
+	// submitted with a total keeps it.
+	tr := &tracker{m: m, t: t, written: now, ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0}
 	tr.notify(m.opts.Observer.OnStage)
 	h := &Handle[T]{id: t.ID, done: make(chan struct{})}
 	go func() {
@@ -289,10 +333,12 @@ type tracker struct {
 	m *Manager
 	// ctx writes to the index; it outlives the Transfer's cancellation so
 	// a cancelled Transfer still records how it ended.
-	ctx     context.Context
-	mu      sync.Mutex
-	t       Transfer
-	written time.Time
+	ctx context.Context
+	mu  sync.Mutex
+	t   Transfer
+	// growItems counts each reported item into ItemsTotal.
+	growItems bool
+	written   time.Time
 }
 
 // observe is next with this Transfer's recording in front, so the index
@@ -313,7 +359,12 @@ func (tr *tracker) observe(next service.Observer) service.Observer {
 				next.OnProgress(p)
 			}
 		},
-		OnItem: next.OnItem,
+		OnItem: func(r service.ItemResult) {
+			tr.item(r)
+			if next.OnItem != nil {
+				next.OnItem(r)
+			}
+		},
 	}
 }
 
@@ -335,14 +386,42 @@ func (tr *tracker) enter(s Stage) {
 	tr.notify(tr.m.opts.Observer.OnStage)
 }
 
+// tracksBytes reports whether a Transfer of this kind records byte
+// progress: single-file Transfers do; multi-item ones count items instead.
+func (k Kind) tracksBytes() bool {
+	return k == KindUpload || k == KindDownload
+}
+
 func (tr *tracker) progress(done, total int64) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	if !tr.t.Kind.tracksBytes() {
+		return
+	}
 	tr.t.BytesDone = done
 	if total > 0 {
 		tr.t.BytesTotal = total
 	}
-	now := time.Now().UTC()
+	tr.throttledWrite(time.Now().UTC())
+}
+
+// item records one item's outcome. Done counts completed and skipped items,
+// so done and failed together account for every item reported.
+func (tr *tracker) item(r service.ItemResult) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.growItems {
+		tr.t.ItemsTotal++
+	}
+	if r.Status != service.ItemFailed {
+		tr.t.ItemsDone++
+	}
+	tr.throttledWrite(time.Now().UTC())
+}
+
+// throttledWrite saves the Transfer's progress at most once per
+// progressInterval; stage changes and the ending write happen at once.
+func (tr *tracker) throttledWrite(now time.Time) {
 	if now.Sub(tr.written) < progressInterval {
 		return
 	}

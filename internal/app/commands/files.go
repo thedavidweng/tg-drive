@@ -135,7 +135,15 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if includeEmptyDirs {
 					return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 				}
-				data, err := app.UploadFilesAs(cmd.Context(), args[:len(args)-1], args[len(args)-1], policy, noHash, pres, opts)
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				handle, err := manager.SubmitAlbumUpload(cmd.Context(), transfer.AlbumUpload{
+					Sources: args[:len(args)-1], Dest: args[len(args)-1],
+					Policy: policy, NoHash: noHash, Presentation: pres, Options: opts,
+				})
+				if err != nil {
+					return r.Error(err)
+				}
+				data, err := handle.Wait()
 				if err != nil {
 					return r.Error(err)
 				}

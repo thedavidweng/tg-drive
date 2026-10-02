@@ -24,6 +24,40 @@ func findTransfer(t *testing.T, list []map[string]any, kind string) map[string]a
 	return found[0]
 }
 
+// TestE2EAlbumCpIsATransfer: a multi-file td cp runs as one album_upload
+// Transfer whose item counts track the member files and which records no
+// per-item byte progress. The command's result output is unchanged.
+func TestE2EAlbumCpIsATransfer(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+
+	var locals []string
+	for i, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		locals = append(locals, e2eLocalFile(t, dir, name, fmt.Sprintf("file %d", i)))
+	}
+	args := append([]string{"cp"}, locals...)
+	args = append(args, "/albums/")
+	up := runE2EJSON(t, bin, cfgPath, dbPath, statePath, args...)
+	if n, _ := up["uploaded"].(float64); n != 3 {
+		t.Fatalf("uploaded = %v, want 3", up["uploaded"])
+	}
+	if groups, _ := up["albums"].([]any); len(groups) != 1 {
+		t.Fatalf("albums = %v, want 1 group", up["albums"])
+	}
+
+	done := findTransfer(t, listTransfers(t, bin, cfgPath, dbPath, statePath, "--all"), "album_upload")
+	if done["stage"] != "completed" || done["items_done"] != float64(3) || done["items_total"] != float64(3) ||
+		done["dest"] != "/albums/" || done["finished_at"] == nil {
+		t.Fatalf("completed album transfer = %v, want 3/3 items to /albums/", done)
+	}
+	if done["bytes_done"] != float64(0) || done["bytes_total"] != float64(0) {
+		t.Fatalf("album transfer bytes = %v/%v, want none: item counts track it",
+			done["bytes_done"], done["bytes_total"])
+	}
+}
+
 // TestE2EGetIsATransfer: td get runs as a download Transfer: a second
 // process sees it in the downloading stage while it runs, and afterwards the
 // index holds it completed with the downloaded byte count. The command's
