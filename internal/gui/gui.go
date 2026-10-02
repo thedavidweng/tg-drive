@@ -39,11 +39,11 @@ func Open() (*Services, func(), error) {
 		return nil, func() {}, toError(err)
 	}
 	settings := &Settings{opts: opts}
-	close := closeApp
+	closeServices := closeApp
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())
 		settings.ThemeChanges = watchOmarchy(ctx, omarchyPollInterval())
-		close = func() {
+		closeServices = func() {
 			cancel()
 			closeApp()
 		}
@@ -53,5 +53,5 @@ func Open() (*Services, func(), error) {
 		Auth:      &Auth{},
 		Transfers: &Transfers{},
 		Settings:  settings,
-	}, close, nil
+	}, closeServices, nil
 }

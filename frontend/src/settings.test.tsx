@@ -169,7 +169,7 @@ test("About shows the versions of td-gui and td", async () => {
   render(<App backend={backend} languages={["en"]} />)
   openSettings()
 
-  const about = await screen.findByRole("group", { name: "About" })
+  const about = await screen.findByRole("region", { name: "About" })
   const rows = within(about).getAllByRole("listitem").map((r) => r.textContent)
   expect(rows).toEqual(["td-gui1.4.0", "td1.4.0"])
 })

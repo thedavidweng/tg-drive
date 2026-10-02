@@ -314,22 +314,15 @@ function About({ backend }: { backend: Backend }) {
   }, [backend])
 
   return (
-    <section aria-label={t("settings.about")}>
-      <h2 className="px-1 pb-1.5 text-[11.5px] font-medium tracking-[.04em] text-muted-foreground uppercase">
-        {t("settings.about")}
-      </h2>
-      <div role="group" aria-label={t("settings.about")}>
-        <ul className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-card">
-          <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5">
-            <span className="flex-1">td-gui</span>
-            <span className="font-mono text-[12px] text-muted-foreground">{versions?.gui ?? "…"}</span>
-          </li>
-          <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5">
-            <span className="flex-1">td</span>
-            <span className="font-mono text-[12px] text-muted-foreground">{versions?.cli ?? "…"}</span>
-          </li>
-        </ul>
-      </div>
-    </section>
+    <Card label={t("settings.about")}>
+      <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5">
+        <span className="flex-1">td-gui</span>
+        <span className="font-mono text-[12px] text-muted-foreground">{versions?.gui ?? "…"}</span>
+      </li>
+      <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5">
+        <span className="flex-1">td</span>
+        <span className="font-mono text-[12px] text-muted-foreground">{versions?.cli ?? "…"}</span>
+      </li>
+    </Card>
   )
 }
