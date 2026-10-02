@@ -10,9 +10,7 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
 
 // Doctor, doctor path-codec, and config commands.
@@ -72,16 +70,11 @@ func NewDoctorPathCodecCmd(rt Runtime) *cobra.Command {
 		Short: "Run path codec self-test and verify stored slug mappings",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, _, err := rt.LoadConfig()
+			app, cleanup, err := rt.OpenOfflineApp(cmd)
 			if err != nil {
 				return r.Error(err)
 			}
-			database, err := sqlitestore.Open(cfg.Storage.DBPath)
-			if err != nil {
-				return r.Error(err)
-			}
-			defer func() { _ = database.Close() }()
-			app := &service.App{Cfg: cfg, DB: database}
+			defer cleanup()
 			data, err := app.PathCodecDoctor(context.Background())
 			if err != nil {
 				return r.Error(err)

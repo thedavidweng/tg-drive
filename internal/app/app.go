@@ -3,17 +3,12 @@ package app
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/telegramgotd"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
 	"github.com/thedavidweng/tg-drive-cli/internal/app/commands"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
 	"github.com/thedavidweng/tg-drive-cli/internal/output"
@@ -172,17 +167,21 @@ func envBool(name string) bool {
 	return false
 }
 
-// effectiveWait resolves flood-wait behavior: flags > TD_WAIT > config.
-func (o *runtimeOpts) effectiveWait(cfg config.Config) bool {
-	wait := cfg.RateLimit.DefaultWait
-	if v := os.Getenv("TD_WAIT"); v != "" {
-		wait = envBool("TD_WAIT")
+// waitOverride resolves the flood-wait override: flags > TD_WAIT. Nil leaves
+// the config default in place.
+func (o *runtimeOpts) waitOverride() *bool {
+	var wait *bool
+	if os.Getenv("TD_WAIT") != "" {
+		v := envBool("TD_WAIT")
+		wait = &v
 	}
 	if o.wait {
-		wait = true
+		v := true
+		wait = &v
 	}
 	if o.noWait {
-		wait = false
+		v := false
+		wait = &v
 	}
 	return wait
 }
@@ -199,110 +198,45 @@ func (o *runtimeOpts) Renderer() *output.Renderer {
 func (o *runtimeOpts) JSON() bool { return o.json }
 
 func (o *runtimeOpts) Channel() string { return o.channel }
-func (o *runtimeOpts) overrides() config.Overrides {
-	return config.Overrides{
+func (o *runtimeOpts) serviceOptions() service.Options {
+	opts := service.Options{
 		ConfigPath:  o.configPath,
 		DBPath:      o.dbPath,
 		SessionPath: o.sessionPath,
 		Channel:     o.channel,
+		Wait:        o.waitOverride(),
 	}
+	if o.verbose {
+		opts.Debugf = debugf
+	}
+	return opts
 }
 
 // debugf writes a --verbose diagnostic to stderr. Callers must not pass
 // secrets; paths go through config.DisplayPath.
-func (o *runtimeOpts) debugf(format string, args ...any) {
-	if !o.verbose {
-		return
-	}
+func debugf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, "debug: "+format+"\n", args...)
 }
 
 func (o *runtimeOpts) LoadConfig() (config.Config, string, error) {
-	cfg, path, err := config.Load(o.overrides())
-	if o.verbose {
-		state := "found"
-		if _, statErr := os.Stat(path); statErr != nil {
-			state = "missing, using defaults"
-		}
-		o.debugf("config %s (%s)", config.DisplayPath(path), state)
-		o.debugf("db %s", config.DisplayPath(cfg.Storage.DBPath))
-		o.debugf("session %s", config.DisplayPath(cfg.Storage.SessionPath))
-		if o.channel != "" {
-			o.debugf("channel selector %q", o.channel)
-		}
-	}
-	return cfg, path, err
+	return service.LoadConfig(o.serviceOptions())
 }
 
 func (o *runtimeOpts) OpenApp(cmd *cobra.Command) (*service.App, func(), error) {
+	return o.open(cmd, false)
+}
+
+func (o *runtimeOpts) OpenOfflineApp(cmd *cobra.Command) (*service.App, func(), error) {
+	return o.open(cmd, true)
+}
+
+func (o *runtimeOpts) open(cmd *cobra.Command, offline bool) (*service.App, func(), error) {
 	if isLightweight(cmd) {
 		return nil, func() {}, apperr.New(apperr.ErrUsage, "command does not use app context")
 	}
-	cfg, cfgPath, err := o.LoadConfig()
-	if err != nil {
-		return nil, func() {}, err
-	}
-	database, err := sqlitestore.Open(cfg.Storage.DBPath)
-	if err != nil {
-		return nil, func() {}, err
-	}
-	tg, err := o.telegramClient(cfg, database)
-	if err != nil {
-		_ = database.Close()
-		return nil, func() {}, err
-	}
-	app := &service.App{
-		Cfg:        cfg,
-		ConfigPath: cfgPath,
-		DB:         database,
-		TG:         tg,
-		Channel:    o.channel,
-	}
-	cleanup := func() {
-		if closer, ok := tg.(interface{ Close() error }); ok {
-			_ = closer.Close()
-		}
-		_ = database.Close()
-	}
-	return app, cleanup, nil
-}
-
-func (o *runtimeOpts) telegramClient(cfg config.Config, database *sqlitestore.DB) (telegram.Client, error) {
-	if os.Getenv("TD_FAKE_TELEGRAM") == "1" {
-		o.debugf("telegram: offline fake client (TD_FAKE_TELEGRAM=1)")
-		if p := os.Getenv("TD_FAKE_TELEGRAM_STATE"); p != "" {
-			return fake.NewPersistent(p), nil
-		}
-		return fake.New(), nil
-	}
-	if cfg.Telegram.APIID == 0 || cfg.Telegram.APIHash == "" {
-		return nil, apperr.New(apperr.ErrConfigMissing, "telegram API credentials missing; run: td auth setup")
-	}
-	if err := config.EnsureSessionDir(cfg.Storage.SessionPath); err != nil {
-		return nil, err
-	}
-	client := telegramgotd.New(cfg.Telegram.APIID, cfg.Telegram.APIHash, cfg.Storage.SessionPath,
-		o.effectiveWait(cfg), time.Duration(cfg.RateLimit.MaxWaitSeconds)*time.Second)
-	if o.verbose {
-		client.SetLogger(o.debugf)
-		o.debugf("telegram: flood wait=%t max_wait=%ds", o.effectiveWait(cfg), cfg.RateLimit.MaxWaitSeconds)
-	}
-	rows, err := database.Raw().Query(`select tg_channel_id, access_hash, title from channels where access_hash is not null and access_hash != ''`)
-	if err == nil {
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var tgID, hash, title string
-			if err := rows.Scan(&tgID, &hash, &title); err != nil {
-				continue
-			}
-			chID, err1 := strconv.ParseInt(tgID, 10, 64)
-			accHash, err2 := strconv.ParseInt(hash, 10, 64)
-			if err1 == nil && err2 == nil {
-				client.RegisterChannelInfo(chID, accHash, title)
-			}
-		}
-	}
-	return client, nil
+	opts := o.serviceOptions()
+	opts.Offline = offline
+	return service.Open(opts)
 }
 
 func isLightweight(cmd *cobra.Command) bool {
@@ -314,6 +248,3 @@ func isLightweight(cmd *cobra.Command) bool {
 	}
 	return false
 }
-
-// Compile-time check: the in-memory fake implements telegram.Client.
-var _ telegram.Client = fake.New()

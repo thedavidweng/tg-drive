@@ -16,6 +16,11 @@ cmd/td
 - `core/*` imports no adapters, `internal/*`, storage drivers, gotd/td, or cobra.
 - `internal/app` imports command services and output/error packages.
 - `internal/service` owns command behavior and depends on `core` ports, not on `gotd/td`.
+- `service.Open` is the one composition root (ADR 0032). It loads config,
+  opens the database and the Telegram client (the fake when
+  `TD_FAKE_TELEGRAM=1`), and seeds cached channel access hashes. Front ends
+  call it and pass their own diagnostics logger; nothing else opens the
+  database or Telegram for a command.
 - `adapters/native/telegramgotd` is the only package that imports `github.com/gotd/td`.
 - `adapters/native/sqlitestore` implements the file index, locks, and
   migrations, and owns the File row lifecycle: every `files` status
@@ -95,4 +100,4 @@ td cp
 | `core/publisher` | rendering, manifest/inventory records, index commit |
 | `core/telegram` | interfaces and fake adapter |
 | `adapters/native/telegramgotd` | gotd/td adapter |
-| `internal/service` | use cases: upload, scan, download, move, delete, repair |
+| `internal/service` | composition root (`Open`) and use cases: upload, scan, download, move, delete, repair |
