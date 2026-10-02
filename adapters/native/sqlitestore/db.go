@@ -250,6 +250,7 @@ type migration struct {
 var migrations = []migration{
 	{version: 1, stmts: []string{schemaSQL}},
 	{version: 2, stmts: []string{transfersSQL}},
+	{version: 3, stmts: []string{transfersFailedItemsSQL}},
 }
 
 // currentVersion reports the highest applied schema version, 0 for a fresh

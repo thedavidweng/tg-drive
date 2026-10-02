@@ -163,7 +163,15 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if presentationFlagsSet(cmd) {
 					return r.Error(apperr.New(apperr.ErrUsage, "presentation flags apply to single-file uploads only"))
 				}
-				data, err := app.UploadRecursive(cmd.Context(), args[0], args[1], policy, continueOnError, noHash, includeEmptyDirs, opts)
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				handle, err := manager.SubmitRecursiveUpload(cmd.Context(), transfer.RecursiveUpload{
+					Source: args[0], Dest: args[1], Policy: policy,
+					ContinueOnError: continueOnError, NoHash: noHash, IncludeEmptyDirs: includeEmptyDirs, Options: opts,
+				})
+				if err != nil {
+					return r.Error(err)
+				}
+				data, err := handle.Wait()
 				if err != nil {
 					return r.Error(err)
 				}

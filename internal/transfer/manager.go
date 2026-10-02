@@ -91,6 +91,9 @@ type uploadOptions struct {
 	// Sources are an album upload's local files; a single-file upload keeps
 	// its one source in the Transfer's Source.
 	Sources []string `json:"sources,omitempty"`
+	// ContinueOnError and IncludeEmptyDirs belong to recursive uploads.
+	ContinueOnError  bool `json:"continue_on_error,omitempty"`
+	IncludeEmptyDirs bool `json:"include_empty_dirs,omitempty"`
 }
 
 // marshalUploadOptions is the uploadOptions of one upload request.
@@ -181,6 +184,43 @@ func (m *Manager) SubmitAlbumUpload(ctx context.Context, req AlbumUpload) (*Hand
 		opts := req.Options
 		opts.Observer = tr.observe(opts.Observer)
 		return m.app.UploadFilesAs(ctx, req.Sources, req.Dest, req.Policy, req.NoHash, req.Presentation, opts)
+	})
+}
+
+// RecursiveUpload asks for one local directory tree to be uploaded, as
+// service.App.UploadRecursive does. The whole tree is one Transfer whose
+// item counts track the files.
+type RecursiveUpload struct {
+	// Source is the local directory.
+	Source string
+	// Dest is the remote directory as the command was given it.
+	Dest             string
+	Policy           service.ConflictPolicy
+	ContinueOnError  bool
+	NoHash           bool
+	IncludeEmptyDirs bool
+	// Options are the upload call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.UploadOptions
+}
+
+// SubmitRecursiveUpload records the recursive upload as a queued Transfer
+// and starts it, under the same ctx contract as SubmitUpload. The walk
+// discovers the files as it runs, so the Transfer's item total grows with
+// each item reported.
+func (m *Manager) SubmitRecursiveUpload(ctx context.Context, req RecursiveUpload) (*Handle[*service.RecursiveUploadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	stored := marshalUploadOptions(req.Policy, req.NoHash, service.Presentation{}, req.Options)
+	stored.ContinueOnError = req.ContinueOnError
+	stored.IncludeEmptyDirs = req.IncludeEmptyDirs
+	options, _ := json.Marshal(stored)
+	t := Transfer{
+		Kind: KindRecursiveUpload, Channel: channel, Source: absPath(req.Source), Dest: req.Dest,
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.RecursiveUploadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		return m.app.UploadRecursive(ctx, req.Source, req.Dest, req.Policy, req.ContinueOnError, req.NoHash, req.IncludeEmptyDirs, opts)
 	})
 }
 
@@ -413,7 +453,9 @@ func (tr *tracker) item(r service.ItemResult) {
 	if tr.growItems {
 		tr.t.ItemsTotal++
 	}
-	if r.Status != service.ItemFailed {
+	if r.Status == service.ItemFailed {
+		tr.t.ItemsFailed++
+	} else {
 		tr.t.ItemsDone++
 	}
 	tr.throttledWrite(time.Now().UTC())
@@ -449,7 +491,9 @@ func (tr *tracker) finish(ctx context.Context, err error) {
 	now := time.Now().UTC()
 	if err == nil {
 		tr.t.Stage = StageCompleted
-		tr.t.ItemsDone = tr.t.ItemsTotal
+		// A call can succeed with items failed (its own lenient mode
+		// reports them in the result), so done is what did not fail.
+		tr.t.ItemsDone = tr.t.ItemsTotal - tr.t.ItemsFailed
 	} else {
 		if ctx.Err() != nil {
 			err = apperr.AfterCancel(err)

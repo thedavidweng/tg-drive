@@ -100,8 +100,14 @@ type Transfer struct {
 	Dest       string `json:"dest"`
 	BytesDone  int64  `json:"bytes_done"`
 	BytesTotal int64  `json:"bytes_total"`
-	ItemsDone  int    `json:"items_done"`
-	ItemsTotal int    `json:"items_total"`
+	// ItemsDone counts the items completed or skipped, ItemsFailed the
+	// items that failed, of ItemsTotal. A single-file Transfer is one item;
+	// a recursive Transfer's ItemsTotal grows as the walk reports items.
+	ItemsDone  int `json:"items_done"`
+	ItemsTotal int `json:"items_total"`
+	// ItemsFailed is omitted when nothing failed, keeping the shape a
+	// clean Transfer has had since the first kind.
+	ItemsFailed int `json:"items_failed,omitempty"`
 	// ErrorCode and ErrorMessage are the error a failed Transfer ended
 	// with.
 	ErrorCode       string     `json:"error_code,omitempty"`
@@ -138,6 +144,7 @@ func (t Transfer) row() sqlitestore.TransferRow {
 		BytesTotal:      t.BytesTotal,
 		ItemsDone:       t.ItemsDone,
 		ItemsTotal:      t.ItemsTotal,
+		ItemsFailed:     t.ItemsFailed,
 		ErrorCode:       t.ErrorCode,
 		ErrorMessage:    t.ErrorMessage,
 		FrontEnd:        string(t.FrontEnd),
@@ -163,6 +170,7 @@ func fromRow(r sqlitestore.TransferRow) Transfer {
 		BytesTotal:      r.BytesTotal,
 		ItemsDone:       r.ItemsDone,
 		ItemsTotal:      r.ItemsTotal,
+		ItemsFailed:     r.ItemsFailed,
 		ErrorCode:       r.ErrorCode,
 		ErrorMessage:    r.ErrorMessage,
 		FrontEnd:        FrontEnd(r.FrontEnd),

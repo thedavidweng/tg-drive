@@ -3,7 +3,9 @@ package app
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -55,6 +57,74 @@ func TestE2EAlbumCpIsATransfer(t *testing.T) {
 	if done["bytes_done"] != float64(0) || done["bytes_total"] != float64(0) {
 		t.Fatalf("album transfer bytes = %v/%v, want none: item counts track it",
 			done["bytes_done"], done["bytes_total"])
+	}
+}
+
+// TestE2ERecursiveCpIsATransfer: a recursive td cp runs as one
+// recursive_upload Transfer whose item counts cover every file the walk
+// found. The command's result output is unchanged.
+func TestE2ERecursiveCpIsATransfer(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(filepath.Join(tree, "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e2eLocalFile(t, tree, "a.txt", "a")
+	e2eLocalFile(t, tree, "b.txt", "b")
+	e2eLocalFile(t, filepath.Join(tree, "inner"), "c.txt", "c")
+
+	up := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "cp", "--recursive", tree, "/tree")
+	if n, _ := up["uploaded"].(float64); n != 3 {
+		t.Fatalf("uploaded = %v, want 3", up["uploaded"])
+	}
+
+	done := findTransfer(t, listTransfers(t, bin, cfgPath, dbPath, statePath, "--all"), "recursive_upload")
+	if done["stage"] != "completed" || done["items_done"] != float64(3) || done["items_total"] != float64(3) ||
+		done["source"] != tree || done["dest"] != "/tree" || done["finished_at"] == nil {
+		t.Fatalf("completed recursive upload = %v, want 3/3 items from %s to /tree", done, tree)
+	}
+}
+
+// TestE2ERecursiveCpRecordsFailedItems: with --continue-on-error a
+// recursive upload that drops one file still completes its Transfer, which
+// records the failure: 2 done, 1 failed of 3 items.
+func TestE2ERecursiveCpRecordsFailedItems(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads unreadable files")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0 does not make a file unreadable on Windows")
+	}
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(tree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e2eLocalFile(t, tree, "a.txt", "a")
+	unreadable := e2eLocalFile(t, tree, "b.txt", "b")
+	if err := os.Chmod(unreadable, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o644) })
+	e2eLocalFile(t, tree, "c.txt", "c")
+
+	up := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "cp", "--recursive", "--continue-on-error", tree, "/tree")
+	if up["uploaded"] != float64(2) || up["failed"] != float64(1) {
+		t.Fatalf("result = %v, want 2 uploaded and 1 failed", up)
+	}
+
+	done := findTransfer(t, listTransfers(t, bin, cfgPath, dbPath, statePath, "--all"), "recursive_upload")
+	if done["stage"] != "completed" || done["items_done"] != float64(2) ||
+		done["items_failed"] != float64(1) || done["items_total"] != float64(3) {
+		t.Fatalf("completed recursive upload = %v, want 2 done, 1 failed of 3 items", done)
 	}
 }
 
