@@ -76,6 +76,17 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 	return ch, nil
 }
 
+// ChannelTelegramID is the Telegram ID of the bound drive channel that calls
+// made with ctx work on. It fails with ERR_CHANNEL_NOT_FOUND like those
+// calls would.
+func (a *App) ChannelTelegramID(ctx context.Context) (string, error) {
+	ch, err := a.channel(ctx)
+	if err != nil {
+		return "", err
+	}
+	return ch.tgIDStr, nil
+}
+
 // operation is the running operation carried by its body's context.
 type operation struct {
 	ch *channelContext

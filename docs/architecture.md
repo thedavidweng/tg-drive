@@ -5,6 +5,7 @@
 ```text
 cmd/td
   -> internal/app          CLI wiring and command execution
+  -> internal/transfer     Transfer Manager: uploads as recorded Transfers
   -> internal/service      application use cases
   -> core/*                domain: paths, slugs, captions, errors, ports
   -> adapters/native/*     SQLite, local FS, gotd/td
@@ -64,6 +65,16 @@ cmd/td
   `ERR_CANCELLED`. Rollback after a cancel, and operation-lock release, run
   on a context that outlives the cancellation, so an interrupted upload
   keeps its resumable state and strands no lock (ADR 0032).
+- `internal/transfer` is the Transfer Manager (ADR 0033). A single-file
+  `td cp` submits its upload through it and waits. It records each one as a Transfer in the
+  `transfers` table, runs at most `transfers.concurrency` at once (the rest
+  stay `queued`), turns the call's Observer reports into Transfer stages and
+  throttled byte progress, and records how it ended. A Transfer's call runs
+  its own operations inside the service; the Manager takes no locks.
+  Reading Transfers (`td transfers list` / `show`) needs only the index, so
+  those commands open an offline App and never take the Session lock.
+  `internal/transfer` depends on `internal/service`, never the reverse, and
+  imports no front-end framework.
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow
@@ -121,4 +132,5 @@ td cp
 | `core/publisher` | rendering, manifest/inventory records, index commit |
 | `core/telegram` | interfaces and fake adapter |
 | `adapters/native/telegramgotd` | gotd/td adapter |
+| `internal/transfer` | Transfer Manager: submit, run with bounded concurrency, record stages and progress, list and show Transfers |
 | `internal/service` | composition root (`Open`) and use cases: upload (and its dry-run plan), scan, download, move, delete, repair, Telegram setup, config get/set, init channel choices |

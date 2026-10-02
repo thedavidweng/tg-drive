@@ -82,6 +82,9 @@ the Session lock, so they never return this code.
 stopped by SIGINT or SIGTERM. Retrying is safe: a large upload resumes from
 its confirmed parts.
 
+`ERR_TRANSFER_NOT_FOUND` (category `validation`, exit code 2) means no
+Transfer has the ID `td transfers show` was given.
+
 `ERR_DIRECTORY_MOVE_UNSUPPORTED` and `ERR_DIRECTORY_DELETE_UNSUPPORTED` carry
 the offending remote directory in `details.path`.
 
@@ -256,6 +259,63 @@ Long-running commands such as `td cp --events` emit one JSON envelope per line:
 {"ok":true,"data":{"file_name":"big.bin","part":5,"part_size":524288,"uploaded":2621440,"total":4294967296},"meta":{"command":"cp.progress","duration_ms":120,"schema_version":"2026-07-29","request_id":"..."}}
 {"ok":true,"data":{"path":"/big.bin","message_id":1234,"size":4294967296},"meta":{"command":"cp","duration_ms":4200,"schema_version":"2026-07-29","request_id":"..."}}
 ```
+
+A single-file `td cp --events` also emits `transfer.stage` events, one each
+time its Transfer enters a stage: `queued`, then `hashing` (when the file is
+hashed), `uploading`, `publishing`, and finally `completed` or `failed`.
+They are interleaved with the `cp.progress` lines in the order the stages
+happen, before the final `cp` line (or error envelope). `data` is the
+Transfer as `td transfers show` returns it, at the moment it entered the
+stage:
+
+```json
+{"ok":true,"data":{"id":"6f1c...","kind":"upload","stage":"uploading","channel":"1001","source":"/home/me/big.bin","dest":"/big.bin","bytes_done":0,"bytes_total":12582912,"items_done":0,"items_total":1,"front_end":"cli","cancel_requested":false,"created_at":"2026-10-02T10:40:01.927632222Z","updated_at":"2026-10-02T10:40:01.931002117Z"},"meta":{"command":"transfer.stage","duration_ms":4,"schema_version":"2026-07-29","request_id":"..."}}
+```
+
+## Transfers
+
+`td transfers show <id>` returns one Transfer (ADR 0033); `td transfers
+list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "6f1c2a7e-3b0d-4c55-9a43-2f0a1b7c9d10",
+    "kind": "upload",
+    "stage": "failed",
+    "channel": "1001",
+    "source": "/home/me/big.bin",
+    "dest": "/big.bin",
+    "bytes_done": 2097152,
+    "bytes_total": 12582912,
+    "items_done": 0,
+    "items_total": 1,
+    "error_code": "ERR_CANCELLED",
+    "error_message": "operation cancelled",
+    "front_end": "cli",
+    "cancel_requested": false,
+    "created_at": "2026-10-02T10:40:01.927632222Z",
+    "updated_at": "2026-10-02T10:40:02.610447301Z",
+    "finished_at": "2026-10-02T10:40:02.610447301Z"
+  }
+}
+```
+
+- `id` is the Transfer ID, a UUID. `kind` is `upload`.
+- `stage` is `queued`, `hashing`, `uploading`, `publishing`, `completed`, or
+  `failed`. A Transfer only moves forward; `completed` and `failed` are
+  terminal.
+- `channel` is the drive channel's Telegram ID. `source` is the absolute
+  local path. `dest` is the requested remote path, and once `completed` the
+  canonical path written.
+- `bytes_done` / `bytes_total` are byte progress, refreshed a few times a
+  second while the Transfer runs. `items_done` / `items_total` count files.
+- `error_code` / `error_message` appear only on a `failed` Transfer and match
+  the error envelope its command reported. Ctrl-C ends a Transfer `failed`
+  with `ERR_CANCELLED`.
+- `front_end` is the front end that created it (`cli`).
+- Timestamps are RFC 3339 UTC; `finished_at` appears once the Transfer ended.
 
 ## Channel list
 

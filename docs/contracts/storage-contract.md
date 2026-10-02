@@ -32,6 +32,8 @@ squash are discarded, not upgraded: delete the database file and run
 lossless for managed content. Version numbering restarts at each squash;
 versioned migrations resume when the schema freezes for release.
 
+Version 2 adds the `transfers` table to databases already at version 1.
+
 ## Schema
 
 ```sql
@@ -182,7 +184,71 @@ create table upload_progress (
   confirmed_bytes integer not null default 0,
   updated_at text not null
 );
+
+create table transfers (
+  id text primary key,
+  kind text not null,
+  channel_tg_id text not null,
+  source text not null,
+  dest text not null,
+  options text not null default '{}',
+  stage text not null,
+  bytes_done integer not null default 0,
+  bytes_total integer not null default 0,
+  items_done integer not null default 0,
+  items_total integer not null default 0,
+  error_code text not null default '',
+  error_message text not null default '',
+  front_end text not null,
+  owner_token text not null default '',
+  lease_expires_at text not null default '',
+  cancel_requested integer not null default 0,
+  created_at text not null,
+  updated_at text not null,
+  finished_at text not null default ''
+);
+
+create index idx_transfers_stage on transfers(stage);
+create index idx_transfers_created on transfers(created_at);
 ```
+
+## Transfers
+
+`transfers` records every Transfer (ADR 0033), one row per Transfer, written
+by the Transfer Manager (`internal/transfer`) of the process that owns it
+and read by any front end. Rows are local bookkeeping: they are not
+reconstructed from Telegram, and `td scan --full` neither reads nor clears
+them.
+
+- `id` is a random (version 4) UUID, the Transfer ID.
+- `kind` is `upload` (one local file).
+- `channel_tg_id` is the Telegram ID of the drive channel, resolved when the
+  Transfer is submitted; empty when none resolves, and the Transfer then
+  fails with the upload's own error.
+- `source` is the absolute local path; `dest` is the requested remote path,
+  replaced by the canonical path written once the Transfer completes.
+- `options` is a JSON object with what a retry needs besides the paths:
+  `policy` (`fail`, `replace`, `skip`, `rename`), `no_hash`, the
+  presentation (`kind`, `duration_seconds`, `width`, `height`,
+  `supports_streaming`, `thumb_path`), `threads`, `part_size_kb`, and
+  `confirm_replace`. Unset and zero values are omitted.
+- `stage` moves forward only: `queued`, `hashing`, `uploading`,
+  `publishing`, then one terminal stage, `completed` or `failed`. A Transfer
+  cancelled by its owner (Ctrl-C) ends `failed` with `ERR_CANCELLED`.
+- `bytes_done` / `bytes_total` are byte progress; `bytes_total` starts as
+  the source file's size. Stage changes are written at once; byte progress
+  is written at most four times a second per Transfer.
+- `items_done` / `items_total` count the files a Transfer moves (1 for an
+  upload); `items_done` is set when it completes.
+- `error_code` / `error_message` are set when it ends `failed`: the same
+  code and message the creating command reported.
+- `front_end` is the creating front end: `cli`.
+- `owner_token` identifies the owning process's Transfer Manager.
+  `lease_expires_at` is empty and `cancel_requested` is 0: no process
+  leases Transfers or requests their cancellation through the index yet.
+- Timestamps are fixed-width UTC text
+  (`2006-01-02T15:04:05.000000000Z`), so they sort in time order;
+  `finished_at` is empty until the Transfer ends.
 
 ## Operation locks
 

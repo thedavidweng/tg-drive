@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -93,6 +94,9 @@ func runE2EEventLines(t *testing.T, bin, cfgPath, dbPath, statePath string, args
 
 func assertProgressThenCp(t *testing.T, lines []eventLine, progress []string) {
 	t.Helper()
+	lines = slices.DeleteFunc(slices.Clone(lines), func(ev eventLine) bool {
+		return ev.Meta["command"] == "transfer.stage"
+	})
 	if len(lines) != len(progress)+1 {
 		t.Fatalf("got %d event lines, want %d progress + 1 cp", len(lines), len(progress))
 	}

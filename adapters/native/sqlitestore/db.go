@@ -249,6 +249,7 @@ type migration struct {
 // release.
 var migrations = []migration{
 	{version: 1, stmts: []string{schemaSQL}},
+	{version: 2, stmts: []string{transfersSQL}},
 }
 
 // currentVersion reports the highest applied schema version, 0 for a fresh
