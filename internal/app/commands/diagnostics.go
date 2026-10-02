@@ -7,10 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-
 	"github.com/spf13/cobra"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
+	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
 
 // Doctor, doctor path-codec, and config commands.
@@ -101,42 +100,40 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 		Short: "Get config value(s)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, configPath, err := rt.LoadConfig()
-			if err != nil {
-				return r.Error(err)
+			get := service.ConfigGetOptions{ShowSecrets: showSecrets, Confirmed: confirm}
+			if len(args) > 0 {
+				get.Key = args[0]
 			}
-			if showSecrets && !confirm {
-				if rt.JSON() || !stdinIsInteractive() {
-					return r.Error(apperr.New(apperr.ErrConfirmationRequired, "--show-secrets requires --confirm when not running interactively"))
-				}
+			if showSecrets && !confirm && !rt.JSON() && stdinIsInteractive() {
 				fmt.Fprint(os.Stderr, "show secrets? [y/N] ")
 				var ans string
 				_, _ = fmt.Scanln(&ans)
-				if strings.ToLower(ans) != "y" {
-					showSecrets = false
-				}
+				get.Confirmed = strings.ToLower(ans) == "y"
+				get.ShowSecrets = get.Confirmed
 			}
-			if len(args) == 0 {
-				all := config.RedactConfigMap(cfg, showSecrets)
-				if rt.JSON() {
-					return r.Success(all)
-				}
-				out := cmd.OutOrStdout()
-				for _, k := range config.Keys {
-					if v, ok := all[k]; ok {
-						_, _ = fmt.Fprintf(out, "%s: %v\n", k, humanConfigValue(k, v))
-					}
-				}
-				return nil
-			}
-			v, err := config.GetValue(cfg, args[0])
+			view, err := service.GetConfig(rt.Options(), get)
 			if err != nil {
 				return r.Error(err)
 			}
-			if rt.JSON() {
-				return r.Success(map[string]any{args[0]: config.RedactValue(args[0], v, showSecrets), "config_path": configPath})
+			if len(args) == 0 {
+				if rt.JSON() {
+					all := make(map[string]any, len(view.Entries))
+					for _, e := range view.Entries {
+						all[e.Key] = e.Value
+					}
+					return r.Success(all)
+				}
+				out := cmd.OutOrStdout()
+				for _, e := range view.Entries {
+					_, _ = fmt.Fprintf(out, "%s: %v\n", e.Key, humanConfigValue(e.Key, e.Value))
+				}
+				return nil
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", humanConfigValue(args[0], config.RedactValue(args[0], v, showSecrets)))
+			e := view.Entries[0]
+			if rt.JSON() {
+				return r.Success(map[string]any{e.Key: e.Value, "config_path": view.ConfigPath})
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", humanConfigValue(e.Key, e.Value))
 			return nil
 		},
 	}
@@ -148,20 +145,14 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, configPath, err := rt.LoadConfig()
+			data, err := service.SetConfig(rt.Options(), args[0], args[1])
 			if err != nil {
 				return r.Error(err)
 			}
-			if err := config.SetValue(&cfg, args[0], args[1]); err != nil {
-				return r.Error(err)
-			}
-			if err := config.Save(configPath, cfg); err != nil {
-				return r.Error(err)
-			}
 			if rt.JSON() {
-				return r.Success(map[string]string{"key": args[0], "status": "set"})
+				return r.Success(data)
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "set %s\n", args[0])
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "set %s\n", data.Key)
 			return nil
 		},
 	}

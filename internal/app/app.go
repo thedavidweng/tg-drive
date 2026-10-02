@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/internal/app/commands"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
 	"github.com/thedavidweng/tg-drive-cli/internal/output"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
 	"github.com/thedavidweng/tg-drive-cli/internal/version"
@@ -218,9 +217,7 @@ func debugf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, "debug: "+format+"\n", args...)
 }
 
-func (o *runtimeOpts) LoadConfig() (config.Config, string, error) {
-	return service.LoadConfig(o.serviceOptions())
-}
+func (o *runtimeOpts) Options() service.Options { return o.serviceOptions() }
 
 func (o *runtimeOpts) OpenApp(cmd *cobra.Command) (*service.App, func(), error) {
 	return o.open(cmd, false)

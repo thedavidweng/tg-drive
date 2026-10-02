@@ -373,34 +373,20 @@ var Keys = []string{
 	"rate_limit.default_wait", "rate_limit.max_wait_seconds",
 }
 
-// RedactValue returns a display-safe config value.
-func RedactValue(key string, value any, showSecrets bool) any {
-	if showSecrets {
-		return value
-	}
-	switch key {
-	case "telegram.api_hash":
-		return "redacted"
-	case "telegram.phone":
-		if s, ok := value.(string); ok && len(s) > 4 {
-			return s[:2] + strings.Repeat("*", len(s)-4) + s[len(s)-2:]
-		}
-		return "redacted"
-	}
-	return value
+// IsSecret reports whether key holds a value RedactValue hides.
+func IsSecret(key string) bool {
+	return key == "telegram.api_hash" || key == "telegram.phone"
 }
 
-// RedactConfigMap returns all config values with secrets redacted.
-func RedactConfigMap(cfg Config, showSecrets bool) map[string]any {
-	out := make(map[string]any, len(Keys))
-	for _, k := range Keys {
-		v, err := GetValue(cfg, k)
-		if err != nil {
-			continue
-		}
-		out[k] = RedactValue(k, v, showSecrets)
+// RedactValue returns a display-safe config value.
+func RedactValue(key string, value any, showSecrets bool) any {
+	if showSecrets || !IsSecret(key) {
+		return value
 	}
-	return out
+	if s, ok := value.(string); ok && key == "telegram.phone" && len(s) > 4 {
+		return s[:2] + strings.Repeat("*", len(s)-4) + s[len(s)-2:]
+	}
+	return "redacted"
 }
 
 // EnsureSessionDir creates parent dirs for session with secure permissions.

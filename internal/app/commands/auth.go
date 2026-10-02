@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
+	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
 
 // Authentication and root initialization commands.
@@ -27,33 +27,14 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 		Short: "Configure Telegram API credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, configPath, err := rt.LoadConfig()
+			data, err := service.SetupTelegram(rt.Options(), promptTelegram())
 			if err != nil {
 				return r.Error(err)
 			}
-			if err := EnsureTelegramConfig(&cfg, configPath, false); err != nil {
-				return r.Error(err)
-			}
-			// Pre-create the session and database directories so the first
-			// `td auth login` does not fail on a missing data dir.
-			if err := config.EnsureSessionDir(cfg.Storage.SessionPath); err != nil {
-				return r.Error(err)
-			}
-			_, cleanup, err := rt.OpenOfflineApp(cmd)
-			if err != nil {
-				return r.Error(err)
-			}
-			cleanup()
 			if rt.JSON() {
-				return r.Success(map[string]any{
-					"config_path":  configPath,
-					"api_id":       cfg.Telegram.APIID,
-					"db_path":      cfg.Storage.DBPath,
-					"session_path": cfg.Storage.SessionPath,
-					"status":       "configured",
-				})
+				return r.Success(data)
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "saved Telegram API credentials to %s\nnext: td auth login\n", configPath)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "saved Telegram API credentials to %s\nnext: td auth login\n", data.ConfigPath)
 			return nil
 		},
 	}
@@ -70,11 +51,8 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 			"require logging in again.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, configPath, err := rt.LoadConfig()
+			cfg, _, err := service.ConfigureTelegram(rt.Options(), true, promptTelegram())
 			if err != nil {
-				return r.Error(err)
-			}
-			if err := EnsureTelegramConfig(&cfg, configPath, true); err != nil {
 				return r.Error(err)
 			}
 			app, cleanup, err := rt.OpenApp(cmd)
@@ -207,24 +185,19 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 			}
 			defer cleanup()
 			if createCh == createChannelDefault {
-				// Bare --create-channel: derive the title from --channel or
-				// the local root's directory name ("." resolves to the real name).
 				createCh = rt.Channel()
 				if createCh == "" {
-					if abs, err := filepath.Abs(args[0]); err == nil {
-						createCh = filepath.Base(abs)
-					} else {
-						createCh = filepath.Base(strings.TrimRight(args[0], "/"))
-					}
+					createCh = service.DefaultChannelTitle(args[0])
 				}
 			}
 			ctx := context.Background()
 			bindChannel := bindCh
 			if bindCh == bindChannelPick || (createCh == "" && bindCh == "" && rt.Channel() == "") {
-				chs, err := app.ListChannels(ctx, false)
+				choices, err := app.InitChoices(ctx, args[0])
 				if err != nil {
 					return r.Error(err)
 				}
+				chs := choices.Channels
 				if rt.JSON() {
 					return r.Error(apperr.New(apperr.ErrChannelNotFound, "select a channel").WithDetails(map[string]any{"channels": channelsToMap(chs)}))
 				}

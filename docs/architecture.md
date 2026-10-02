@@ -21,6 +21,11 @@ cmd/td
   `TD_FAKE_TELEGRAM=1`), and seeds cached channel access hashes. Front ends
   call it and pass their own diagnostics logger; nothing else opens the
   database or Telegram for a command.
+- Product logic a front end would otherwise copy lives in `internal/service`
+  too: the upload dry-run plan, Telegram credential setup, config get and
+  set (the service decides what is redacted), and the channel choices for
+  init. Commands only collect input and render results; interactive answers
+  reach the service as values or callbacks.
 - `adapters/native/telegramgotd` is the only package that imports `github.com/gotd/td`.
 - `adapters/native/sqlitestore` implements the file index, locks, and
   migrations, and owns the File row lifecycle: every `files` status
@@ -99,7 +104,7 @@ td cp
 | `internal/app/commands` | Command handlers |
 | `core/errors` | typed errors and exit code mapping |
 | `internal/output` | human/JSON rendering |
-| `internal/config` | config/env/path loading and redaction |
+| `internal/config` | config/env/path loading and redaction rules |
 | `adapters/native/sqlitestore` | migrations, repositories, File row lifecycle, transactions, locks |
 | `core/fsmodel` | canonical paths and virtual tree rules |
 | `core/pathcodec` | slug and hashtag generation |
@@ -107,4 +112,4 @@ td cp
 | `core/publisher` | rendering, manifest/inventory records, index commit |
 | `core/telegram` | interfaces and fake adapter |
 | `adapters/native/telegramgotd` | gotd/td adapter |
-| `internal/service` | composition root (`Open`) and use cases: upload, scan, download, move, delete, repair |
+| `internal/service` | composition root (`Open`) and use cases: upload (and its dry-run plan), scan, download, move, delete, repair, Telegram setup, config get/set, init channel choices |
