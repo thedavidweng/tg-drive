@@ -1,6 +1,6 @@
 # 0034: One Telegram session per front end, guarded by a Session lock
 
-Status: Proposed.
+Status: Accepted.
 
 Context: Telegram may answer `AUTH_KEY_DUPLICATED` and invalidate the
 login when one authorization key holds parallel main-DC connections from

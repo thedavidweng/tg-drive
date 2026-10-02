@@ -26,17 +26,23 @@ scan, move, delete, repair, and crash-recovery paths.
 
 Binary-level end-to-end tests live in `internal/app`
 (`e2e_lifecycle_test.go`, `e2e_album_test.go`, `e2e_hardening_test.go`,
-`e2e_events_test.go`, `resume_cli_test.go`, `app_test.go`). They build the
-real `td` binary and drive the full user journey — login, init, channels,
-cp, ls, tree, get (single and recursive), mv, rm, share, scan, status,
-doctor, config get/set, `doctor path-codec`, logout — asserting JSON
-envelopes, the `cp --events` NDJSON stream byte for byte, contract exit
-codes, human output, `--verbose` diagnostics, and private file modes against
-the fake.
+`e2e_events_test.go`, `e2e_session_lock_test.go`, `resume_cli_test.go`,
+`app_test.go`). They build the real `td` binary and drive the full user
+journey — login, init, channels, cp, ls, tree, get (single and recursive),
+mv, rm, share, scan, status, doctor, config get/set, `doctor path-codec`,
+logout — asserting JSON envelopes, the `cp --events` NDJSON stream byte for
+byte, contract exit codes, human output, `--verbose` diagnostics, the Session
+lock, and private file modes against the fake.
 
 The Telegram rate-limit middleware (flood waits, transient-error retries) is
 below the fake, so its retry bounds are covered by isolated tests in
-`adapters/native/telegramgotd/ratelimit_test.go`.
+`adapters/native/telegramgotd/ratelimit_test.go`. The atomic gotd session
+storage is below the fake too; `session_test.go` beside it pins that readers
+never see a torn session.
+
+The Session lock wraps the fake as well as the real client, so the binary
+E2E proves a second process waits and fails with `ERR_SESSION_LOCKED` while
+`td ls` runs at once.
 
 ## Manual tests
 

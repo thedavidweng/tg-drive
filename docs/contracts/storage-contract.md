@@ -205,6 +205,22 @@ taken over, the operation aborts instead of continuing unprotected. Locks
 are released on a background context, so cancelling a command (Ctrl-C) cannot
 strand a path for the remaining TTL.
 
+## Session file and Session lock
+
+The Telegram session file (`storage.session_path`) is replaced atomically:
+the new session is written to a temp file in the same directory, synced, made
+owner-only, and renamed over the old one, so a crash leaves either the old or
+the new session, never a partial one.
+
+The Session lock is an exclusive OS file lock (`flock` on Unix, `LockFileEx`
+on Windows) on `<session_path>.lock`. A process takes it on its first
+Telegram call and holds it until it closes the client; the lock file itself
+is never deleted. A process that finds it held polls until
+`locks.session_wait_seconds` passes, then fails with `ERR_SESSION_LOCKED`.
+Commands that read only the local index never take it. Each front end
+configures its own session path, so the CLI and another front end do not
+share one lock.
+
 ## Directory GC
 
 When a file leaves `active`, clear `files.node_id` in the same transaction. Then remove derived directory nodes that have no active descendants. Directory GC runs as a single transaction.

@@ -65,6 +65,9 @@ type UploadConfig struct {
 
 type LocksConfig struct {
 	TTLSeconds int `toml:"ttl_seconds"`
+	// SessionWaitSeconds bounds how long a process waits for another
+	// process's Session lock before failing with ERR_SESSION_LOCKED.
+	SessionWaitSeconds int `toml:"session_wait_seconds"`
 }
 
 type RateLimitConfig struct {
@@ -115,7 +118,7 @@ func Defaults() Config {
 			PremiumUploadBytes: 4294967296,
 		},
 		Upload:    UploadConfig{Threads: 4, PartSizeKB: 0},
-		Locks:     LocksConfig{TTLSeconds: 900},
+		Locks:     LocksConfig{TTLSeconds: 900, SessionWaitSeconds: 30},
 		RateLimit: RateLimitConfig{DefaultWait: false, MaxWaitSeconds: 300},
 	}
 }
@@ -263,6 +266,8 @@ func GetValue(cfg Config, key string) (any, error) {
 		return cfg.Limits.PremiumUploadBytes, nil
 	case "locks.ttl_seconds":
 		return cfg.Locks.TTLSeconds, nil
+	case "locks.session_wait_seconds":
+		return cfg.Locks.SessionWaitSeconds, nil
 	default:
 		return nil, apperr.New(apperr.ErrUsage, fmt.Sprintf("unknown config key: %s", key))
 	}
@@ -336,6 +341,8 @@ func SetValue(cfg *Config, key, value string) error {
 		return setPositiveInt64(&cfg.Limits.PremiumUploadBytes, key, value)
 	case "locks.ttl_seconds":
 		return setPositiveInt(&cfg.Locks.TTLSeconds, key, value)
+	case "locks.session_wait_seconds":
+		return setPositiveInt(&cfg.Locks.SessionWaitSeconds, key, value)
 	default:
 		return apperr.New(apperr.ErrUsage, fmt.Sprintf("unknown config key: %s", key))
 	}
@@ -369,7 +376,7 @@ var Keys = []string{
 	"delete.mode",
 	"limits.free_upload_bytes", "limits.premium_upload_bytes",
 	"upload.threads", "upload.part_size_kb",
-	"locks.ttl_seconds",
+	"locks.ttl_seconds", "locks.session_wait_seconds",
 	"rate_limit.default_wait", "rate_limit.max_wait_seconds",
 }
 

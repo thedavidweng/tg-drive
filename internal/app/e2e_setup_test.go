@@ -265,7 +265,7 @@ func TestE2EConfigRedaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 18 || lines[0] != "telegram.api_id: 12345" || lines[1] != "telegram.api_hash: redacted" ||
+	if len(lines) != 19 || lines[0] != "telegram.api_id: 12345" || lines[1] != "telegram.api_hash: redacted" ||
 		lines[2] != "telegram.phone: +1********67" || lines[len(lines)-1] != "rate_limit.max_wait_seconds: 300" {
 		t.Fatalf("human config get = %q", stdout)
 	}

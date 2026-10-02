@@ -41,6 +41,7 @@ const (
 	ErrTelegramRPC                = "ERR_TELEGRAM_RPC"
 	ErrDB                         = "ERR_DB"
 	ErrOperationLocked            = "ERR_OPERATION_LOCKED"
+	ErrSessionLocked              = "ERR_SESSION_LOCKED"
 	ErrRepairRequired             = "ERR_REPAIR_REQUIRED"
 	ErrSlugCollision              = "ERR_SLUG_COLLISION"
 	ErrConfirmationRequired       = "ERR_CONFIRMATION_REQUIRED"
@@ -121,9 +122,9 @@ func classify(code string) (Category, bool) {
 	case ErrCaptionTooLong:
 		return CatAPI, false
 	case ErrDB, ErrScanFailed, ErrManifestInvalid, ErrAlbumInventoryInvalid,
-		ErrScanIncomplete, ErrOperationLocked,
+		ErrScanIncomplete, ErrOperationLocked, ErrSessionLocked,
 		ErrRepairRequired, ErrOrphanedUpload:
-		return CatInternal, code == ErrOperationLocked || code == ErrScanIncomplete
+		return CatInternal, code == ErrOperationLocked || code == ErrSessionLocked || code == ErrScanIncomplete
 	case ErrConfirmationRequired:
 		return CatSafety, false
 	default:
@@ -151,7 +152,7 @@ func ExitCode(err error) int {
 		ErrDiscussionMissing:
 		return 4
 	case ErrDB, ErrScanFailed, ErrManifestInvalid, ErrAlbumInventoryInvalid,
-		ErrScanIncomplete, ErrOperationLocked,
+		ErrScanIncomplete, ErrOperationLocked, ErrSessionLocked,
 		ErrRepairRequired, ErrCaptionTooLong, ErrOrphanedUpload:
 		return 5
 	case ErrConfirmationRequired:

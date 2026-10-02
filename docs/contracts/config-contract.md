@@ -34,6 +34,7 @@ part_size_kb = 0
 
 [locks]
 ttl_seconds = 900
+session_wait_seconds = 30
 
 [rate_limit]
 default_wait = false
@@ -49,6 +50,10 @@ strategy = "single"
 Every key above except `[[roots]]` is readable with `td config get <section.key>`
 and writable with `td config set`, except `hash.algorithm` (always `blake3`). Integer limits must be positive
 (`caption.margin_utf16_units` and `upload.part_size_kb` may be 0).
+
+`locks.session_wait_seconds` bounds how long a command that needs Telegram
+waits for another process to release the Session lock on the same session
+file before failing with `ERR_SESSION_LOCKED`.
 
 Config, session, and database files are kept readable by the current user
 only (0600 on POSIX, an owner-only DACL on Windows).

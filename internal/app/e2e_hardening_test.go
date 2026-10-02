@@ -209,7 +209,7 @@ func TestE2EConfigGetListsEveryKey(t *testing.T) {
 	for _, k := range []string{
 		"caption.safe_media_caption_utf16_units", "caption.safe_text_message_utf16_units", "caption.margin_utf16_units",
 		"limits.free_upload_bytes", "limits.premium_upload_bytes",
-		"locks.ttl_seconds", "upload.threads", "upload.part_size_kb",
+		"locks.ttl_seconds", "locks.session_wait_seconds", "upload.threads", "upload.part_size_kb",
 		"rate_limit.default_wait", "rate_limit.max_wait_seconds",
 	} {
 		if _, ok := all[k]; !ok {

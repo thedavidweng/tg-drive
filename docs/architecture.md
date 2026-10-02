@@ -18,7 +18,9 @@ cmd/td
 - `internal/service` owns command behavior and depends on `core` ports, not on `gotd/td`.
 - `service.Open` is the one composition root (ADR 0032). It loads config,
   opens the database and the Telegram client (the fake when
-  `TD_FAKE_TELEGRAM=1`), and seeds cached channel access hashes. Front ends
+  `TD_FAKE_TELEGRAM=1`), wraps either client in the Session lock
+  (`adapters/native/sessionlock`, ADR 0034), and seeds cached channel access
+  hashes. Front ends
   call it and pass their own diagnostics logger; nothing else opens the
   database or Telegram for a command.
 - Product logic a front end would otherwise copy lives in `internal/service`

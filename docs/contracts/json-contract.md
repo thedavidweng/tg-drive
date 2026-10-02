@@ -57,6 +57,27 @@ All JSON command output uses an envelope.
 }
 ```
 
+`ERR_SESSION_LOCKED` (category `internal`, retryable, exit code 5) means
+another process holds the Session lock on the same Telegram session file and
+did not release it within `locks.session_wait_seconds`. `details.wait_seconds`
+is the bound that passed. Commands that read only the local index never take
+the Session lock, so they never return this code.
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "ERR_SESSION_LOCKED",
+    "message": "the Telegram session is in use by another td process; waited 30s, retry when it finishes",
+    "category": "internal",
+    "retryable": true,
+    "details": {
+      "wait_seconds": 30
+    }
+  }
+}
+```
+
 `ERR_DIRECTORY_MOVE_UNSUPPORTED` and `ERR_DIRECTORY_DELETE_UNSUPPORTED` carry
 the offending remote directory in `details.path`.
 
