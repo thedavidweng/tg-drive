@@ -7,14 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/localfs"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
@@ -70,26 +68,6 @@ func (a *App) publisher() *publisher.Publisher {
 func isMessageGone(err error) bool {
 	var nf *telegram.MessageNotFoundError
 	return errors.As(err, &nf)
-}
-
-func (a *App) recordPendingMessage(ctx context.Context, fileID int64, messageID int, now string) error {
-	if err := a.DB.RecordMessage(ctx, fileID, messageID, now); err != nil {
-		return apperr.Wrap(apperr.ErrDB, "record uploaded message", err)
-	}
-	return nil
-}
-
-// abandonUploadedMedia runs after media exists on Telegram but publish/index
-// failed. It deletes the media when possible; otherwise the pending row is
-// marked orphaned with message_id so RepairPending will not re-upload.
-func (a *App) abandonUploadedMedia(ctx context.Context, tgChID, fileID int64, messageID int, now string) (orphaned bool) {
-	delErr := a.TG.DeleteMessage(ctx, tgChID, messageID)
-	if delErr == nil || isMessageGone(delErr) {
-		_ = a.DB.DiscardUpload(ctx, fileID)
-		return false
-	}
-	_ = a.DB.MarkOrphaned(ctx, fileID, messageID, now)
-	return true
 }
 
 // ConflictPolicy for uploads/downloads.
@@ -266,16 +244,8 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 	if err := pres.Validate(); err != nil {
 		return nil, err
 	}
-	info, err := a.files().Stat(ctx, localPath)
-	if err != nil {
-		return nil, apperr.New(apperr.ErrLocalNotFound, fmt.Sprintf("local file %q not found", localPath))
-	}
-	if info.IsDir {
-		return nil, apperr.New(apperr.ErrUsage, "use --recursive for directories")
-	}
-	limit := a.uploadLimit(ctx)
-	if info.Size > limit {
-		return nil, apperr.New(apperr.ErrFileTooLarge, fmt.Sprintf("file exceeds %d bytes", limit))
+	if _, err := a.checkUploadSource(ctx, localPath, "", false); err != nil {
+		return nil, err
 	}
 	// cp convention: a destination that is "/" or ends with "/" is a
 	// directory; keep the source file's basename.
@@ -313,75 +283,41 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 		}
 	}
 
-	// Classify the destination's current occupant. A pending row is a failed
-	// or crashed upload, not a live file: it is adoptable on retry (or
-	// superseded by --replace) instead of wedging the path.
-	activeExists, pendingAdoptable, err := a.destOccupancy(ctx, channelID, dest)
+	out, err := a.runUpload(ctx, uploadRun{
+		members: []uploadMember{{localPath: localPath, dest: dest, pres: pres, humanCaption: humanCaption}},
+		policy:  policy,
+		noHash:  noHash,
+	})
 	if err != nil {
 		return nil, err
 	}
-	resolvedDest, keep, err := applyUploadPolicy(dest, policy, activeExists, true, active,
-		"use --replace, --skip-existing, or --auto-rename")
-	if err != nil {
-		return nil, err
-	}
-	if !keep {
+	if len(out.sent) == 0 {
 		return &UploadResult{Path: dest, Skipped: true}, nil
 	}
-	dest = resolvedDest
-
-	// File/dir invariants always apply; the destination itself is excluded
-	// when this upload replaces or adopts whatever sits there.
-	supersede := policy == ConflictReplace || pendingAdoptable
-	if err := fsmodel.CheckUploadConflict(dest, uploadCheckSet(active, dest, supersede)); err != nil {
-		return nil, err
+	sent := out.sent[0]
+	data := &UploadResult{
+		Path:      sent.dest,
+		ChannelID: tgIDStr,
+		MessageID: sent.messageID,
+		Size:      sent.size,
+		Hash:      sent.hash,
+		Resumed:   sent.resumed,
 	}
-
-	var replaceFileID int64
-	var oldMsgID, oldManifestID sql.NullInt64
-	var oldManifestChat string
-	if policy == ConflictReplace {
-		target, found, err := a.DB.ActiveByPath(ctx, channelID, dest)
-		if err != nil {
-			return nil, apperr.Wrap(apperr.ErrDB, "lookup replace target", err)
-		}
-		if found {
-			replaceFileID, oldMsgID, oldManifestID, oldManifestChat = target.ID, target.MessageID, target.ManifestMsgID, target.ManifestChat
-		}
+	if sent.manifestMsgID > 0 {
+		data.ManifestMessageID = &sent.manifestMsgID
 	}
-
-	var data *UploadResult
-	lockErr := a.withLocks(ctx, []string{sqlitestore.LockKey(channelID, dest)}, func(ctx context.Context) error {
-		var err error
-		data, err = a.uploadLocked(ctx, uploadLockedArgs{
-			localPath:       localPath,
-			dest:            dest,
-			policy:          policy,
-			noHash:          noHash,
-			size:            info.Size,
-			channelID:       channelID,
-			tgChID:          tgChID,
-			tgIDStr:         tgIDStr,
-			replaceFileID:   replaceFileID,
-			oldMsgID:        oldMsgID,
-			oldManifestID:   oldManifestID,
-			oldManifestChat: oldManifestChat,
-			pres:            pres,
-			humanCaption:    humanCaption,
-		})
-		return err
-	})
-	if lockErr != nil {
-		return nil, lockErr
+	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
+		data.InviteLink = link
 	}
 	return data, nil
 }
 
+// uploadLockedArgs describes a file superseded by --replace, for
+// retireReplacedFile.
 type uploadLockedArgs struct {
 	localPath       string
 	dest            string
 	policy          ConflictPolicy
-	noHash          bool
 	size            int64
 	channelID       int64
 	tgChID          int64
@@ -394,177 +330,6 @@ type uploadLockedArgs struct {
 	// humanCaption is the source text kept above the rendered caption block
 	// (imports only); empty renders the block alone.
 	humanCaption string
-}
-
-func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (*UploadResult, error) {
-	dest, localPath, channelID, tgChID, tgIDStr := args.dest, args.localPath, args.channelID, args.tgChID, args.tgIDStr
-	now := time.Now().UTC().Format(time.RFC3339)
-	// Machine records live in the discussion group's comment threads
-	// (ADR 0018); fail before uploading any bytes when it is not linked.
-	manifestChat, err := a.discussionChatID(ctx, channelID)
-	if err != nil {
-		return nil, err
-	}
-	contentHash, err := a.hashUpload(ctx, localPath, args.noHash, args.size)
-	if err != nil {
-		return nil, err
-	}
-	size := args.size
-	bigFile := size > telegram.ResumableBigFileBytes
-
-	// Resolve the pending row under the lock, now that the content identity
-	// is known: adopt on match (plain retry resumes the interrupted parts),
-	// supersede under --replace, block otherwise.
-	pending, err := a.lookupPending(ctx, channelID, dest)
-	if err != nil {
-		return nil, err
-	}
-	adoptFileID := int64(0)
-	if pending.rowID > 0 {
-		switch {
-		case args.policy == ConflictReplace:
-			// Supersede the pending row and its stale upload state; roll back
-			// a media message a crash left recorded but unpublished.
-			if pending.msgID.Valid {
-				_ = a.TG.DeleteMessage(ctx, tgChID, int(pending.msgID.Int64))
-			}
-			if err := a.DB.DiscardUpload(ctx, pending.rowID); err != nil {
-				return nil, apperr.Wrap(apperr.ErrDB, "supersede pending row", err)
-			}
-		case pending.msgID.Valid:
-			// Crash window: the media exists on Telegram but was never
-			// published. Re-uploading here would duplicate it.
-			return nil, errUnpublishedUpload(dest, pending.msgID.Int64)
-		case !pending.matches(size, contentHash):
-			return nil, apperr.New(apperr.ErrPathExists,
-				fmt.Sprintf("an interrupted upload of different content occupies %q (use --replace to supersede it)", dest))
-		default:
-			// Adopt the pending row: reusing its id reuses its resumable
-			// state key, so only unconfirmed parts are re-sent.
-			adoptFileID = pending.rowID
-		}
-	}
-
-	existingSlugs, err := a.loadExistingSlugs(ctx, channelID)
-	if err != nil {
-		return nil, err
-	}
-	// Render the caption exactly once and thread it into the publish step, so
-	// the caption on Telegram and the tags in the index cannot diverge.
-	meta, capRes, tags, slugMaps, err := a.renderUploadMetaWithCaption(dest, localPath, size, contentHash, now, existingSlugs, args.humanCaption)
-	if err != nil {
-		return nil, err
-	}
-	displayName := meta.DisplayName
-
-	fileID, resumed, err := a.stagePendingRow(ctx, channelID, dest, localPath, size, contentHash, meta.MIME, now, adoptFileID)
-	if err != nil {
-		return nil, err
-	}
-
-	threads := a.Cfg.Upload.Threads
-	if threads <= 0 {
-		threads = 4
-	}
-	partSize := a.Cfg.Upload.PartSizeKB * 1024
-	req := telegram.UploadRequest{
-		ChannelID:      tgChID,
-		Caption:        capRes.Caption,
-		FileName:       displayName,
-		MIME:           meta.MIME,
-		Size:           size,
-		ContentHash:    contentHash,
-		Path:           localPath,
-		Threads:        threads,
-		PartSize:       partSize,
-		ResumableKey:   fmt.Sprintf("file:%d", fileID),
-		ResumableStore: a.DB,
-	}
-	args.pres.apply(&req)
-	if args.pres.ThumbPath != "" {
-		tf, err := a.files().Open(ctx, args.pres.ThumbPath)
-		if err != nil {
-			return nil, apperr.Wrap(apperr.ErrLocalNotFound, "open thumbnail", err)
-		}
-		thumb, err := io.ReadAll(tf)
-		_ = tf.Close()
-		if err != nil {
-			return nil, apperr.Wrap(apperr.ErrLocalNotFound, "read thumbnail", err)
-		}
-		req.Thumb = thumb
-	}
-	if !bigFile {
-		// Small files stream from a reader; the resumable path reads by offset
-		// and never holds a reader for the upload's duration.
-		f, err := a.files().Open(ctx, localPath)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = f.Close() }()
-		req.Reader = f
-	}
-	if a.Progress != nil {
-		req.Progress = a.Progress
-	}
-	up, err := a.TG.UploadMedia(ctx, req)
-	if err != nil {
-		// Keep pending state only for resumable big uploads; small files and
-		// permission errors do not benefit from resuming.
-		if !bigFile {
-			_ = a.DB.DiscardUpload(ctx, fileID)
-		}
-		return nil, telegram.MapError(err)
-	}
-	// Persist message_id before any further Telegram or DB work so a crash
-	// or index failure cannot look like "never uploaded" to RepairPending.
-	if recErr := a.recordPendingMessage(ctx, fileID, up.MessageID, now); recErr != nil {
-		if a.abandonUploadedMedia(ctx, tgChID, fileID, up.MessageID, now) {
-			return nil, apperr.New(apperr.ErrOrphanedUpload, fmt.Sprintf("upload reached Telegram message %d but could not be recorded; run td repair --orphaned", up.MessageID))
-		}
-		return nil, recErr
-	}
-	pubRes, pubErr := a.publisher().Publish(ctx, publisher.PublishRequest{
-		ChannelRowID:   channelID,
-		ChannelID:      tgChID,
-		FileID:         fileID,
-		MessageID:      up.MessageID,
-		Meta:           meta,
-		ExistingSlugs:  existingSlugs,
-		SetUploadedAt:  true,
-		ReplaceFileID:  args.replaceFileID,
-		ManifestChatID: manifestChat,
-		Rendered:       &capRes,
-		Tags:           tags,
-		SlugMaps:       slugMaps,
-	})
-	if pubErr != nil {
-		if a.abandonUploadedMedia(ctx, tgChID, fileID, up.MessageID, now) {
-			return nil, apperr.New(apperr.ErrOrphanedUpload, fmt.Sprintf("upload reached Telegram message %d but could not be completed or rolled back; run td repair --orphaned", up.MessageID))
-		}
-		return nil, pubErr
-	}
-
-	var manifestMsgID *int
-	if pubRes.ManifestMsgID > 0 {
-		manifestMsgID = &pubRes.ManifestMsgID
-	}
-	if args.replaceFileID > 0 {
-		a.retireReplacedFile(ctx, channelID, tgChID, dest, displayName, args)
-	}
-
-	data := &UploadResult{
-		Path:              dest,
-		ChannelID:         tgIDStr,
-		MessageID:         up.MessageID,
-		ManifestMessageID: manifestMsgID,
-		Size:              size,
-		Hash:              contentHash,
-		Resumed:           resumed,
-	}
-	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
-		data.InviteLink = link
-	}
-	return data, nil
 }
 
 // retireReplacedFile redacts the Telegram records of the file a --replace

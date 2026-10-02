@@ -3,7 +3,8 @@
 ## Status
 
 Accepted. Implements issue #26 on top of the album inventory of ADR 0013 and
-the typed-request model of ADR 0016.
+the typed-request model of ADR 0016. Crash-window and lock-scope policy
+refined by ADR 0027.
 
 ## Context
 

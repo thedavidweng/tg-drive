@@ -30,7 +30,10 @@ cmd/td
 
 ## Command flow
 
-Example upload:
+Example upload. Single-file `td cp`, multi-file and recursive `td cp`, and
+`td import saved` all run the one upload pipeline
+(`internal/service/upload_pipeline.go`, ADR 0027); a single file is a
+one-member run:
 
 ```text
 td cp
@@ -38,16 +41,19 @@ td cp
   resolve config
   open DB
   resolve channel
-  normalize path
-  acquire operation locks
-  insert pending row
-  compute hash/mime
-  render manifest/caption
-  upload media
-  persist message_id on the pending row
-  send manifest reply if needed
-  commit active DB state
-  on any later failure: delete media or mark orphaned
+  normalize paths
+  plan every member: conflict policy, file/dir invariants (no writes)
+  acquire operation locks for every destination
+  check the discussion group, read thumbnails
+  per member: compute hash/mime, resolve the pending row (adopt, supersede,
+    or refuse), render caption, stage the pending row
+  per send unit (a lone member, or a media group of up to 10 of one kind):
+    upload media
+    persist message_id on the pending rows
+    send the td-album:v1 inventory (groups) or manifest reply (lone member)
+    commit active DB state
+    retire a --replace target
+    on any failure after upload: delete the unit's media or mark orphaned
   release locks
   render output
 ```
@@ -57,7 +63,7 @@ td cp
 - Before Telegram upload: drop the pending row (small files) or leave it for
   resume (big files). A retry to the same destination with matching content
   identity adopts the pending row and sends only unconfirmed parts.
-- After Telegram upload: `message_id` is recorded immediately. Publish/index failure deletes the media when possible; otherwise the row is `orphaned` so `td repair --pending` will not upload a second copy.
+- After Telegram upload: `message_id` is recorded immediately. A record, inventory, or publish/index failure rolls back the whole send unit (single message or media group): media is deleted when possible; otherwise the row is `orphaned` so `td repair --pending` will not upload a second copy, and the command fails with `ERR_ORPHANED_UPLOAD`.
 - After a successful media delete or tombstone: the local row is `deleted` even if the manifest reply cannot be redacted.
 - DB write failure after a Telegram edit: run `td scan --full` to reconcile.
 

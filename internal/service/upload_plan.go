@@ -13,12 +13,9 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
-// Shared planning helpers for the two upload paths: single-file uploadLocked
-// and multi-file planAlbumMember. Planning is everything that happens before
-// bytes move to Telegram: destination classification, hashing, pending-row
-// reconciliation, and caption rendering. Both paths must classify and stage
-// identically or a retried album member and a retried single upload would
-// diverge in behavior.
+// Planning helpers of the upload pipeline (upload_pipeline.go) and of import
+// destination planning: destination classification, hashing, pending-row
+// reconciliation, and caption rendering.
 
 // destOccupancy classifies what occupies the destination: an active row
 // blocks per conflict policy; a message-less pending row is a failed upload
@@ -181,7 +178,7 @@ func (a *App) stagePendingRow(ctx context.Context, channelRowID int64, dest, loc
 		return 0, false, apperr.Wrap(apperr.ErrDB, "insert pending", err)
 	}
 	if adoptFileID > 0 {
-		if st, lerr := a.DB.LoadUploadState(ctx, fmt.Sprintf("file:%d", adoptFileID)); lerr == nil && st != nil && st.ConfirmedBytes > 0 {
+		if st, lerr := a.DB.LoadUploadState(ctx, resumableKey(adoptFileID)); lerr == nil && st != nil && st.ConfirmedBytes > 0 {
 			return fileID, true, nil
 		}
 	}
@@ -213,4 +210,10 @@ func (a *App) renderUploadMetaWithCaption(dest, localPath string, size int64, co
 		return meta, capRes, nil, nil, err
 	}
 	return meta, capRes, tags, slugMaps, nil
+}
+
+// resumableKey is the upload-state key of a file row: retries that adopt the
+// row resume its confirmed parts.
+func resumableKey(fileID int64) string {
+	return fmt.Sprintf("file:%d", fileID)
 }

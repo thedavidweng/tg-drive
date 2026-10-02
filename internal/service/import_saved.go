@@ -717,47 +717,29 @@ func (a *App) publishImported(ctx context.Context, channelID, tgChID int64, mani
 // caption on the first member, one td-album:v1 inventory, groups split at
 // Telegram's member limit.
 func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64, manifestChat string, opts ImportSavedOptions, unit *importUnit, publish []*stagedItem, targets map[string]importTarget) error {
-	sources := make([]albumSource, 0, len(publish))
+	members := make([]uploadMember, 0, len(publish))
 	for i, st := range publish {
-		src := albumSource{localPath: st.local, dest: st.item.Path, pres: &publish[i].pres}
+		m := uploadMember{localPath: st.local, dest: st.item.Path, pres: st.pres}
 		if i == 0 {
-			src.humanCaption = unit.caption
+			m.humanCaption = unit.caption
 		}
-		sources = append(sources, src)
+		members = append(members, m)
 	}
-	batch, failures, err := a.planAlbumBatch(ctx, sources, opts.Policy, false, publish[0].pres, opts.ContinueErr)
-	if err != nil {
+	out, err := a.runUpload(ctx, uploadRun{members: members, policy: opts.Policy, album: true, lenient: opts.ContinueErr})
+	// Lenient failures are reported by source path; map them back onto their
+	// items so the JSON stays per-item.
+	if out != nil {
 		for _, st := range publish {
-			st.item.Action = "fail"
-			st.item.Error = err.Error()
-			a.emitImportItem(opts, st.item)
-			a.removeStagedIfNoPending(ctx, channelID, st)
-		}
-		return err
-	}
-	// planAlbumBatch reports lenient failures by source path; map them back
-	// onto their items so the JSON stays per-item.
-	for _, st := range publish {
-		for _, f := range failures {
-			if f.localPath == st.local {
-				st.item.Action = "fail"
-				st.item.Error = f.err.Error()
-				a.emitImportItem(opts, st.item)
-				a.removeStagedIfNoPending(ctx, channelID, st)
+			for _, f := range out.failures {
+				if f.localPath == st.local {
+					st.item.Action = "fail"
+					st.item.Error = f.err.Error()
+					a.emitImportItem(opts, st.item)
+					a.removeStagedIfNoPending(ctx, channelID, st)
+				}
 			}
 		}
 	}
-	if len(batch.members) == 0 {
-		for _, st := range publish {
-			a.removeStagedIfNoPending(ctx, channelID, st)
-		}
-		return nil
-	}
-	_, tgIDStr, err := a.channelID(ctx)
-	if err != nil {
-		return err
-	}
-	data, err := a.runAlbumBatch(ctx, batch, channelID, tgChID, tgIDStr)
 	if err != nil {
 		for _, st := range publish {
 			if st.item.Action == "import" {
@@ -769,8 +751,14 @@ func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64,
 		}
 		return err
 	}
+	if len(out.sent) == 0 {
+		for _, st := range publish {
+			a.removeStagedIfNoPending(ctx, channelID, st)
+		}
+		return nil
+	}
 	byPath := map[string]int{}
-	for _, g := range data.Albums {
+	for _, g := range out.albums {
 		for i, p := range g.Paths {
 			if i < len(g.MessageIDs) {
 				byPath[p] = g.MessageIDs[i]
