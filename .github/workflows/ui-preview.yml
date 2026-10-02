@@ -48,7 +48,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           sudo apt-get update
-          sudo apt-get install -y fonts-noto-cjk
+          sudo apt-get install -y fonts-noto-cjk ffmpeg
           npx playwright install --with-deps chromium
       - name: Record the scenes
         env:
