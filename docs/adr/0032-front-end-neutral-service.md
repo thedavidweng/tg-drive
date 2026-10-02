@@ -1,6 +1,6 @@
 # 0032: Front-end-neutral service layer
 
-Status: Proposed.
+Status: Accepted.
 
 Context: Some product rules live only in `internal/app/commands`. These
 include the ADR 0003 confirmation gates, the ADR 0006 channel picker data,
