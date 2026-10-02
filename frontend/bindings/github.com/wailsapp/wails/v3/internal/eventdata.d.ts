@@ -15,7 +15,10 @@ declare module "@wailsio/runtime" {
             "auth.prompt": gui$0.AuthPrompt;
             "directory-changed": gui$0.DirectoryChanged;
             "files-dropped": gui$0.FilesDropped;
+            "import.item": gui$0.ItemEvent;
+            "import.prompt": gui$0.ImportPrompt;
             "omarchy:theme-changed": gui$0.OmarchyTheme;
+            "repair.item": gui$0.ItemEvent;
             "scan-progress": gui$0.ScanProgress;
             "transfer-progress": gui$0.Transfer;
             "transfer-removed": gui$0.TransferRemoved;

@@ -22,9 +22,19 @@ import (
 // an index it did not write.
 func seedDrive(t *testing.T, files map[string]string) {
 	t.Helper()
+	seedDriveEnv(t, files, nil)
+}
+
+// seedDriveEnv is seedDrive plus an after hook that runs once the seeding
+// front end is closed. The hook gets the fake Telegram's state path, so a
+// test can open its own persistent fake client and seed what the CLI has
+// no command for (Saved Messages, unmanaged channel messages).
+func seedDriveEnv(t *testing.T, files map[string]string, after func(statePath string)) {
+	t.Helper()
 	dir := t.TempDir()
+	statePath := filepath.Join(dir, "fake.json")
 	t.Setenv("TD_FAKE_TELEGRAM", "1")
-	t.Setenv("TD_FAKE_TELEGRAM_STATE", filepath.Join(dir, "fake.json"))
+	t.Setenv("TD_FAKE_TELEGRAM_STATE", statePath)
 	t.Setenv("TD_CONFIG", filepath.Join(dir, "config.toml"))
 	t.Setenv("TD_DB", filepath.Join(dir, "td.db"))
 	t.Setenv("TD_SESSION", filepath.Join(dir, "session.json"))
@@ -33,28 +43,33 @@ func seedDrive(t *testing.T, files map[string]string) {
 	t.Setenv("TD_PHONE", "+1000")
 	ctx := context.Background()
 
-	app, closeApp, err := service.Open(service.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeApp()
-	if _, err := app.AuthLogin(ctx,
-		func(telegram.CodePrompt) (string, error) { return "12345", nil },
-		func() (string, error) { return "", nil }, telegram.LoginOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := app.InitRoot(ctx, t.TempDir(), "", "Drive", ""); err != nil {
-		t.Fatal(err)
-	}
-	src := t.TempDir()
-	for remote, body := range files {
-		local := filepath.Join(src, filepath.Base(remote))
-		if err := os.WriteFile(local, []byte(body), 0o600); err != nil {
+	func() {
+		app, closeApp, err := service.Open(service.Options{})
+		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := app.UploadFile(ctx, local, remote, service.ConflictFail, false, service.UploadOptions{}); err != nil {
+		defer closeApp()
+		if _, err := app.AuthLogin(ctx,
+			func(telegram.CodePrompt) (string, error) { return "12345", nil },
+			func() (string, error) { return "", nil }, telegram.LoginOptions{}); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := app.InitRoot(ctx, t.TempDir(), "", "Drive", ""); err != nil {
+			t.Fatal(err)
+		}
+		src := t.TempDir()
+		for remote, body := range files {
+			local := filepath.Join(src, filepath.Base(remote))
+			if err := os.WriteFile(local, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := app.UploadFile(ctx, local, remote, service.ConflictFail, false, service.UploadOptions{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}()
+	if after != nil {
+		after(statePath)
 	}
 }
 

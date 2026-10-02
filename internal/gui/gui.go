@@ -28,11 +28,13 @@ const DeviceModel = "td-gui"
 
 // Services are the facade services cmd/td-gui binds, one per frontend area.
 type Services struct {
-	Drive     *Drive
-	Auth      *Auth
-	Channels  *Channels
-	Transfers *Transfers
-	Settings  *Settings
+	Drive       *Drive
+	Auth        *Auth
+	Channels    *Channels
+	Transfers   *Transfers
+	Settings    *Settings
+	Import      *Import
+	Maintenance *Maintenance
 
 	state *appState
 }
@@ -161,12 +163,14 @@ func Open() (*Services, func(), error) {
 	}
 	drive := &Drive{state: state}
 	return &Services{
-		Drive:     drive,
-		Auth:      &Auth{state: state, prompts: map[string]chan promptAnswer{}},
-		Channels:  &Channels{state: state, drive: drive},
-		Transfers: transfers,
-		Settings:  settings,
-		state:     state,
+		Drive:       drive,
+		Auth:        &Auth{state: state, prompts: map[string]chan promptAnswer{}},
+		Channels:    &Channels{state: state, drive: drive},
+		Transfers:   transfers,
+		Settings:    settings,
+		Import:      &Import{state: state, prompts: map[string]chan promptAnswer{}},
+		Maintenance: &Maintenance{state: state},
+		state:       state,
 	}, closeServices, nil
 }
 
@@ -206,4 +210,17 @@ func (s *Services) SetTransferEmitter(em Emitter) {
 // this method is not in the frontend bindings.
 func (s *Services) SetFilePicker(p FilePicker) {
 	s.Transfers.pick = p
+}
+
+// SetImportEmitter wires how the Import facade's typed events
+// (import.prompt, import.item) reach the frontend, same seam as
+// SetDriveEmitter.
+func (s *Services) SetImportEmitter(em Emitter) {
+	s.Import.emit = em
+}
+
+// SetMaintenanceEmitter wires how the Maintenance facade's typed events
+// (repair.item) reach the frontend, same seam as SetDriveEmitter.
+func (s *Services) SetMaintenanceEmitter(em Emitter) {
+	s.Maintenance.emit = em
 }

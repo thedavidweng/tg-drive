@@ -4,23 +4,31 @@
 import * as Auth from "./auth.js";
 import * as Channels from "./channels.js";
 import * as Drive from "./drive.js";
+import * as Import from "./import.js";
+import * as Maintenance from "./maintenance.js";
 import * as Settings from "./settings.js";
 import * as Transfers from "./transfers.js";
 export {
     Auth,
     Channels,
     Drive,
+    Import,
+    Maintenance,
     Settings,
     Transfers
 };
 
 export type {
+    AdoptItem,
+    AdoptOptions,
+    AdoptOutcome,
     AuthPrompt,
     AuthStatus,
     AuthUser,
     BindChoices,
     BindRequest,
     BindResult,
+    CaptionsRepairOutcome,
     ChannelChoice,
     ChannelInfo,
     ChannelStatus,
@@ -29,12 +37,28 @@ export type {
     DeleteOutcome,
     DirectoryChanged,
     DiscussionLink,
+    DoctorCheck,
+    DoctorReport,
     Entry,
     FilesDropped,
+    HashRepairOutcome,
+    ImportItem,
+    ImportOptions,
+    ImportOutcome,
+    ImportPrompt,
+    ItemEvent,
     LoginResult,
     MoveOptions,
     OmarchyState,
     OmarchyTheme,
+    OrphanedRepairOutcome,
+    PathCodecReport,
+    PathRepairOutcome,
+    PendingRepairOutcome,
+    RepairItem,
+    RepairOptions,
+    RepairOutcome,
+    ScanErrorsRepairOutcome,
     ScanOutcome,
     ScanProgress,
     ShareLink,
