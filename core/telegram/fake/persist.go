@@ -38,9 +38,21 @@ type persistedState struct {
 //   - TD_FAKE_TRANSFER_DELAY: a Go duration each resumable upload part and
 //     each media download waits before completing, honoring cancellation,
 //     so tests can interrupt a transfer midway.
+//   - TD_FAKE_AUTH_PASSWORD: the account has two-step verification; login
+//     asks for this password after the code.
+//   - TD_FAKE_LOGIN_FLOOD_WAIT: login fails with a flood wait of this many
+//     seconds before any code is sent.
 func NewPersistent(path string) *Client {
 	c := New()
 	c.statePath = path
+	if v := os.Getenv("TD_FAKE_AUTH_PASSWORD"); v != "" {
+		c.password = v
+	}
+	if v := os.Getenv("TD_FAKE_LOGIN_FLOOD_WAIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.loginFloodWait = n
+		}
+	}
 	if v := os.Getenv("TD_FAKE_TRANSFER_DELAY"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			c.transferDelay = d

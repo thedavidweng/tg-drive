@@ -12,6 +12,7 @@ import type * as gui$0 from "../../../../thedavidweng/tg-drive-cli/internal/gui/
 declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
+            "auth.prompt": gui$0.AuthPrompt;
             "omarchy:theme-changed": gui$0.OmarchyTheme;
         }
     }

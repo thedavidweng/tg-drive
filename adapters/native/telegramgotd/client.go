@@ -29,6 +29,7 @@ type Client struct {
 	sessionPath string
 	waitFlood   bool
 	maxWait     time.Duration
+	deviceModel string
 	logf        func(format string, args ...any)
 
 	mu            sync.Mutex
@@ -80,6 +81,11 @@ func New(apiID int64, apiHash, sessionPath string, waitFlood bool, maxWait time.
 // Messages carry method names, latencies, and RPC error types only.
 func (c *Client) SetLogger(logf func(format string, args ...any)) { c.logf = logf }
 
+// SetDeviceModel sets the device model sent in initConnection, so a front
+// end appears under its own name in Telegram's device list (ADR 0034). The
+// zero value keeps gotd's defaults; the CLI never sets it.
+func (c *Client) SetDeviceModel(model string) { c.deviceModel = model }
+
 func (c *Client) debugf(format string, args ...any) {
 	if c.logf != nil {
 		c.logf(format, args...)
@@ -121,6 +127,9 @@ func (c *Client) ensureConn(ctx context.Context) (*conn, error) {
 		SessionStorage: newSessionStorage(c.sessionPath),
 		NoUpdates:      true,
 		Middlewares:    []telegram.Middleware{limiter.Middleware()},
+	}
+	if c.deviceModel != "" {
+		opts.Device.DeviceModel = c.deviceModel
 	}
 	c.debugf("telegram: connecting")
 	dialStart := time.Now()

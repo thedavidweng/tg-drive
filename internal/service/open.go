@@ -27,6 +27,10 @@ type Options struct {
 	// Offline opens config and the database only; the App has no Telegram
 	// client. For local-only work such as path-codec checks.
 	Offline bool
+	// DeviceModel sets the Telegram device identity this front end connects
+	// with, so Telegram's device list tells front ends apart (ADR 0034).
+	// Empty keeps the adapter default; the CLI leaves it empty.
+	DeviceModel string
 	// Debugf receives diagnostics when set. Messages carry no secrets; paths
 	// go through config.DisplayPath.
 	Debugf func(format string, args ...any)
@@ -126,6 +130,9 @@ func openTelegram(opts Options, cfg config.Config, database *sqlitestore.DB) (te
 	}
 	client := telegramgotd.New(cfg.Telegram.APIID, cfg.Telegram.APIHash, cfg.Storage.SessionPath,
 		wait, time.Duration(cfg.RateLimit.MaxWaitSeconds)*time.Second)
+	if opts.DeviceModel != "" {
+		client.SetDeviceModel(opts.DeviceModel)
+	}
 	if opts.Debugf != nil {
 		client.SetLogger(opts.Debugf)
 		opts.debugf("telegram: flood wait=%t max_wait=%ds", wait, cfg.RateLimit.MaxWaitSeconds)
