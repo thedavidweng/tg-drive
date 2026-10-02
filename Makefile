@@ -56,9 +56,19 @@ goreleaser-check:
 # assume main.go beside frontend/, which this layout does not have.
 GUI_TAGS=gui
 GUI_BINDINGS=frontend/bindings
+# Pinned here rather than in mise.toml: mise's go backend drops the leading
+# v when it invokes go install, and that query fails on some platforms.
+WAILS3_VERSION=v3.0.0-beta.27
+WAILS3=$(DIST_DIR)/bin/wails3
 
-gui-bindings:
-	wails3 generate bindings -silent -f '-tags $(GUI_TAGS)' -ts -i -d $(GUI_BINDINGS) ./cmd/td-gui
+gui-tools:
+	@mkdir -p $(DIST_DIR)/bin
+	@test -f $(DIST_DIR)/bin/.wails3-$(WAILS3_VERSION) || { \
+		GOBIN=$(CURDIR)/$(DIST_DIR)/bin go install github.com/wailsapp/wails/v3/cmd/wails3@$(WAILS3_VERSION) && \
+		touch $(DIST_DIR)/bin/.wails3-$(WAILS3_VERSION); }
+
+gui-bindings: gui-tools
+	$(WAILS3) generate bindings -silent -f '-tags $(GUI_TAGS)' -ts -i -d $(GUI_BINDINGS) ./cmd/td-gui
 
 gui-bindings-check: gui-bindings
 	@git diff --exit-code -- $(GUI_BINDINGS) && test -z "$$(git ls-files --others --exclude-standard -- $(GUI_BINDINGS))" \

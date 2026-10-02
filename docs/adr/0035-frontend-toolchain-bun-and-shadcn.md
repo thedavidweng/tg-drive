@@ -28,8 +28,10 @@ Decision:
   `frontend/src/components/ui` (the shadcn model), styled by mapping the
   shadcn/Tailwind theme variables onto the magpie tokens in
   `frontend/src/index.css` rather than editing generated components.
-- The `wails3` CLI is pinned as a mise Go tool at the exact Wails module
-  version in `go.mod`; `make gui-bindings` regenerates the committed
+- The `wails3` CLI is pinned in the Makefile (`WAILS3_VERSION`) at the exact
+  Wails module version in `go.mod` and installed by `make gui-tools` with a
+  leading-`v` `go install` query; mise's Go backend drops the `v`, and that
+  query fails on Ubuntu CI. `make gui-bindings` regenerates the committed
   TypeScript bindings and `make gui-bindings-check` fails CI on drift.
 
 Considered options:

@@ -62,9 +62,13 @@ default gates: it links the platform webview through cgo (GTK 4 and
 WebKitGTK 6.0 on Linux), while `mise run check` stays CGO-free and needs no
 webview.
 
-The GUI toolchain is pinned in `mise.toml`: Node LTS (runs Vite), Bun
-(frontend package manager and test runner), and the `wails3` CLI as a Go
-tool at the exact Wails module version in `go.mod`.
+The GUI toolchain is pinned in `mise.toml`: Node LTS (runs Vite) and Bun
+(frontend package manager and test runner). The `wails3` CLI is pinned in
+the Makefile (`WAILS3_VERSION`) at the exact Wails module version in
+`go.mod` and installed into `dist/bin` by `make gui-tools`, which every
+target that needs it depends on. It is not a mise tool: mise's Go backend
+drops the leading `v` when it invokes `go install`, and that version query
+fails on Ubuntu CI.
 
 ```sh
 mise run check-gui     # or: make check-gui
