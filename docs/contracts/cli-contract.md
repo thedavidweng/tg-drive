@@ -111,6 +111,18 @@ td transfers cancel <id>
   # `cancelled`, a queued one without starting it. Cancelling an ended
   # Transfer fails with ERR_USAGE; an unknown ID with
   # ERR_TRANSFER_NOT_FOUND.
+td transfers watch
+  [--events]
+  # follows Transfers live until Ctrl-C (exit 130, ERR_CANCELLED); reads
+  # the index only: it sees every process's Transfers and never waits for
+  # a Session lock. It rereads the index every 250 ms, so a Transfer that
+  # passes a stage between two polls is reported at its later stage
+  # --events (or --json): streams NDJSON transfer.stage events (see the
+  # JSON contract)
+  # on a terminal: redraws a live table of the active Transfers and the
+  # ones that ended since the watch started
+  # piped: prints one line per stage a Transfer enters, in the
+  # `transfers list` format
 td mv <remote-from> <remote-to>
   [--confirm] [--dry-run]
 td rm <remote-path>
