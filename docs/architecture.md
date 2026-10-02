@@ -97,7 +97,15 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   server-mode build answers from `TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR`,
   because native dialogs are no-ops without a window). Retry and cancel go
   through the Manager's cross-process claim and cancel flag, so the tab
-  manages CLI transfers too.
+  manages CLI transfers too. Every GUI transfer starts through an options
+  sheet: the upload sheet previews the facade's dry-run plan — the
+  service's plan plus each file's size against the account's upload limit
+  from the channel status — before its start button enables, and its
+  controls map one-to-one onto the service's upload options (presentation,
+  caption, conflict policy, no-hash, the recursive flags), with replace
+  gated on an explicit confirmation, the service's
+  `ERR_CONFIRMATION_REQUIRED`, and disallowed for albums. The download
+  sheet carries the local conflict policy.
 - Index sync (ADR 0033): `Services.StartSync` polls `PRAGMA data_version`
   on a pinned connection (the pragma advances only for *other* connections'
   commits) and, on change, re-reads the directory the frontend last listed

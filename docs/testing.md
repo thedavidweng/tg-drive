@@ -131,7 +131,13 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   retry after a failed resumable upload resuming from saved parts, the
   `ERR_USAGE` rejection of retrying an active or completed Transfer, the
   index-sync pick-up of a transfer a real CLI process started — cancelled
-  from the facade — and clear-finished removals; its file dialogs are an
+  from the facade — and clear-finished removals; and by the option
+  submission: an album upload with presentation and caption, the
+  `ERR_CONFIRMATION_REQUIRED` rejection of an unconfirmed replace before
+  any Transfer is created, the dry-run plan's parity with the service's
+  planner and its per-file upload-limit flags, the download conflict
+  policy, and the folder-only guards (presentation and caption rejected
+  for directories, replace for albums). Its file dialogs are an
   injected `FilePicker`, scripted in tests and in server mode through
   `TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR`. The Import facade is covered by
   a dry-run preview of seeded Saved Messages, the run's confirmation gate,
@@ -162,9 +168,13 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   wrong-code attempts, 2FA password, reused and resent codes, rate-limit
   wait, cancel), logout, and i18n fallback to English for an unknown
   system language; the Drive tab's upload entry points (file and folder
-  pickers, files dropped onto the window) starting transfers into the
-  shown directory and its download row actions going through the folder
-  picker; and the Transfers tab — stage pills and progress bars updating
+  pickers, files dropped onto the window) opening the upload options
+  sheet — its dry-run plan preview with per-file sizes, over-limit flags
+  against the upload limit, replace gated on its confirmation checkbox
+  and disallowed for albums, the recursive options shown for folders
+  instead of presentation — and its download row actions opening the
+  download sheet (local conflict policy) through the folder picker; and
+  the Transfers tab — stage pills and progress bars updating
   from the typed events, item counts for multi-item transfers, cancel and
   retry calling the backend, failures showing their plain-language reason
   and error code, CLI transfers badged, and clear finished emptying the
