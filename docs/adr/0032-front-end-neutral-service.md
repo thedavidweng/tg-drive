@@ -25,9 +25,15 @@ Decision: `internal/service` serves every front end the same way.
   options. `App` holds no state that a call mutates.
 - Long-running use cases accept an observer that receives stage changes and
   byte progress. They check the context between items, so cancellation
-  stops them promptly. The CLI cancels on SIGINT and SIGTERM.
+  stops them promptly. The CLI cancels on SIGINT and SIGTERM. A cancelled
+  call fails with the new code `ERR_CANCELLED` (category `cancelled`,
+  retryable), which the CLI maps to exit code 130, the shell convention
+  for an interrupted command. No existing code fits: the generic codes
+  (`ERR_TELEGRAM_RPC`, `ERR_DB`) would tell a script that Telegram or the
+  index failed when the user stopped the command.
 
 Consequences: Existing CLI commands, flags, JSON output, and exit codes
-are unchanged. Commands become thin translators from flags to options and
-from results to output. Interactive prompts stay in front ends; the
+are unchanged, apart from the new `ERR_CANCELLED` and exit code 130.
+Commands become thin translators from flags to options and from results
+to output. Interactive prompts stay in front ends; the
 service receives answers through callbacks or options.

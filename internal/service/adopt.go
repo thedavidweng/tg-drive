@@ -148,6 +148,9 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 	}
 
 	for _, msg := range msgs {
+		if err := cancelled(ctx); err != nil {
+			return out, err
+		}
 		item, skip := classifyAdopt(msg, opts.Dest, into, used)
 		if skip {
 			out.Skipped++
@@ -520,6 +523,10 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 		if !isPerFileManifestReply(msg) {
 			continue
 		}
+		if err := cancelled(ctx); err != nil {
+			return out, err
+		}
+
 		item := AdoptPlanItem{MessageID: msg.ID, Kind: "reply", Action: "delete", Reason: "per-file td-manifest:v1 reply"}
 		if opts.DryRun {
 			out.Deleted++
@@ -582,12 +589,18 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 	sort.Slice(albumIDs, func(i, j int) bool { return albumIDs[i] < albumIDs[j] })
 
 	for _, gid := range albumIDs {
+		if err := cancelled(ctx); err != nil {
+			return out, err
+		}
 		members := albums[gid]
 		if err := a.restoreAlbumCaptions(ctx, ch, members, filesByMsg, opts, out); err != nil {
 			return out, err
 		}
 	}
 	for _, msg := range singles {
+		if err := cancelled(ctx); err != nil {
+			return out, err
+		}
 		if err := a.restoreSingleCaption(ctx, ch, msg, filesByMsg, opts, out); err != nil {
 			return out, err
 		}

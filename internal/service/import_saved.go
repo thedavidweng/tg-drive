@@ -612,8 +612,11 @@ func (a *App) executeImportSaved(ctx context.Context, ch *channelContext, opts I
 	}
 	staging := a.importStagingDir()
 	for _, unit := range units {
+		if err := cancelled(ctx); err != nil {
+			return err
+		}
 		if err := a.importUnit(ctx, ch, staging, opts, unit, targets); err != nil {
-			if !opts.ContinueErr {
+			if !opts.ContinueErr || stopsRun(ctx, err) {
 				return err
 			}
 		}
@@ -648,6 +651,12 @@ func (a *App) importUnit(ctx context.Context, ch *channelContext, staging string
 		}
 	}
 	for i, msg := range unit.msgs {
+		if err := cancelled(ctx); err != nil {
+			for _, st := range staged {
+				a.removeStaged(ctx, st.local)
+			}
+			return err
+		}
 		item := unit.items[i]
 		local, size, hash, err := a.stageSavedItem(ctx, staging, msg, item, opts.Observer)
 		if err != nil {

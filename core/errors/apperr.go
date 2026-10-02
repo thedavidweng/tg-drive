@@ -45,6 +45,7 @@ const (
 	ErrRepairRequired             = "ERR_REPAIR_REQUIRED"
 	ErrSlugCollision              = "ERR_SLUG_COLLISION"
 	ErrConfirmationRequired       = "ERR_CONFIRMATION_REQUIRED"
+	ErrCancelled                  = "ERR_CANCELLED"
 )
 
 // Category groups errors by high-level cause for programmatic handling.
@@ -58,6 +59,7 @@ const (
 	CatPlatform   Category = "platform"
 	CatInternal   Category = "internal"
 	CatSafety     Category = "safety"
+	CatCancelled  Category = "cancelled"
 )
 
 // AppError is a structured application error with stable code and exit mapping.
@@ -127,6 +129,9 @@ func classify(code string) (Category, bool) {
 		return CatInternal, code == ErrOperationLocked || code == ErrSessionLocked || code == ErrScanIncomplete
 	case ErrConfirmationRequired:
 		return CatSafety, false
+	case ErrCancelled:
+		// Retrying is the documented way to continue: transfers resume.
+		return CatCancelled, true
 	default:
 		return CatInternal, false
 	}
@@ -157,9 +162,39 @@ func ExitCode(err error) int {
 		return 5
 	case ErrConfirmationRequired:
 		return 10
+	case ErrCancelled:
+		// 128+SIGINT, the shell convention for an interrupted command.
+		return 130
 	default:
 		return 1
 	}
+}
+
+// Cancelled is the error of an operation stopped because its caller
+// cancelled it (Ctrl-C in the CLI).
+func Cancelled() *AppError {
+	return New(ErrCancelled, "operation cancelled")
+}
+
+// IsCancelled reports whether err is an ERR_CANCELLED error.
+func IsCancelled(err error) bool {
+	ae, ok := As(err)
+	return ok && ae.Code == ErrCancelled
+}
+
+// AfterCancel is what a call that failed after its context was cancelled
+// reports. A failure that left durable state needing the user's action
+// (ERR_ORPHANED_UPLOAD, ERR_REPAIR_REQUIRED) keeps its code and remedy;
+// anything else failed because of the cancellation, often with the context
+// error lost in a wrap, and becomes ERR_CANCELLED.
+func AfterCancel(err error) error {
+	if ae, ok := As(err); ok {
+		switch ae.Code {
+		case ErrOrphanedUpload, ErrRepairRequired:
+			return ae
+		}
+	}
+	return Cancelled()
 }
 
 // As extracts an AppError from err.

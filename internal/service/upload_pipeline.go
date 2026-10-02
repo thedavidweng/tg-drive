@@ -282,15 +282,26 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	var staged []*stagedUpload
+	abortStaging := func(err error) error {
+		cctx, cancel := cleanupContext(ctx)
+		defer cancel()
+		for _, done := range staged {
+			if !done.adopted {
+				_ = a.DB.DiscardUpload(cctx, done.fileID)
+			}
+		}
+		return err
+	}
 	for _, s := range planned {
+		if err := cancelled(ctx); err != nil {
+			return abortStaging(err)
+		}
 		if err := a.stageUpload(ctx, run, ch, s, existingSlugs, now); err != nil {
+			if stopsRun(ctx, err) {
+				return abortStaging(apperr.Cancelled())
+			}
 			if err := report(s.index, s.uploadMember, err); err != nil {
-				for _, done := range staged {
-					if !done.adopted {
-						_ = a.DB.DiscardUpload(ctx, done.fileID)
-					}
-				}
-				return err
+				return abortStaging(err)
 			}
 			continue
 		}
@@ -299,10 +310,17 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 
 	units := uploadUnits(staged)
 	for i, unit := range units {
-		// One human caption per batch, on the very first member; a lone
-		// member is an ordinary message and always carries its own.
-		withCaption := i == 0 || len(unit) == 1
-		sent, group, err := a.sendUnit(ctx, run.opts, ch, unit, withCaption, thumbs)
+		err := cancelled(ctx)
+		var sent []sentMember
+		var group *AlbumGroup
+		if err == nil {
+			// One human caption per batch, on the very first member; a lone
+			// member is an ordinary message and always carries its own.
+			withCaption := i == 0 || len(unit) == 1
+			sent, group, err = a.sendUnit(ctx, run.opts, ch, unit, withCaption, thumbs)
+		} else {
+			a.discardUnsent(ctx, unit)
+		}
 		if err != nil {
 			for _, s := range unit {
 				run.results.report(s.index, s.item(), ItemFailed, err)
@@ -630,6 +648,8 @@ func (s *stagedUpload) retireArgs(ch uploadChannel) uploadLockedArgs {
 // discardUnsent drops the pending rows of members that never reached
 // Telegram. Resumable big-file rows survive so a plain retry resumes them.
 func (a *App) discardUnsent(ctx context.Context, unit []*stagedUpload) {
+	ctx, cancel := cleanupContext(ctx)
+	defer cancel()
 	for _, s := range unit {
 		if !s.bigFile {
 			_ = a.DB.DiscardUpload(ctx, s.fileID)
@@ -644,6 +664,8 @@ func (a *App) discardUnsent(ctx context.Context, unit []*stagedUpload) {
 // ERR_ORPHANED_UPLOAD exactly when something was orphaned; otherwise the
 // rollback was clean and cause is returned.
 func (a *App) abandonUnit(ctx context.Context, ch uploadChannel, unit []*stagedUpload, results []telegram.UploadResult, replyID int, now string, cause error, failure string) error {
+	ctx, cancel := cleanupContext(ctx)
+	defer cancel()
 	if replyID > 0 {
 		_ = a.manifestCarrier(ch.manifestChat).Delete(ctx, ch.tgID, replyID)
 	}

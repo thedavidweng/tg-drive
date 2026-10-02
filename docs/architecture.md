@@ -57,6 +57,13 @@ cmd/td
   `ERR_CONFIRMATION_REQUIRED`. The options' `Validate` method is the rule;
   commands call it before opening the app context so a refused call opens
   nothing (ADR 0032).
+- Cancellation flows through the call's context. `internal/app` installs
+  SIGINT and SIGTERM handling on the root command's context; every command
+  passes it on. Long-running use cases check it between items
+  (`cancelled`, `internal/service/cancel.go`) and fail with
+  `ERR_CANCELLED`. Rollback after a cancel, and operation-lock release, run
+  on a context that outlives the cancellation, so an interrupted upload
+  keeps its resumable state and strands no lock (ADR 0032).
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow

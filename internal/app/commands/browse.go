@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -30,7 +29,7 @@ func NewScanCmd(rt Runtime) *cobra.Command {
 			if len(args) > 0 {
 				root = args[0]
 			}
-			data, err := app.Scan(context.Background(), service.ScanOptions{
+			data, err := app.Scan(cmd.Context(), service.ScanOptions{
 				Full: full, Strict: strict, Repair: repair, IncludeDeleted: includeDeleted, Root: root,
 			})
 			if err != nil {
@@ -69,7 +68,7 @@ func NewLsCmd(rt Runtime) *cobra.Command {
 			if len(args) > 0 {
 				p = args[0]
 			}
-			entries, err := app.ListDir(context.Background(), p)
+			entries, err := app.ListDir(cmd.Context(), p)
 			if err != nil {
 				return r.Error(err)
 			}
@@ -164,7 +163,7 @@ func NewTreeCmd(rt Runtime) *cobra.Command {
 			if len(args) > 0 {
 				p = args[0]
 			}
-			nodes, err := app.Tree(context.Background(), p, depth)
+			nodes, err := app.Tree(cmd.Context(), p, depth)
 			if err != nil {
 				return r.Error(err)
 			}

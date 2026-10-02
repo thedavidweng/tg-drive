@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
@@ -55,7 +54,7 @@ func NewAdoptCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.Adopt(context.Background(), opts)
+			data, err := app.Adopt(cmd.Context(), opts)
 			if err != nil {
 				return r.Error(err)
 			}
@@ -122,7 +121,7 @@ func NewRepairCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.Repair(context.Background(), opts)
+			data, err := app.Repair(cmd.Context(), opts)
 			if err != nil {
 				return r.Error(err)
 			}

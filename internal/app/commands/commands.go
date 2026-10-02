@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -31,8 +31,7 @@ type Runtime interface {
 
 // promptTelegram asks for a missing Telegram credential on stderr and reads
 // the answer from stdin.
-func promptTelegram() service.TelegramAsk {
-	reader := bufio.NewReader(os.Stdin)
+func promptTelegram(ctx context.Context) service.TelegramAsk {
 	return func(f service.TelegramField) (string, error) {
 		switch f {
 		case service.TelegramAPIID:
@@ -43,7 +42,10 @@ func promptTelegram() service.TelegramAsk {
 		case service.TelegramPhone:
 			fmt.Fprint(os.Stderr, "phone (international, e.g. +1234567890): ")
 		}
-		s, _ := reader.ReadString('\n')
+		s, err := readLine(ctx)
+		if apperr.IsCancelled(err) {
+			return "", err
+		}
 		return s, nil
 	}
 }

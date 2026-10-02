@@ -133,6 +133,9 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 	// Errors noticed while streaming are deferred: if the read turns out to be
 	// truncated, nothing at all is written.
 	streamMeta, streamErr := a.TG.StreamHistory(ctx, tgChID, afterID, func(msg telegram.Message) error {
+		if err := cancelled(ctx); err != nil {
+			return err
+		}
 		msg.Data = nil
 		r.byID[msg.ID] = msg
 		r.seenMsgIDs[msg.ID] = true
@@ -196,6 +199,9 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 	// records.
 	discMaxID, err := a.collectDiscussionComments(ctx, r)
 	if err != nil {
+		return nil, err
+	}
+	if err := cancelled(ctx); err != nil {
 		return nil, err
 	}
 	r.opts.Observer.stage(Item{}, StageIndexing)
@@ -262,6 +268,9 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 
 	// Commit in chunks; the checkpoint advances only after its chunk commits.
 	for start := 0; start < len(pendingOps); start += scanIndexChunk {
+		if err := cancelled(ctx); err != nil {
+			return nil, err
+		}
 		end := start + scanIndexChunk
 		if end > len(pendingOps) {
 			end = len(pendingOps)
@@ -272,6 +281,9 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 		}
 	}
 
+	if err := cancelled(ctx); err != nil {
+		return nil, err
+	}
 	if opts.Full {
 		err = a.DB.WithTx(ctx, func(tx *sql.Tx) error {
 			// Mark previously active files absent from this full pass missing.

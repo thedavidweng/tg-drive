@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -96,7 +94,7 @@ func NewImportCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.ImportSaved(context.Background(), opts)
+			data, err := app.ImportSaved(cmd.Context(), opts)
 			if err != nil {
 				return r.Error(err)
 			}
@@ -167,7 +165,10 @@ func promptPhotosAs(cmd *cobra.Command, count int) (string, error) {
 	_, _ = fmt.Fprintln(w, "  document  keep the original bytes, hash-verifiable")
 	_, _ = fmt.Fprintln(w, "  photo     native photo card, recompressed by Telegram")
 	_, _ = fmt.Fprint(w, "photos-as [document/photo]: ")
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, err := readLine(cmd.Context())
+	if apperr.IsCancelled(err) {
+		return "", err
+	}
 	if err != nil && strings.TrimSpace(line) == "" {
 		return "", apperr.New(apperr.ErrUsage, "no photo presentation chosen; pass --photos-as document or --photos-as photo")
 	}

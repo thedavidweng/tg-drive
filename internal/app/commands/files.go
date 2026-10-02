@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -135,7 +134,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if includeEmptyDirs {
 					return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 				}
-				data, err := app.UploadFilesAs(context.Background(), args[:len(args)-1], args[len(args)-1], policy, noHash, pres, opts)
+				data, err := app.UploadFilesAs(cmd.Context(), args[:len(args)-1], args[len(args)-1], policy, noHash, pres, opts)
 				if err != nil {
 					return r.Error(err)
 				}
@@ -155,7 +154,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if presentationFlagsSet(cmd) {
 					return r.Error(apperr.New(apperr.ErrUsage, "presentation flags apply to single-file uploads only"))
 				}
-				data, err := app.UploadRecursive(context.Background(), args[0], args[1], policy, continueOnError, noHash, includeEmptyDirs, opts)
+				data, err := app.UploadRecursive(cmd.Context(), args[0], args[1], policy, continueOnError, noHash, includeEmptyDirs, opts)
 				if err != nil {
 					return r.Error(err)
 				}
@@ -174,7 +173,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 			if includeEmptyDirs {
 				return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 			}
-			data, err := app.UploadFileAs(context.Background(), args[0], args[1], policy, noHash, pres, opts)
+			data, err := app.UploadFileAs(cmd.Context(), args[0], args[1], policy, noHash, pres, opts)
 			if err != nil {
 				return r.Error(err)
 			}
@@ -237,7 +236,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			if recursive {
-				data, err := app.DownloadRecursive(context.Background(), args[0], args[1], policy, continueOnError, service.DownloadOptions{})
+				data, err := app.DownloadRecursive(cmd.Context(), args[0], args[1], policy, continueOnError, service.DownloadOptions{})
 				if err != nil {
 					return r.Error(err)
 				}
@@ -247,7 +246,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				}
 				return r.Success(data)
 			}
-			res, err := app.DownloadFile(context.Background(), args[0], args[1], policy, service.DownloadOptions{})
+			res, err := app.DownloadFile(cmd.Context(), args[0], args[1], policy, service.DownloadOptions{})
 			if err != nil {
 				return r.Error(err)
 			}
@@ -288,7 +287,7 @@ func NewMvCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			if err := app.MoveFile(context.Background(), args[0], args[1], opts); err != nil {
+			if err := app.MoveFile(cmd.Context(), args[0], args[1], opts); err != nil {
 				return r.Error(err)
 			}
 			if !rt.JSON() {
@@ -326,7 +325,7 @@ func NewRmCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.DeleteFile(context.Background(), args[0], opts)
+			data, err := app.DeleteFile(cmd.Context(), args[0], opts)
 			if err != nil {
 				return r.Error(err)
 			}
@@ -364,7 +363,7 @@ func NewShareCmd(rt Runtime) *cobra.Command {
 			if len(args) > 0 {
 				p = args[0]
 			}
-			data, err := app.Share(context.Background(), p)
+			data, err := app.Share(cmd.Context(), p)
 			if err != nil {
 				return r.Error(err)
 			}

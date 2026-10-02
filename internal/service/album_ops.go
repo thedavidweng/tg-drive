@@ -88,6 +88,9 @@ func (a *App) ensureTelegramManifests(ctx context.Context, ch *channelContext, h
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, gid := range gids {
+		if err := cancelled(ctx); err != nil {
+			return err
+		}
 		members := albums[gid]
 		sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
 		meta := manifest.AlbumMeta{GroupedID: gid}
@@ -207,6 +210,9 @@ func (a *App) ensureTelegramManifests(ctx context.Context, ch *channelContext, h
 
 	sort.Slice(singles, func(i, j int) bool { return singles[i].ID < singles[j].ID })
 	for _, msg := range singles {
+		if err := cancelled(ctx); err != nil {
+			return err
+		}
 		r := byMsg[msg.ID]
 		if manifest.HasMachineMeta(messageBody(msg)) || perFileReply[msg.ID] > 0 {
 			continue

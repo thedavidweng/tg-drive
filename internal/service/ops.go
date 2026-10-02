@@ -761,6 +761,9 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	}
 	sort.Strings(order)
 	for _, dir := range order {
+		if err := cancelled(ctx); err != nil {
+			return nil, err
+		}
 		out, err := a.runUpload(ctx, uploadRun{members: groups[dir], policy: policy, noHash: noHash, album: true, lenient: continueOnError, opts: opts})
 		if out != nil {
 			skipped += len(out.skipped)
@@ -770,6 +773,9 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 			}
 		}
 		if err != nil {
+			if stopsRun(ctx, err) {
+				return nil, apperr.Cancelled()
+			}
 			failed++
 			errs = append(errs, err.Error())
 			if !continueOnError {
@@ -828,6 +834,9 @@ func (a *App) downloadRecursive(ctx context.Context, remotePath, localDir string
 		return err
 	}
 	for _, e := range entries {
+		if err := cancelled(ctx); err != nil {
+			return err
+		}
 		localPath := filepath.Join(localDir, e.Name)
 		if e.Type == "dir" {
 			if err := a.files().MkdirAll(ctx, localPath, 0o755); err != nil {
@@ -838,13 +847,16 @@ func (a *App) downloadRecursive(ctx context.Context, remotePath, localDir string
 				}
 				continue
 			}
-			if err := a.downloadRecursive(ctx, e.Path, localPath, policy, continueOnError, opts, st); err != nil && !continueOnError {
+			if err := a.downloadRecursive(ctx, e.Path, localPath, policy, continueOnError, opts, st); err != nil && (!continueOnError || stopsRun(ctx, err)) {
 				return err
 			}
 			continue
 		}
 		res, err := a.DownloadFile(ctx, e.Path, localPath, policy, opts)
 		if err != nil {
+			if stopsRun(ctx, err) {
+				return apperr.Cancelled()
+			}
 			st.failed++
 			st.errors = append(st.errors, err.Error())
 			if !continueOnError {

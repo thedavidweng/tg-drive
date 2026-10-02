@@ -1,7 +1,9 @@
 package output
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +27,9 @@ type Renderer struct {
 	Warnings    []string
 	Events      bool
 	EventWriter io.Writer
+	// Ctx is the command context. Errors rendered after it is cancelled go
+	// through apperr.AfterCancel.
+	Ctx context.Context
 }
 
 // Metadata is included in every JSON envelope.
@@ -115,6 +120,9 @@ func (r *Renderer) SuccessLine(format string, args ...any) error {
 
 // Error writes an error to the appropriate stream and returns it for exit handling.
 func (r *Renderer) Error(err error) error {
+	if errors.Is(err, context.Canceled) || (r.Ctx != nil && r.Ctx.Err() != nil) {
+		err = apperr.AfterCancel(err)
+	}
 	ae, ok := apperr.As(err)
 	if !ok {
 		// Uncategorized errors keep exit code 1 per the CLI contract.

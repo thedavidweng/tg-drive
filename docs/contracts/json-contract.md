@@ -78,6 +78,10 @@ the Session lock, so they never return this code.
 }
 ```
 
+`ERR_CANCELLED` (category `cancelled`, `retryable: true`) reports a command
+stopped by SIGINT or SIGTERM. Retrying is safe: a large upload resumes from
+its confirmed parts.
+
 `ERR_DIRECTORY_MOVE_UNSUPPORTED` and `ERR_DIRECTORY_DELETE_UNSUPPORTED` carry
 the offending remote directory in `details.path`.
 
