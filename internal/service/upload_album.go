@@ -3,17 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
-	"time"
 
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
-	"github.com/thedavidweng/tg-drive-cli/core/publisher"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
 // Album uploads publish several files as native Telegram media groups
@@ -21,38 +15,6 @@ import (
 // empty sibling captions, and one td-album:v1 inventory reply per group.
 // Sets larger than Telegram's group limit split into consecutive groups of
 // MaxMediaGroupMembers.
-
-// albumSource pairs a local file with its resolved remote destination.
-type albumSource struct {
-	localPath string
-	dest      string
-	// humanCaption is the source text kept above the rendered caption block.
-	// Only imports set it (the original message's caption); local uploads
-	// leave it empty and render the block alone.
-	humanCaption string
-	// pres overrides the batch presentation for this member. Imports need it:
-	// one saved album can hold videos with per-file duration and dimensions,
-	// which a single batch-wide presentation cannot describe. nil uses the
-	// batch presentation.
-	pres *Presentation
-}
-
-// albumMember is a fully planned batch member: hashed, caption-rendered,
-// and backed by a pending index row.
-type albumMember struct {
-	src      albumSource
-	size     int64
-	hash     string
-	mime     string
-	fileID   int64
-	adopted  bool
-	resumed  bool
-	bigFile  bool
-	meta     manifest.FileMeta
-	capRes   manifest.CaptionResult
-	tags     []string
-	slugMaps []pathcodec.SlugMapping
-}
 
 // AlbumGroup describes one sent media group for the JSON envelope.
 type AlbumGroup struct {
@@ -81,14 +43,6 @@ type albumMemberFailure struct {
 
 func (f albumMemberFailure) String() string {
 	return fmt.Sprintf("%s: %v", f.localPath, f.err)
-}
-
-// albumBatch is the outcome of the planning phase plus everything the send
-// phase needs to build requests.
-type albumBatch struct {
-	members []*albumMember
-	pres    Presentation
-	skipped int
 }
 
 // UploadFilesAs uploads multiple local files as native Telegram albums
@@ -125,7 +79,7 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 		return nil, err
 	}
 
-	var sources []albumSource
+	members := make([]uploadMember, 0, len(localPaths))
 	seen := map[string]bool{}
 	for _, lp := range localPaths {
 		// dir is "/" at the root; avoid joining to "//name".
@@ -142,18 +96,24 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 				fmt.Sprintf("two source files map to %q; album members need distinct basenames", dest))
 		}
 		seen[dest] = true
-		sources = append(sources, albumSource{localPath: lp, dest: dest})
+		members = append(members, uploadMember{localPath: lp, dest: dest, pres: pres})
 	}
 
-	batch, _, err := a.planAlbumBatch(ctx, sources, policy, noHash, pres, false)
+	out, err := a.runUpload(ctx, uploadRun{members: members, policy: policy, noHash: noHash, album: true})
 	if err != nil {
 		return nil, err
 	}
-	data, err := a.runAlbumBatch(ctx, batch, channelID, tgChID, tgIDStr)
-	if err != nil {
-		return nil, err
+	data := &AlbumUploadResult{
+		Albums:    out.albums,
+		ChannelID: tgIDStr,
+		Errors:    []string{},
+		Resumed:   out.resumed,
+		Skipped:   len(out.skipped),
+		Uploaded:  len(out.sent),
 	}
-	data.Skipped = batch.skipped
+	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
+		data.InviteLink = link
+	}
 	return data, nil
 }
 
@@ -187,486 +147,4 @@ func albumDestinationDir(remoteDir string, active []fsmodel.ActivePath) (string,
 		}
 	}
 	return p, nil
-}
-
-// planAlbumBatch resolves every source into a hashed, captioned member backed
-// by a pending index row. Nothing touches Telegram. In strict mode (lenient
-// false) the first per-source failure aborts and rolls back freshly inserted
-// pending rows; in lenient mode (--continue-on-error) failures are returned
-// alongside the surviving batch so the caller can report them.
-func (a *App) planAlbumBatch(ctx context.Context, sources []albumSource, policy ConflictPolicy, noHash bool, pres Presentation, lenient bool) (*albumBatch, []albumMemberFailure, error) {
-	channelID, _, err := a.channelID(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	active, err := a.activePaths(ctx, channelID)
-	if err != nil {
-		return nil, nil, err
-	}
-	limit := a.uploadLimit(ctx)
-	now := time.Now().UTC().Format(time.RFC3339)
-	existingSlugs, err := a.loadExistingSlugs(ctx, channelID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	batch := &albumBatch{pres: pres}
-	var failures []albumMemberFailure
-	var freshRows []int64 // pending rows inserted here, rolled back on fatal
-	fail := func(err error) (*albumBatch, []albumMemberFailure, error) {
-		for _, id := range freshRows {
-			_ = a.DB.DiscardUpload(ctx, id)
-		}
-		return nil, nil, err
-	}
-	for _, src := range sources {
-		member, err := a.planAlbumMember(ctx, channelID, src, policy, noHash, now, existingSlugs, active, limit)
-		if err != nil {
-			if !lenient {
-				return fail(err)
-			}
-			failures = append(failures, albumMemberFailure{localPath: src.localPath, err: err})
-			continue
-		}
-		if member == nil {
-			batch.skipped++
-			continue
-		}
-		if !member.adopted {
-			freshRows = append(freshRows, member.fileID)
-		}
-		batch.members = append(batch.members, member)
-	}
-	return batch, failures, nil
-}
-
-// planAlbumMember stages one source. A nil member with a nil error means the
-// file was dropped by --skip-existing.
-func (a *App) planAlbumMember(ctx context.Context, channelRowID int64, src albumSource, policy ConflictPolicy, noHash bool, now string, existingSlugs map[string]string, active []fsmodel.ActivePath, limit int64) (*albumMember, error) {
-	info, err := a.files().Stat(ctx, src.localPath)
-	if err != nil {
-		return nil, apperr.New(apperr.ErrLocalNotFound, fmt.Sprintf("local file %q not found", src.localPath))
-	}
-	if info.IsDir {
-		return nil, apperr.New(apperr.ErrUsage, fmt.Sprintf("%q is a directory; album members must be files", src.localPath))
-	}
-	if info.Size > limit {
-		return nil, apperr.New(apperr.ErrFileTooLarge, fmt.Sprintf("%s exceeds %d bytes", src.dest, limit))
-	}
-
-	// Classify the destination occupant exactly like the single-file path.
-	activeExists, pendingAdoptable, err := a.destOccupancy(ctx, channelRowID, src.dest)
-	if err != nil {
-		return nil, err
-	}
-	dest, keep, err := applyUploadPolicy(src.dest, policy, activeExists, false, active,
-		"use --skip-existing or --auto-rename")
-	if err != nil {
-		return nil, err
-	}
-	if !keep {
-		return nil, nil
-	}
-	// The destination file row is excluded when this member adopts a pending
-	// row there; a renamed destination never collides with the occupant.
-	if err := fsmodel.CheckUploadConflict(dest, uploadCheckSet(active, dest, pendingAdoptable)); err != nil {
-		return nil, err
-	}
-
-	contentHash, err := a.hashUpload(ctx, src.localPath, noHash, info.Size)
-	if err != nil {
-		return nil, err
-	}
-
-	meta, capRes, tags, slugMaps, err := a.renderUploadMetaWithCaption(dest, src.localPath, info.Size, contentHash, now, existingSlugs, src.humanCaption)
-	if err != nil {
-		return nil, err
-	}
-
-	// Pending-row reconciliation, mirroring uploadLocked: adopt matching
-	// interrupted uploads, refuse blocked ones.
-	pending, err := a.lookupPending(ctx, channelRowID, dest)
-	if err != nil {
-		return nil, err
-	}
-	adoptFileID := int64(0)
-	if pending.rowID > 0 {
-		if pending.msgID.Valid {
-			return nil, errUnpublishedUpload(dest, pending.msgID.Int64)
-		}
-		if !pending.matches(info.Size, contentHash) {
-			return nil, apperr.New(apperr.ErrPathExists,
-				fmt.Sprintf("an interrupted upload of different content occupies %q; replace it with single-path td cp --replace or remove it first", dest))
-		}
-		adoptFileID = pending.rowID
-	}
-
-	fileID, resumed, err := a.stagePendingRow(ctx, channelRowID, dest, src.localPath, info.Size, contentHash, meta.MIME, now, adoptFileID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &albumMember{
-		src:      albumSource{localPath: src.localPath, dest: dest, humanCaption: src.humanCaption, pres: src.pres},
-		size:     info.Size,
-		hash:     contentHash,
-		mime:     meta.MIME,
-		fileID:   fileID,
-		adopted:  adoptFileID > 0,
-		resumed:  resumed,
-		bigFile:  info.Size > telegram.ResumableBigFileBytes,
-		meta:     meta,
-		capRes:   capRes,
-		tags:     tags,
-		slugMaps: slugMaps,
-	}, nil
-}
-
-// runAlbumBatch sends the batch in chunks of MaxMediaGroupMembers and
-// completes each group's publication: message ids recorded, one td-album:v1
-// inventory reply, index rows activated. Every destination path is locked for
-// the whole batch so concurrent mutators cannot interleave.
-func (a *App) runAlbumBatch(ctx context.Context, batch *albumBatch, channelID, tgChID int64, tgIDStr string) (*AlbumUploadResult, error) {
-	dests := make([]string, 0, len(batch.members))
-	for _, m := range batch.members {
-		dests = append(dests, m.src.dest)
-	}
-	var groups []AlbumGroup
-	resumedAny := false
-	sent := 0
-	lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, dests...), func(ctx context.Context) error {
-		groups = []AlbumGroup{}
-		sent = 0
-		threads := a.Cfg.Upload.Threads
-		if threads <= 0 {
-			threads = 4
-		}
-		partSize := a.Cfg.Upload.PartSizeKB * 1024
-		var thumb []byte
-		if batch.pres.ThumbPath != "" {
-			tf, err := a.files().Open(ctx, batch.pres.ThumbPath)
-			if err != nil {
-				return apperr.Wrap(apperr.ErrLocalNotFound, "open thumbnail", err)
-			}
-			thumb, err = io.ReadAll(tf)
-			_ = tf.Close()
-			if err != nil {
-				return apperr.Wrap(apperr.ErrLocalNotFound, "read thumbnail", err)
-			}
-		}
-
-		for chunkIdx, chunk := range albumChunks(batch) {
-			// One human caption per batch, on the very first member; later
-			// chunks and siblings stay empty.
-			withCaption := chunkIdx == 0
-			if len(chunk) == 1 {
-				// A Telegram media group holds at least two members; a lone
-				// survivor (a one-file directory, or every sibling skipped)
-				// uploads as an ordinary single message.
-				if _, err := a.sendSingleAlbumMember(ctx, chunk[0], channelID, tgChID, batch.pres, threads, partSize, thumb); err != nil {
-					return err
-				}
-				sent++
-				if chunk[0].resumed {
-					resumedAny = true
-				}
-				continue
-			}
-			group, err := a.sendAlbumChunk(ctx, chunk, channelID, tgChID, batch.pres, withCaption, threads, partSize, thumb)
-			if err != nil {
-				return err
-			}
-			groups = append(groups, *group)
-			sent += len(chunk)
-			for _, m := range chunk {
-				if m.resumed {
-					resumedAny = true
-				}
-			}
-		}
-		return nil
-	})
-	if lockErr != nil {
-		return nil, lockErr
-	}
-
-	out := &AlbumUploadResult{
-		Uploaded:  sent,
-		Errors:    []string{},
-		Albums:    groups,
-		ChannelID: tgIDStr,
-		Resumed:   resumedAny,
-	}
-	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
-		out.InviteLink = link
-	}
-	return out, nil
-}
-
-// memberPres resolves one member's presentation: its own override when the
-// caller supplied one, otherwise the batch-wide presentation.
-func memberPres(m *albumMember, batch Presentation) Presentation {
-	if m.src.pres != nil {
-		return *m.src.pres
-	}
-	return batch
-}
-
-// albumChunks splits a planned batch into sendable media groups: at most
-// MaxMediaGroupMembers each, and never mixing presentation kinds. A Telegram
-// media group is uniform, and an imported saved album can hold both photos and
-// videos, so a kind change ends the current group.
-func albumChunks(batch *albumBatch) [][]*albumMember {
-	var out [][]*albumMember
-	var cur []*albumMember
-	curKind := ""
-	for _, m := range batch.members {
-		kind := memberPres(m, batch.pres).Kind
-		if len(cur) == telegram.MaxMediaGroupMembers || (len(cur) > 0 && kind != curKind) {
-			out = append(out, cur)
-			cur = nil
-		}
-		if len(cur) == 0 {
-			curKind = kind
-		}
-		cur = append(cur, m)
-	}
-	if len(cur) > 0 {
-		out = append(out, cur)
-	}
-	return out
-}
-
-// sendSingleAlbumMember publishes one planned member as an ordinary single
-// message with its own td:v1 caption (and per-file manifest reply when the
-// caption budget demands one) — the exact single-upload semantics.
-func (a *App) sendSingleAlbumMember(ctx context.Context, m *albumMember, channelID, tgChID int64, pres Presentation, threads, partSize int, thumb []byte) (int, error) {
-	// The lone survivor publishes with its own machine record; the comment
-	// carrier must be linked (ADR 0018).
-	manifestChat, err := a.discussionChatID(ctx, channelID)
-	if err != nil {
-		return 0, err
-	}
-	pres = memberPres(m, pres)
-	req := telegram.UploadRequest{
-		ChannelID:      tgChID,
-		Caption:        m.capRes.Caption,
-		FileName:       m.meta.DisplayName,
-		MIME:           m.mime,
-		Size:           m.size,
-		ContentHash:    m.hash,
-		Path:           m.src.localPath,
-		Threads:        threads,
-		PartSize:       partSize,
-		ResumableKey:   fmt.Sprintf("file:%d", m.fileID),
-		ResumableStore: a.DB,
-	}
-	pres.apply(&req)
-	if len(thumb) > 0 && pres.Kind != telegram.KindPhoto {
-		req.Thumb = thumb
-	}
-	if !m.bigFile {
-		f, err := a.files().Open(ctx, m.src.localPath)
-		if err != nil {
-			return 0, err
-		}
-		defer func() { _ = f.Close() }()
-		req.Reader = f
-	}
-	if a.Progress != nil {
-		req.Progress = a.Progress
-	}
-	up, err := a.TG.UploadMedia(ctx, req)
-	if err != nil {
-		a.cleanupUnsentChunk(ctx, []*albumMember{m})
-		return 0, telegram.MapError(err)
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	if recErr := a.recordPendingMessage(ctx, m.fileID, up.MessageID, now); recErr != nil {
-		if a.abandonUploadedMedia(ctx, tgChID, m.fileID, up.MessageID, now) {
-			return 0, apperr.New(apperr.ErrOrphanedUpload,
-				fmt.Sprintf("upload of %q reached Telegram but could not be recorded; run td repair --orphaned", m.src.dest))
-		}
-		return 0, recErr
-	}
-	existingSlugs := a.loadSlugMap(ctx, channelID)
-	if _, pubErr := a.publisher().Publish(ctx, publisher.PublishRequest{
-		ChannelRowID:   channelID,
-		ChannelID:      tgChID,
-		FileID:         m.fileID,
-		MessageID:      up.MessageID,
-		Meta:           m.meta,
-		ExistingSlugs:  existingSlugs,
-		SetUploadedAt:  true,
-		ManifestChatID: manifestChat,
-		Rendered:       &m.capRes,
-		Tags:           m.tags,
-		SlugMaps:       m.slugMaps,
-	}); pubErr != nil {
-		if a.abandonUploadedMedia(ctx, tgChID, m.fileID, up.MessageID, now) {
-			return 0, apperr.New(apperr.ErrOrphanedUpload,
-				fmt.Sprintf("upload of %q reached Telegram but could not be completed or rolled back; run td repair --orphaned", m.src.dest))
-		}
-		return 0, pubErr
-	}
-	return up.MessageID, nil
-}
-
-// sendAlbumChunk sends one ≤MaxMediaGroupMembers media group and completes
-// its publication. withCaption gates the batch's single human caption (the
-// first member of the first chunk only). Any failure abandons the whole
-// chunk (messages deleted, rows cleaned or orphaned), mirroring the
-// single-upload crash windows.
-func (a *App) sendAlbumChunk(ctx context.Context, chunk []*albumMember, channelID, tgChID int64, pres Presentation, withCaption bool, threads, partSize int, thumb []byte) (*AlbumGroup, error) {
-	// Inventory comments need the linked discussion group (ADR 0018); fail
-	// before uploading any bytes when it is not linked.
-	manifestChat, err := a.discussionChatID(ctx, channelID)
-	if err != nil {
-		return nil, err
-	}
-	reqs := make([]telegram.UploadRequest, 0, len(chunk))
-	var readers []io.Closer
-	defer func() {
-		for _, r := range readers {
-			_ = r.Close()
-		}
-	}()
-	for i, m := range chunk {
-		req := telegram.UploadRequest{
-			ChannelID:      tgChID,
-			FileName:       m.meta.DisplayName,
-			MIME:           m.mime,
-			Size:           m.size,
-			ContentHash:    m.hash,
-			Path:           m.src.localPath,
-			Threads:        threads,
-			PartSize:       partSize,
-			ResumableKey:   fmt.Sprintf("file:%d", m.fileID),
-			ResumableStore: a.DB,
-		}
-		if i == 0 && withCaption {
-			// One human caption per batch: the first member of the first
-			// group carries it; sibling captions stay empty (ADR 0013).
-			req.Caption = m.capRes.Caption
-		}
-		memberPresentation := memberPres(m, pres)
-		if len(thumb) > 0 && memberPresentation.Kind != telegram.KindPhoto {
-			req.Thumb = thumb
-		}
-		if !m.bigFile {
-			f, err := a.files().Open(ctx, m.src.localPath)
-			if err != nil {
-				return nil, err
-			}
-			readers = append(readers, f)
-			req.Reader = f
-		}
-		if a.Progress != nil {
-			req.Progress = a.Progress
-		}
-		memberPresentation.apply(&req)
-		reqs = append(reqs, req)
-	}
-
-	results, err := a.TG.UploadMediaGroup(ctx, reqs)
-	if err != nil {
-		a.cleanupUnsentChunk(ctx, chunk)
-		return nil, telegram.MapError(err)
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	for i, res := range results {
-		if recErr := a.recordPendingMessage(ctx, chunk[i].fileID, res.MessageID, now); recErr != nil {
-			a.abandonAlbumChunk(ctx, tgChID, a.manifestCarrier(manifestChat), chunk, results, 0, now)
-			return nil, apperr.New(apperr.ErrOrphanedUpload,
-				"album reached Telegram but could not be recorded; run td repair --orphaned")
-		}
-	}
-
-	meta := manifest.AlbumMeta{GroupedID: results[0].GroupedID}
-	for i, res := range results {
-		meta.Files = append(meta.Files, manifest.AlbumFileFromMeta(res.MessageID, manifest.FileMeta{
-			CanonicalPath: chunk[i].src.dest,
-			DisplayName:   chunk[i].meta.DisplayName,
-			Size:          chunk[i].size,
-			Hash:          chunk[i].hash,
-			MIME:          chunk[i].mime,
-		}))
-	}
-	replyID, err := a.writeAlbumManifest(ctx, channelID, tgChID, a.manifestCarrier(manifestChat), 0, results[0].MessageID, meta)
-	if err != nil {
-		// replyID is nonzero when the inventory was sent but not recorded;
-		// the rollback deletes it with the media.
-		a.abandonAlbumChunk(ctx, tgChID, a.manifestCarrier(manifestChat), chunk, results, replyID, now)
-		return nil, err
-	}
-
-	existingSlugs := a.loadSlugMap(ctx, channelID)
-	for i, res := range results {
-		m := chunk[i]
-		_, pubErr := a.publisher().Publish(ctx, publisher.PublishRequest{
-			ChannelRowID:      channelID,
-			ChannelID:         tgChID,
-			FileID:            m.fileID,
-			MessageID:         res.MessageID,
-			ManifestMsgID:     replyID,
-			ManifestChatID:    manifestChat,
-			SkipManifestReply: true,
-			Meta:              m.meta,
-			ExistingSlugs:     existingSlugs,
-			SetUploadedAt:     true,
-			Rendered:          &m.capRes,
-			Tags:              m.tags,
-			SlugMaps:          m.slugMaps,
-		})
-		if pubErr != nil {
-			a.abandonAlbumChunk(ctx, tgChID, a.manifestCarrier(manifestChat), chunk, results, replyID, now)
-			if a.isAbandonWindow(pubErr) {
-				return nil, apperr.New(apperr.ErrOrphanedUpload,
-					"album reached Telegram but could not be completed or rolled back; run td repair --orphaned")
-			}
-			return nil, pubErr
-		}
-	}
-
-	paths := make([]string, 0, len(results))
-	ids := make([]int, 0, len(results))
-	for i, res := range results {
-		paths = append(paths, chunk[i].src.dest)
-		ids = append(ids, res.MessageID)
-	}
-	return &AlbumGroup{GroupedID: results[0].GroupedID, ReplyMessageID: replyID, MessageIDs: ids, Paths: paths}, nil
-}
-
-// isAbandonWindow reports whether a publish failure means the media may be
-// stranded on Telegram (the single-upload abandonUploadedMedia criterion).
-func (a *App) isAbandonWindow(err error) bool {
-	if ae, ok := apperr.As(err); ok {
-		return ae.Code == apperr.ErrDB || ae.Code == apperr.ErrTelegramRPC
-	}
-	return false
-}
-
-// cleanupUnsentChunk drops the pending rows of members whose group never
-// reached Telegram. Resumable big-file rows survive for retry, matching the
-// single-upload failure policy.
-func (a *App) cleanupUnsentChunk(ctx context.Context, chunk []*albumMember) {
-	for _, m := range chunk {
-		if !m.bigFile {
-			_ = a.DB.DiscardUpload(ctx, m.fileID)
-		}
-	}
-}
-
-// abandonAlbumChunk rolls back a chunk that reached Telegram but could not
-// be published: the inventory comment (through its carrier) and the media
-// messages are deleted when possible and pending rows cleaned up; rows that
-// cannot be proven deleted stay orphaned with their message ids so
-// RepairPending/RepairOrphaned reconcile them.
-func (a *App) abandonAlbumChunk(ctx context.Context, tgChID int64, carrier telegram.ManifestCarrier, chunk []*albumMember, results []telegram.UploadResult, replyID int, now string) {
-	if replyID > 0 {
-		_ = carrier.Delete(ctx, tgChID, replyID)
-	}
-	for i, res := range results {
-		a.abandonUploadedMedia(ctx, tgChID, chunk[i].fileID, res.MessageID, now)
-	}
 }

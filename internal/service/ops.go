@@ -808,10 +808,6 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	}
 	sort.Strings(files)
 
-	channelID, tgIDStr, err := a.channelID(ctx)
-	if err != nil {
-		return nil, err
-	}
 	tgChID, err := a.tgChannelID(ctx)
 	if err != nil {
 		return nil, err
@@ -821,7 +817,7 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	var errs []string
 	albums := []AlbumGroup{}
 	// Each source directory's children become one album batch.
-	groups := map[string][]albumSource{}
+	groups := map[string][]uploadMember{}
 	order := []string{}
 	for _, f := range files {
 		dir := filepath.Dir(f)
@@ -834,26 +830,18 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 			dest += "/"
 		}
 		dest += filepath.ToSlash(rel)
-		groups[dir] = append(groups[dir], albumSource{localPath: f, dest: dest})
+		groups[dir] = append(groups[dir], uploadMember{localPath: f, dest: dest})
 	}
 	sort.Strings(order)
 	for _, dir := range order {
-		batch, failures, err := a.planAlbumBatch(ctx, groups[dir], policy, noHash, Presentation{}, continueOnError)
-		failed += len(failures)
-		for _, f := range failures {
-			errs = append(errs, f.String())
+		out, err := a.runUpload(ctx, uploadRun{members: groups[dir], policy: policy, noHash: noHash, album: true, lenient: continueOnError})
+		if out != nil {
+			skipped += len(out.skipped)
+			failed += len(out.failures)
+			for _, f := range out.failures {
+				errs = append(errs, f.String())
+			}
 		}
-		if err != nil && !continueOnError {
-			return nil, err
-		}
-		if err != nil {
-			continue
-		}
-		skipped += batch.skipped
-		if len(batch.members) == 0 {
-			continue
-		}
-		data, err := a.runAlbumBatch(ctx, batch, channelID, tgChID, tgIDStr)
 		if err != nil {
 			failed++
 			errs = append(errs, err.Error())
@@ -862,8 +850,8 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 			}
 			continue
 		}
-		uploaded += data.Uploaded
-		albums = append(albums, data.Albums...)
+		uploaded += len(out.sent)
+		albums = append(albums, out.albums...)
 	}
 
 	data := &RecursiveUploadResult{Uploaded: uploaded, Skipped: skipped, Failed: failed, Errors: errs, Albums: albums}
