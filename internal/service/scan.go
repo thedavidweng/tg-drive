@@ -45,14 +45,11 @@ type ScanResult struct {
 // never modified before Telegram history has been fetched and proven complete,
 // so a failed or aborted scan cannot corrupt the local cache.
 func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
-	channelID, tgID, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	channelID, tgID, tgChID := ch.rowID, ch.tgIDStr, ch.tgID
 	root := "/"
 	if opts.Root != "" {
 		root, err = fsmodel.NormalizeCanonicalPath(opts.Root)

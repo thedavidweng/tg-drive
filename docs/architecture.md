@@ -33,6 +33,11 @@ cmd/td
   caption, restored on failure), and `PrepareReindex` + `ReindexBatch` /
   `Reindex` (index only, no Telegram writes). Captions, tags, and slug maps
   come from one `Rendition` that only `Render` produces (ADR 0029).
+- `internal/service` runs every Telegram write inside an operation
+  (`operate`, `operation.go`). An operation holds the operation locks of the
+  canonical paths it touches and carries the channel context, which is
+  resolved once per use case; nested operations reuse the locks already
+  held (ADR 0030).
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow
@@ -50,7 +55,7 @@ td cp
   resolve channel
   normalize paths
   plan every member: conflict policy, file/dir invariants (no writes)
-  acquire operation locks for every destination
+  start an operation: acquire operation locks for every destination
   check the discussion group, read thumbnails
   per member: compute hash/mime, resolve the pending row (adopt, supersede,
     or refuse), render caption, stage the pending row
@@ -61,7 +66,7 @@ td cp
     commit active DB state (one transaction for every member of a group)
     retire a --replace target
     on any failure after upload: delete the unit's media or mark orphaned
-  release locks
+  end the operation: release locks
   render output
 ```
 

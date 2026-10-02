@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
@@ -133,7 +132,6 @@ type ImportSavedResult struct {
 // of one saved album that share a presentation kind.
 type importUnit struct {
 	groupedID int64
-	kind      string
 	caption   string
 	items     []*ImportSavedItem
 	msgs      []telegram.Message
@@ -171,19 +169,14 @@ func (a *App) ImportSaved(ctx context.Context, opts ImportSavedOptions) (*Import
 	if err != nil {
 		return nil, err
 	}
-	channelID, _, err := a.channelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tgChID, err := a.tgChannelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Imported files carry ADR 0018 machine records, so the discussion group
 	// must exist before anything is downloaded — including for a dry run,
 	// whose plan would otherwise promise an import that cannot happen.
-	manifestChat, err := a.discussionChatID(ctx, channelID)
-	if err != nil {
+	if _, err := ch.discussionChat(ctx); err != nil {
 		return nil, err
 	}
 
@@ -199,7 +192,7 @@ func (a *App) ImportSaved(ctx context.Context, opts ImportSavedOptions) (*Import
 		HistoryComplete: complete,
 		Items:           []ImportSavedItem{},
 	}
-	units, items, err := a.planImportSaved(ctx, channelID, into, opts, msgs, out)
+	units, items, err := a.planImportSaved(ctx, ch.rowID, into, opts, msgs, out)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +217,7 @@ func (a *App) ImportSaved(ctx context.Context, opts ImportSavedOptions) (*Import
 			a.emitImportItem(opts, item)
 		}
 	}
-	if err := a.executeImportSaved(ctx, channelID, tgChID, manifestChat, opts, units, out); err != nil {
+	if err := a.executeImportSaved(ctx, ch, opts, units, out); err != nil {
 		finishImportResult(out, items)
 		return out, err
 	}
@@ -255,14 +248,15 @@ func (a *App) resolvePhotoChoice(opts ImportSavedOptions, photos int) (string, e
 }
 
 // applyPhotoChoice rewrites the planned presentation of photo items once the
-// choice is known, and re-splits units whose kind changed.
+// choice is known. A planned unit can mix photos with documents (both plan as
+// documents before the choice); the upload pipeline splits such a unit by
+// kind when it sends.
 func applyPhotoChoice(units []*importUnit, choice string) {
 	for _, u := range units {
-		if u.kind != importKindPhoto {
-			continue
-		}
-		for i := range u.pres {
-			u.pres[i] = Presentation{Kind: choice}
+		for i, item := range u.items {
+			if item.Kind == importKindPhoto {
+				u.pres[i] = Presentation{Kind: choice}
+			}
 		}
 	}
 }
@@ -397,7 +391,7 @@ func (a *App) planImportSaved(ctx context.Context, channelID int64, into string,
 		key := fmt.Sprintf("%d/%s", msg.GroupedID, pres.Kind)
 		unit := unitByKey[key]
 		if unit == nil || msg.GroupedID == 0 {
-			unit = &importUnit{groupedID: msg.GroupedID, kind: kind, caption: savedCaption(msg)}
+			unit = &importUnit{groupedID: msg.GroupedID, caption: savedCaption(msg)}
 			units = append(units, unit)
 			if msg.GroupedID != 0 {
 				unitByKey[key] = unit
@@ -584,14 +578,14 @@ func savedItemName(msg telegram.Message, kind string) string {
 
 // executeImportSaved runs the planned units: stage bytes, dedupe, publish,
 // annotate, and optionally delete the sources.
-func (a *App) executeImportSaved(ctx context.Context, channelID, tgChID int64, manifestChat string, opts ImportSavedOptions, units []*importUnit, out *ImportSavedResult) error {
-	targets, err := a.activeFilesByHash(ctx, channelID)
+func (a *App) executeImportSaved(ctx context.Context, ch *channelContext, opts ImportSavedOptions, units []*importUnit, out *ImportSavedResult) error {
+	targets, err := a.activeFilesByHash(ctx, ch.rowID)
 	if err != nil {
 		return err
 	}
 	staging := a.importStagingDir()
 	for _, unit := range units {
-		if err := a.importUnit(ctx, channelID, tgChID, manifestChat, staging, opts, unit, targets); err != nil {
+		if err := a.importUnit(ctx, ch, staging, opts, unit, targets); err != nil {
 			if !opts.ContinueErr {
 				return err
 			}
@@ -615,7 +609,7 @@ type stagedItem struct {
 // recorded on the item and returned so the caller can honor
 // --continue-on-error; nothing published is ever rolled back by a later
 // sibling's failure.
-func (a *App) importUnit(ctx context.Context, channelID, tgChID int64, manifestChat, staging string, opts ImportSavedOptions, unit *importUnit, targets map[string]importTarget) error {
+func (a *App) importUnit(ctx context.Context, ch *channelContext, staging string, opts ImportSavedOptions, unit *importUnit, targets map[string]importTarget) error {
 	var staged []*stagedItem
 	var firstErr error
 	fail := func(item *ImportSavedItem, err error) {
@@ -647,7 +641,7 @@ func (a *App) importUnit(ctx context.Context, channelID, tgChID int64, manifestC
 	for _, st := range staged {
 		target, dup := targets[st.hash]
 		if !opts.NoDedupe && dup {
-			a.recordDuplicate(ctx, channelID, tgChID, opts, st, target)
+			a.recordDuplicate(ctx, ch, opts, st, target)
 			a.removeStaged(ctx, st.local)
 			continue
 		}
@@ -662,7 +656,7 @@ func (a *App) importUnit(ctx context.Context, channelID, tgChID int64, manifestC
 	}
 
 	if len(publish) > 0 {
-		if err := a.publishImported(ctx, channelID, tgChID, manifestChat, opts, unit, publish, targets); err != nil {
+		if err := a.publishImported(ctx, ch, opts, unit, publish, targets); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -674,49 +668,86 @@ func (a *App) importUnit(ctx context.Context, channelID, tgChID int64, manifestC
 // publishImported uploads the surviving members of a unit and writes their
 // provenance record. Album units go through the media-group path so grouping
 // survives the import; singles go through the ordinary single-upload path,
-// which is the only one that can honor --replace.
-func (a *App) publishImported(ctx context.Context, channelID, tgChID int64, manifestChat string, opts ImportSavedOptions, unit *importUnit, publish []*stagedItem, targets map[string]importTarget) error {
+// which is the only one that can honor --replace. Each upload, its origin
+// record, and its source delete run as one operation on the destination
+// paths, so no other operation can touch a destination between publishing
+// and annotating it.
+func (a *App) publishImported(ctx context.Context, ch *channelContext, opts ImportSavedOptions, unit *importUnit, publish []*stagedItem, targets map[string]importTarget) error {
 	if unit.groupedID != 0 && len(publish) > 1 {
-		return a.publishImportedAlbum(ctx, channelID, tgChID, manifestChat, opts, unit, publish, targets)
+		paths := make([]string, 0, len(publish))
+		for _, st := range publish {
+			paths = append(paths, st.item.Path)
+		}
+		ran := false
+		err := a.operate(ctx, ch, paths, func(ctx context.Context) error {
+			ran = true
+			return a.publishImportedAlbum(ctx, ch, opts, unit, publish, targets)
+		})
+		if err != nil && !ran {
+			for _, st := range publish {
+				a.failImported(ctx, ch, opts, st, err)
+			}
+		}
+		return err
 	}
 	var firstErr error
 	for _, st := range publish {
-		caption := savedCaption(st.msg)
-		if caption == "" {
-			caption = unit.caption
+		ran := false
+		err := a.operate(ctx, ch, []string{st.item.Path}, func(ctx context.Context) error {
+			ran = true
+			return a.publishImportedSingle(ctx, ch, opts, unit, st, targets)
+		})
+		if err != nil && !ran {
+			a.failImported(ctx, ch, opts, st, err)
 		}
-		data, err := a.uploadFileWithCaption(ctx, st.local, st.item.Path, opts.Policy, false, st.pres, caption)
-		if err != nil {
-			st.item.Action = "fail"
-			st.item.Error = err.Error()
-			a.emitImportItem(opts, st.item)
-			a.removeStagedIfNoPending(ctx, channelID, st)
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
+		if err != nil && firstErr == nil {
+			firstErr = err
 		}
-		if data.Skipped {
-			st.item.Action = "skip"
-			st.item.Reason = "destination exists"
-			a.emitImportItem(opts, st.item)
-			a.removeStaged(ctx, st.local)
-			continue
-		}
-		st.item.NewMessageID = data.MessageID
-		if data.Hash != "" {
-			st.item.Hash = data.Hash
-		}
-		a.afterImported(ctx, tgChID, manifestChat, opts, []*stagedItem{st}, data.MessageID, 0, targets)
-		a.removeStaged(ctx, st.local)
 	}
 	return firstErr
+}
+
+// failImported records an item whose upload failed. Staged bytes a pending
+// row can resume from are kept.
+func (a *App) failImported(ctx context.Context, ch *channelContext, opts ImportSavedOptions, st *stagedItem, err error) {
+	if st.item.Action == "import" {
+		st.item.Action = "fail"
+		st.item.Error = err.Error()
+		a.emitImportItem(opts, st.item)
+	}
+	a.removeStagedIfNoPending(ctx, ch.rowID, st)
+}
+
+func (a *App) publishImportedSingle(ctx context.Context, ch *channelContext, opts ImportSavedOptions, unit *importUnit, st *stagedItem, targets map[string]importTarget) error {
+	caption := savedCaption(st.msg)
+	if caption == "" {
+		caption = unit.caption
+	}
+	data, err := a.uploadFileWithCaption(ctx, st.local, st.item.Path, opts.Policy, false, st.pres, caption)
+	if err != nil {
+		a.failImported(ctx, ch, opts, st, err)
+		return err
+	}
+	if data.Skipped {
+		st.item.Action = "skip"
+		st.item.Reason = "destination exists"
+		a.emitImportItem(opts, st.item)
+		a.removeStaged(ctx, st.local)
+		return nil
+	}
+	st.item.NewMessageID = data.MessageID
+	if data.Hash != "" {
+		st.item.Hash = data.Hash
+	}
+	a.afterImported(ctx, ch, opts, []*stagedItem{st}, data.MessageID, 0, targets)
+	a.removeStaged(ctx, st.local)
+	return nil
 }
 
 // publishImportedAlbum republishes one saved album as a td album: one human
 // caption on the first member, one td-album:v1 inventory, groups split at
 // Telegram's member limit.
-func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64, manifestChat string, opts ImportSavedOptions, unit *importUnit, publish []*stagedItem, targets map[string]importTarget) error {
+func (a *App) publishImportedAlbum(ctx context.Context, ch *channelContext, opts ImportSavedOptions, unit *importUnit, publish []*stagedItem, targets map[string]importTarget) error {
 	members := make([]uploadMember, 0, len(publish))
 	for i, st := range publish {
 		m := uploadMember{localPath: st.local, dest: st.item.Path, pres: st.pres}
@@ -732,38 +763,29 @@ func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64,
 		for _, st := range publish {
 			for _, f := range out.failures {
 				if f.localPath == st.local {
-					st.item.Action = "fail"
-					st.item.Error = f.err.Error()
-					a.emitImportItem(opts, st.item)
-					a.removeStagedIfNoPending(ctx, channelID, st)
+					a.failImported(ctx, ch, opts, st, f.err)
 				}
 			}
 		}
 	}
 	if err != nil {
 		for _, st := range publish {
-			if st.item.Action == "import" {
-				st.item.Action = "fail"
-				st.item.Error = err.Error()
-				a.emitImportItem(opts, st.item)
-			}
-			a.removeStagedIfNoPending(ctx, channelID, st)
+			a.failImported(ctx, ch, opts, st, err)
 		}
 		return err
 	}
 	if len(out.sent) == 0 {
 		for _, st := range publish {
-			a.removeStagedIfNoPending(ctx, channelID, st)
+			a.removeStagedIfNoPending(ctx, ch.rowID, st)
 		}
 		return nil
 	}
+	// out.sent covers every published member, including lone members the
+	// pipeline sent as ordinary messages (a kind split or the group limit);
+	// out.albums lists media groups only.
 	byPath := map[string]int{}
-	for _, g := range out.albums {
-		for i, p := range g.Paths {
-			if i < len(g.MessageIDs) {
-				byPath[p] = g.MessageIDs[i]
-			}
-		}
+	for _, s := range out.sent {
+		byPath[s.dest] = s.messageID
 	}
 	firstMsgID := 0
 	var published []*stagedItem
@@ -778,7 +800,7 @@ func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64,
 		published = append(published, st)
 	}
 	if len(published) > 0 {
-		a.afterImported(ctx, tgChID, manifestChat, opts, published, firstMsgID, unit.groupedID, targets)
+		a.afterImported(ctx, ch, opts, published, firstMsgID, unit.groupedID, targets)
 	}
 	for _, st := range publish {
 		a.removeStaged(ctx, st.local)
@@ -788,8 +810,10 @@ func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64,
 
 // afterImported writes the unit's td-origin:v1 record, registers the new
 // hashes for in-run dedupe, and deletes the verified sources when asked.
-func (a *App) afterImported(ctx context.Context, tgChID int64, manifestChat string, opts ImportSavedOptions, published []*stagedItem, firstMsgID int, groupedID int64, targets map[string]importTarget) {
+func (a *App) afterImported(ctx context.Context, ch *channelContext, opts ImportSavedOptions, published []*stagedItem, firstMsgID int, groupedID int64, targets map[string]importTarget) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	tgChID := ch.tgID
+	manifestChat, chatErr := ch.discussionChat(ctx)
 	if firstMsgID > 0 {
 		record := manifest.OriginMeta{
 			Origin:    savedOrigin(published[0].msg, now),
@@ -798,7 +822,11 @@ func (a *App) afterImported(ctx context.Context, tgChID int64, manifestChat stri
 		if groupedID == 0 {
 			record.CanonicalPath = published[0].item.Path
 		}
-		if id, err := a.manifestCarrier(manifestChat).Send(ctx, tgChID, firstMsgID, manifest.RenderOriginRecord(record)); err == nil {
+		id, err := 0, chatErr
+		if err == nil {
+			id, err = a.manifestCarrier(manifestChat).Send(ctx, tgChID, firstMsgID, manifest.RenderOriginRecord(record))
+		}
+		if err == nil {
 			for _, st := range published {
 				st.item.OriginRecordID = id
 			}
@@ -824,12 +852,12 @@ func (a *App) afterImported(ctx context.Context, tgChID int64, manifestChat stri
 // the item is skipped, and its caption — the only part with no copy in the
 // drive — is written into the matched file's thread as a td-dupe:v1 record,
 // and merged into the file's caption when asked.
-func (a *App) recordDuplicate(ctx context.Context, channelID, tgChID int64, opts ImportSavedOptions, st *stagedItem, target importTarget) {
+func (a *App) recordDuplicate(ctx context.Context, ch *channelContext, opts ImportSavedOptions, st *stagedItem, target importTarget) {
 	st.item.Action = "skip"
 	st.item.DuplicateOf = target.path
 	st.item.Reason = "duplicate of " + target.path
-	err := a.withLocks(ctx, []string{sqlitestore.LockKey(channelID, target.path)}, func(ctx context.Context) error {
-		a.recordDuplicateLocked(ctx, tgChID, opts, st, target)
+	err := a.operate(ctx, ch, []string{target.path}, func(ctx context.Context) error {
+		a.recordDuplicateLocked(ctx, ch.tgID, opts, st, target)
 		return nil
 	})
 	if err != nil {

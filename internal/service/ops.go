@@ -75,10 +75,11 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 	if err != nil {
 		return nil, err
 	}
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
+	channelID := ch.rowID
 	prefix := p
 	if prefix != "/" {
 		prefix += "/"
@@ -224,7 +225,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	channelID, tgID, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		// Before init there is nothing to count, but auth and paths are
 		// still worth reporting; an explicit --channel that matches nothing
@@ -240,6 +241,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 		}
 		return nil, err
 	}
+	channelID, tgID := ch.rowID, ch.tgIDStr
 	counts := map[string]int{}
 	rows, err := a.DB.Raw().QueryContext(ctx, `select status, count(*) from files where channel_id=? group by status`, channelID)
 	if err != nil {
@@ -347,15 +349,11 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	if err != nil {
 		return nil, err
 	}
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	row, found, err := a.DB.ActiveByPath(ctx, channelID, p)
+	row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
 	}
@@ -399,7 +397,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 		h = blake3.New(32, nil)
 		w = io.MultiWriter(f, h)
 	}
-	nativePhoto, err := a.downloadTo(ctx, tgChID, messageID, w)
+	nativePhoto, err := a.downloadTo(ctx, ch.tgID, messageID, w)
 	if err != nil {
 		_ = f.Close()
 		_ = a.files().Remove(ctx, tmp)
@@ -479,14 +477,11 @@ func (a *App) MoveFile(ctx context.Context, from, to string) error {
 	if err != nil {
 		return err
 	}
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return err
-	}
+	channelID := ch.rowID
 	active, err := a.activePaths(ctx, channelID)
 	if err != nil {
 		return err
@@ -528,8 +523,8 @@ func (a *App) MoveFile(ctx context.Context, from, to string) error {
 	}
 	// Path locks (sorted) with heartbeat renewal: a move touching two paths
 	// holds both for the whole operation regardless of duration.
-	return a.withLocks(ctx, lockKeysForPaths(channelID, src, dst), func(ctx context.Context) error {
-		return a.fileRecord(channelID, tgChID, srcRow).Rename(ctx, dst)
+	return a.operate(ctx, ch, []string{src, dst}, func(ctx context.Context) error {
+		return a.fileRecord(channelID, ch.tgID, srcRow).Rename(ctx, dst)
 	})
 }
 
@@ -556,15 +551,11 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	if err != nil {
 		return nil, err
 	}
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	active, err := a.activePaths(ctx, channelID)
+	active, err := a.activePaths(ctx, ch.rowID)
 	if err != nil {
 		return nil, err
 	}
@@ -575,7 +566,7 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 				WithDetails(map[string]any{"path": p})
 		}
 	}
-	row, found, err := a.DB.ActiveByPath(ctx, channelID, p)
+	row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
 	}
@@ -584,10 +575,9 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	}
 	// Hold the path lock (with heartbeat renewal) for the whole delete: the
 	// Telegram mutations and the index commit must be exclusive.
-	lockKey := sqlitestore.LockKey(channelID, p)
 	var out *DeleteResult
-	lockErr := a.withLocks(ctx, []string{lockKey}, func(ctx context.Context) error {
-		res, err := a.deleteFileLocked(ctx, channelID, tgChID, row, opts)
+	lockErr := a.operate(ctx, ch, []string{p}, func(ctx context.Context) error {
+		res, err := a.deleteFileLocked(ctx, ch.rowID, ch.tgID, row, opts)
 		if err != nil {
 			return err
 		}
@@ -676,7 +666,7 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	}
 	sort.Strings(files)
 
-	tgChID, err := a.tgChannelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -723,9 +713,9 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	}
 
 	data := &RecursiveUploadResult{Uploaded: uploaded, Skipped: skipped, Failed: failed, Errors: errs, Albums: albums}
-	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil && link != "" {
+	if link, err := a.TG.GetInviteLink(ctx, ch.tgID); err == nil && link != "" {
 		data.InviteLink = link
-		data.ChannelID = fmt.Sprintf("%d", tgChID)
+		data.ChannelID = fmt.Sprintf("%d", ch.tgID)
 	}
 	return data, nil
 }

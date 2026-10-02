@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func driveMessageByID(t *testing.T, app *App, ctx context.Context, id int) teleg
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range app.TG.(*fake.Client).Messages(tgChID) {
+	for _, m := range app.TG.(*writeAudit).Messages(tgChID) {
 		if m.ID == id {
 			return m
 		}
@@ -623,5 +624,88 @@ func TestImportSavedEmitsPerItemEvents(t *testing.T) {
 	}
 	if len(events) != 1 || events[0] != "import.item" {
 		t.Fatalf("events = %v", events)
+	}
+}
+
+// A saved album the pipeline cannot send as one media group still reports
+// every member's republished message: members beyond Telegram's group limit,
+// and a member split off by presentation kind, go out as ordinary messages.
+// Their ids drive the origin record and source verification, so a missing id
+// would skip provenance and keep sources --delete-source should remove.
+func TestImportSavedAlbumLoneMembersReportNewMessageIDs(t *testing.T) {
+	cases := []struct {
+		name    string
+		members func() []telegram.Message
+		opts    ImportSavedOptions
+	}{
+		{
+			name: "beyond the group limit",
+			members: func() []telegram.Message {
+				var out []telegram.Message
+				for i := 0; i <= telegram.MaxMediaGroupMembers; i++ {
+					data := []byte(fmt.Sprintf("member-%02d", i))
+					out = append(out, telegram.Message{
+						ID: 1301 + i, Kind: telegram.KindDocument, FileName: fmt.Sprintf("m%02d.bin", i),
+						MIME: "application/octet-stream", FileSize: int64(len(data)), Data: data,
+					})
+				}
+				return out
+			},
+			opts: ImportSavedOptions{PhotosAs: PhotosAsDocument, DeleteSource: true},
+		},
+		{
+			name: "split off by kind",
+			members: func() []telegram.Message {
+				return []telegram.Message{
+					{ID: 1401, Kind: telegram.KindPhoto, MIME: "image/jpeg", FileSize: 3, Data: []byte("p-1")},
+					{ID: 1402, Kind: telegram.KindPhoto, MIME: "image/jpeg", FileSize: 3, Data: []byte("p-2")},
+					{ID: 1403, Kind: telegram.KindDocument, FileName: "notes.pdf", MIME: "application/pdf", FileSize: 4, Data: []byte("pdf!")},
+				}
+			},
+			// The photo choice arrives after planning, so the photos and the
+			// document share one planned unit and only the pipeline splits it.
+			opts: ImportSavedOptions{
+				DeleteSource: true,
+				PhotoPrompt:  func(int) (string, error) { return PhotosAsPhoto, nil },
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app, tg := testApp(t)
+			loginAndInit(t, app, tg)
+			ctx := context.Background()
+			seeded := tg.SeedSavedAlbum(tc.members(), 9100, savedOriginHeader(), 0, "", "album caption")
+
+			res, err := app.ImportSaved(ctx, tc.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Imported != len(seeded) {
+				t.Fatalf("result = %+v", res)
+			}
+			for _, src := range seeded {
+				item := importItemByMessage(t, res, src.ID)
+				if item.NewMessageID == 0 {
+					t.Fatalf("item for saved message %d has no new message id: %+v", src.ID, item)
+				}
+				published := driveMessageByID(t, app, ctx, item.NewMessageID)
+				if string(published.Data) != string(src.Data) {
+					t.Fatalf("item %d new_message_id %d holds %q, want %q", src.ID, item.NewMessageID, published.Data, src.Data)
+				}
+				if src.Kind == telegram.KindDocument && published.Kind != telegram.KindDocument {
+					t.Fatalf("document %d republished as %q; --photos-as applies to photos only", src.ID, published.Kind)
+				}
+				if item.OriginRecordID == 0 || !item.SourceDeleted {
+					t.Fatalf("item %d lost provenance or source cleanup: %+v", src.ID, item)
+				}
+			}
+			if len(originRecords(t, app, ctx)) == 0 {
+				t.Fatal("no origin record written")
+			}
+			if left := tg.SavedMessages(); len(left) != 0 {
+				t.Fatalf("sources kept: %+v", left)
+			}
+		})
 	}
 }

@@ -105,14 +105,11 @@ type stagedUpload struct {
 // refusals happen for every member before any Telegram write, so a strict
 // run aborts with nothing sent.
 func (a *App) runUpload(ctx context.Context, run uploadRun) (*uploadOutcome, error) {
-	channelID, tgIDStr, err := a.channelID(ctx)
+	cc, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	channelID := cc.rowID
 	active, err := a.activePaths(ctx, channelID)
 	if err != nil {
 		return nil, err
@@ -162,8 +159,8 @@ func (a *App) runUpload(ctx context.Context, run uploadRun) (*uploadOutcome, err
 	for _, s := range planned {
 		dests = append(dests, s.dest)
 	}
-	ch := uploadChannel{rowID: channelID, tgID: tgChID, tgIDStr: tgIDStr}
-	err = a.withLocks(ctx, lockKeysForPaths(channelID, dests...), func(ctx context.Context) error {
+	ch := uploadChannel{rowID: cc.rowID, tgID: cc.tgID, tgIDStr: cc.tgIDStr}
+	err = a.operate(ctx, cc, dests, func(ctx context.Context) error {
 		return a.publishLocked(ctx, run, ch, planned, report, out)
 	})
 	finish()
@@ -235,7 +232,11 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 	// Machine records live in the discussion group's comment threads
 	// (ADR 0018); fail before staging or uploading anything when it is not
 	// linked.
-	manifestChat, err := a.discussionChatID(ctx, ch.rowID)
+	cc, err := a.channel(ctx)
+	if err != nil {
+		return err
+	}
+	manifestChat, err := cc.discussionChat(ctx)
 	if err != nil {
 		return err
 	}

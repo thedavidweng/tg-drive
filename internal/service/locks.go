@@ -10,7 +10,8 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 )
 
-// withLocks runs fn while holding the given operation-lock keys. Keys are
+// withLocks runs fn while holding the given operation-lock keys; use cases
+// take locks through operate (operation.go), not directly. Keys are
 // acquired in sorted order (so multi-lock flows cannot deadlock against each
 // other) and renewed by a heartbeat at one third of the TTL, so an operation
 // legitimately longer than the TTL still excludes concurrent mutators. When

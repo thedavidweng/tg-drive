@@ -62,15 +62,11 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 			"album uploads cannot --replace; replace an existing file with single-path td cp --replace, or remove it first")
 	}
 
-	channelID, tgIDStr, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	active, err := a.activePaths(ctx, channelID)
+	active, err := a.activePaths(ctx, ch.rowID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,13 +101,13 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 	}
 	data := &AlbumUploadResult{
 		Albums:    out.albums,
-		ChannelID: tgIDStr,
+		ChannelID: ch.tgIDStr,
 		Errors:    []string{},
 		Resumed:   out.resumed,
 		Skipped:   len(out.skipped),
 		Uploaded:  len(out.sent),
 	}
-	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
+	if link, err := a.TG.GetInviteLink(ctx, ch.tgID); err == nil {
 		data.InviteLink = link
 	}
 	return data, nil

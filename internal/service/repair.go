@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
@@ -26,10 +25,11 @@ type RepairPendingResult struct {
 // Only rows older than the lock TTL whose path is not currently locked are
 // touched, so a live in-flight upload is never deleted or duplicated.
 func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
+	channelID := ch.rowID
 	now := time.Now().UTC().Format(time.RFC3339)
 	ttl := time.Duration(a.Cfg.Locks.TTLSeconds) * time.Second
 	if ttl <= 0 {
@@ -68,7 +68,7 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 	for _, r := range pending {
 		// A path lock held right now means an operation is in flight (e.g. an
 		// upload adopting this very row); leave it alone.
-		if held, err := a.DB.LockHeld(ctx, sqlitestore.LockKey(channelID, r.path)); err == nil && held {
+		if held, err := a.pathLocked(ctx, ch, r.path); err == nil && held {
 			skipped++
 			continue
 		}
@@ -77,7 +77,7 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 		// concurrent upload adopting the same row.
 		flip := func(retire func(ctx context.Context) error) bool {
 			ok := true
-			err := a.withLocks(ctx, lockKeysForPaths(channelID, r.path), func(ctx context.Context) error {
+			err := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
 				_ = retire(ctx)
 				return nil
 			})
@@ -99,7 +99,7 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 			if _, statErr := a.files().Stat(ctx, r.local.String); statErr == nil {
 				// Drop the stale row (and its state) and retry the upload
 				// fresh; UploadFile takes the path lock itself.
-				err := a.withLocks(ctx, lockKeysForPaths(channelID, r.path), func(ctx context.Context) error {
+				err := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
 					_ = a.DB.DiscardUpload(ctx, r.id)
 					return nil
 				})
@@ -136,15 +136,12 @@ type RepairOrphanedResult struct {
 // RepairOrphaned completes or removes uploads whose media message exists on
 // Telegram but whose index promotion failed.
 func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOrphanedResult, error) {
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	manifestChat, err := a.discussionChatID(ctx, channelID)
+	channelID, tgChID := ch.rowID, ch.tgID
+	manifestChat, err := ch.discussionChat(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +182,7 @@ func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOr
 		}
 		// Each orphan repair holds its path lock, so it cannot race a
 		// concurrent move or delete of the same file.
-		err := a.withLocks(ctx, lockKeysForPaths(channelID, r.path), func(ctx context.Context) error {
+		err := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
 			if deleteOrphans {
 				err := a.TG.DeleteMessage(ctx, tgChID, int(r.msgID.Int64))
 				if err == nil || isMessageGone(err) {
@@ -251,23 +248,19 @@ func (a *App) RepairPath(ctx context.Context, remotePath string) (*RepairPathRes
 	if err != nil {
 		return nil, err
 	}
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	row, found, err := a.DB.ActiveByPath(ctx, channelID, p)
+	row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
 	}
 	if !found || !row.MessageID.Valid {
 		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
 	}
-	lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, p), func(ctx context.Context) error {
-		return a.fileRecord(channelID, tgChID, row).Rewrite(ctx)
+	lockErr := a.operate(ctx, ch, []string{p}, func(ctx context.Context) error {
+		return a.fileRecord(ch.rowID, ch.tgID, row).Rewrite(ctx)
 	})
 	if lockErr != nil {
 		return nil, lockErr
@@ -283,10 +276,11 @@ type RepairScanErrorsResult struct {
 
 // RepairScanErrors reprocesses the channel and clears resolved scan errors.
 func (a *App) RepairScanErrors(ctx context.Context) (*RepairScanErrorsResult, error) {
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
+	channelID := ch.rowID
 	var before int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from scan_errors where channel_id=? and status='pending'`, channelID).Scan(&before)
 	if _, err := a.Scan(ctx, ScanOptions{Full: true, Repair: true}); err != nil {

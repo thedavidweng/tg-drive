@@ -31,6 +31,7 @@ func testApp(t *testing.T) (*App, *fake.Client) {
 		DB:  database,
 		TG:  tg,
 	}
+	auditWrites(t, app, tg)
 	return app, tg
 }
 
@@ -63,11 +64,11 @@ func machineRecords(t *testing.T, app *App, ctx context.Context) []telegram.Mess
 		t.Fatal(err)
 	}
 	tgChID, _ := app.tgChannelID(ctx)
-	out := append([]telegram.Message(nil), app.TG.(*fake.Client).Messages(tgChID)...)
+	out := append([]telegram.Message(nil), app.TG.(*writeAudit).Messages(tgChID)...)
 	if discID != "" {
 		var gid int64
 		_, _ = fmt.Sscanf(discID, "%d", &gid)
-		out = append(out, app.TG.(*fake.Client).Messages(gid)...)
+		out = append(out, app.TG.(*writeAudit).Messages(gid)...)
 	}
 	return out
 }

@@ -18,7 +18,12 @@ import (
 // records: one td-album:v1 comment per media group, and one td-manifest:v1
 // comment per ungrouped adopted file that has no machine record. Legacy
 // in-channel replies found on the channel are converted to comment threads.
-func (a *App) ensureTelegramManifests(ctx context.Context, channelID, tgChID int64, manifestChat string, history []telegram.Message, opts AdoptOptions, out *AdoptResult) error {
+func (a *App) ensureTelegramManifests(ctx context.Context, ch *channelContext, history []telegram.Message, opts AdoptOptions, out *AdoptResult) error {
+	channelID, tgChID := ch.rowID, ch.tgID
+	manifestChat, err := ch.discussionChat(ctx)
+	if err != nil {
+		return err
+	}
 	byID := map[int]telegram.Message{}
 	var albumReplies []telegram.Message
 	perFileReply := map[int]int{} // media id -> reply id
@@ -133,7 +138,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, channelID, tgChID int
 		legacy := a.manifestCarrier("")
 		var sendErr error
 		legacyOnly := false
-		lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, memberPaths...), func(ctx context.Context) error {
+		lockErr := a.operate(ctx, ch, memberPaths, func(ctx context.Context) error {
 			id, err := comment.Send(ctx, tgChID, members[0].ID, body)
 			if err != nil {
 				var nf *telegram.MessageNotFoundError
@@ -230,7 +235,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, channelID, tgChID int
 		legacy := a.manifestCarrier("")
 		var sendErr error
 		legacyOnly := false
-		lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, r.path), func(ctx context.Context) error {
+		lockErr := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
 			id, err := comment.Send(ctx, tgChID, msg.ID, reply)
 			if err != nil {
 				var nf *telegram.MessageNotFoundError
