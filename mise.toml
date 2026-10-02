@@ -3,6 +3,8 @@ go = "1.26.5"
 gofumpt = "0.12.0"
 golangci-lint = "2.12.2"
 goreleaser = "2.17.0"
+node = "24.21.0"
+bun = "1.4.2"
 
 [tasks.build]
 run = "make build"
@@ -21,3 +23,15 @@ run = "make lint"
 
 [tasks.check]
 run = "make ci-local && make build"
+
+[tasks.check-gui]
+description = "GUI gates: bindings drift, frontend typecheck/lint/tests, go vet and go test with -tags gui"
+run = "make check-gui"
+
+[tasks.gui-bindings]
+description = "Regenerate the frontend's TypeScript bindings for cmd/td-gui"
+run = "make gui-bindings"
+
+[tasks.gui-build]
+description = "Build the frontend and dist/td-gui"
+run = "make gui-build"

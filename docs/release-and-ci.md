@@ -30,8 +30,10 @@ needed for private repos.
 
 ## Workflows
 
-- `.github/workflows/ci.yml` runs two jobs:
+- `.github/workflows/ci.yml` runs three jobs:
   - `test` (25m): tidy, fmt, vet, lint, unit tests, race, `make build`, coverage
+  - `gui` (30m, matrix of ubuntu/macos/windows): `make check-gui` and
+    `make gui-build` (see "Desktop GUI" below)
   - `snapshot` (30m): `goreleaser build --snapshot --clean` on its own runner
 - `.github/workflows/release-please.yml` manages release PRs, tags, and
   releases, then dispatches packaging.
@@ -52,6 +54,48 @@ needed for private repos.
 7. The tap repository's Sync Releases workflow updates the Homebrew
    cask from the published assets (daily cron; may lag by up to a day,
    or run it manually after a release).
+
+## Desktop GUI
+
+`td-gui` (ADR 0031) is built with the `gui` tag and is not part of the
+default gates: it links the platform webview through cgo (GTK 4 and
+WebKitGTK 6.0 on Linux), while `mise run check` stays CGO-free and needs no
+webview.
+
+The GUI toolchain is pinned in `mise.toml`: Node LTS (runs Vite) and Bun
+(frontend package manager and test runner). The `wails3` CLI is pinned in
+the Makefile (`WAILS3_VERSION`) at the exact Wails module version in
+`go.mod` and installed into `dist/bin` by `make gui-tools`, which every
+target that needs it depends on. It is not a mise tool: mise's Go backend
+drops the leading `v` when it invokes `go install`, and that version query
+fails on Ubuntu CI.
+
+```sh
+mise run check-gui     # or: make check-gui
+```
+
+`check-gui` runs, in order:
+
+- `make gui-bindings-check`: regenerates the TypeScript bindings
+  (`wails3 generate bindings -f '-tags gui' -ts -i -d frontend/bindings
+  ./cmd/td-gui`; the layout has `main.go` away from `frontend/`, so Wails'
+  default Taskfiles do not apply) and fails on any drift — the bindings are
+  committed.
+- `make gui-frontend-check`: `bun install --frozen-lockfile`, then the
+  frontend type-check (`tsc -b`), lint (`eslint --max-warnings 0`), and
+  behaviour tests (`bun test`).
+- `make gui-go-check`: builds the frontend into `frontend/dist` (the
+  `gui`-tagged `frontend` package embeds it, so the Go side cannot compile
+  without it), then `go vet -tags gui ./...` and `go test -tags gui` over
+  the GUI packages.
+
+`make gui-build` additionally produces `dist/td-gui`.
+
+The CI `gui` job runs the same targets natively on Ubuntu, macOS, and
+Windows. On Ubuntu it first installs `libgtk-4-dev` and `libwebkitgtk-6.0-dev`;
+on Windows it installs `make` via Chocolatey (the runners ship Git Bash but
+no make). Tools come from `mise-action` at the pinned versions. The job is
+informational, not a required check.
 
 ## Local checks
 
