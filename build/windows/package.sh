@@ -13,6 +13,17 @@ WAILS3="${WAILS3:-dist/bin/wails3}"
 OUT=dist/gui
 WORK=dist/gui-windows-work
 
+# Chocolatey installs NSIS under Program Files but the current GitHub
+# Actions step shell does not inherit the updated machine PATH, so fall
+# back to the default install location before giving up.
+if ! command -v makensis >/dev/null 2>&1; then
+	for d in "/c/Program Files (x86)/NSIS" "/c/Program Files/NSIS"; do
+		if [ -x "$d/makensis.exe" ]; then
+			PATH="$d:$PATH"
+			break
+		fi
+	done
+fi
 if ! command -v makensis >/dev/null 2>&1; then
 	echo "package.sh: makensis not found; install NSIS (choco install nsis)" >&2
 	exit 1
