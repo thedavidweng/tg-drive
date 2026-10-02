@@ -279,7 +279,7 @@ func TestUploadResumeAdoptsPendingRow(t *testing.T) {
 	}
 	// Content round-trips.
 	dest := filepath.Join(t.TempDir(), "out.bin")
-	if _, err := app.DownloadFile(ctx, "/resume.bin", dest, ConflictFail); err != nil {
+	if _, err := app.DownloadFile(ctx, "/resume.bin", dest, ConflictFail, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(dest)
@@ -368,7 +368,7 @@ func TestRepairPendingLeavesInFlightUploadUntouched(t *testing.T) {
 	// Wait for the lock to actually be held before repairing.
 	waitLockHeld(t, app, sqlitestore.LockKey(channelID, "/locked.txt"))
 
-	out, err := app.RepairPending(ctx)
+	out, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}

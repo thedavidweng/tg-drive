@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,28 +19,55 @@ import (
 type observed struct {
 	mu    sync.Mutex
 	lines []string
+	// local maps each item's remote path to the local file its result named.
+	local map[string]string
 }
 
 func (o *observed) observer() Observer {
 	return Observer{
 		OnStage: func(it Item, st Stage) {
-			o.add(fmt.Sprintf("stage %s %s", it.Path, st))
+			o.add(fmt.Sprintf("stage %s %s", it.name(), st))
 		},
 		OnProgress: func(p Progress) {
 			part := ""
 			if p.Part != nil {
 				part = fmt.Sprintf(" part=%s#%d/%d", p.Part.FileName, p.Part.Index, p.Part.Size)
 			}
-			o.add(fmt.Sprintf("progress %s %d/%d%s", p.Item.Path, p.Done, p.Total, part))
+			o.add(fmt.Sprintf("progress %s %d/%d%s", p.Item.name(), p.Done, p.Total, part))
 		},
 		OnItem: func(r ItemResult) {
-			line := fmt.Sprintf("item %s %s", r.Item.Path, r.Status)
+			line := fmt.Sprintf("item %s %s", r.Item.name(), r.Status)
 			if r.Err != nil {
 				line += " err"
 			}
+			o.mu.Lock()
+			if o.local == nil {
+				o.local = map[string]string{}
+			}
+			o.local[r.Item.Path] = r.Item.Source
+			o.mu.Unlock()
 			o.add(line)
 		},
 	}
+}
+
+// name is how an observed line refers to an item: its remote path, else its
+// message, else "call" for the call as a whole.
+func (it Item) name() string {
+	switch {
+	case it.Path != "":
+		return it.Path
+	case it.MessageID != 0:
+		return fmt.Sprintf("msg %d", it.MessageID)
+	default:
+		return "call"
+	}
+}
+
+func (o *observed) sources() map[string]string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return maps.Clone(o.local)
 }
 
 func (o *observed) add(line string) {

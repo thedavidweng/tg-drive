@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -79,6 +80,10 @@ type ImportSavedOptions struct {
 	PhotoPrompt func(photoCount int) (string, error)
 	// Emit optionally receives per-item progress events.
 	Emit func(event string, payload any)
+	// Observer receives this call's stages, byte progress, and per-message
+	// results. A dry run changes nothing, so it reports only reading the
+	// saved chat.
+	Observer Observer
 }
 
 // Validate rejects an unconfirmed import, and an unconfirmed DeleteSource
@@ -325,6 +330,7 @@ func (a *App) collectSavedMessages(ctx context.Context, opts ImportSavedOptions)
 		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 		return out, true, nil
 	}
+	opts.Observer.stage(Item{}, StageReading)
 	var out []telegram.Message
 	meta, err := a.TG.StreamSavedHistory(ctx, 0, func(msg telegram.Message) error {
 		msg.Data = nil
@@ -643,7 +649,7 @@ func (a *App) importUnit(ctx context.Context, ch *channelContext, staging string
 	}
 	for i, msg := range unit.msgs {
 		item := unit.items[i]
-		local, size, hash, err := a.stageSavedItem(ctx, staging, msg, item)
+		local, size, hash, err := a.stageSavedItem(ctx, staging, msg, item, opts.Observer)
 		if err != nil {
 			fail(item, err)
 			continue
@@ -744,7 +750,8 @@ func (a *App) publishImportedSingle(ctx context.Context, ch *channelContext, opt
 	if caption == "" {
 		caption = unit.caption
 	}
-	data, err := a.uploadFileWithCaption(ctx, st.local, st.item.Path, opts.Policy, false, st.pres, caption)
+	data, err := a.uploadFile(ctx, st.local, st.item.Path, opts.Policy, false, st.pres, caption,
+		UploadOptions{Observer: importUploadObserver(opts.Observer, []*stagedItem{st})})
 	if err != nil {
 		a.failImported(ctx, ch, opts, st, err)
 		return err
@@ -777,7 +784,10 @@ func (a *App) publishImportedAlbum(ctx context.Context, ch *channelContext, opts
 		}
 		members = append(members, m)
 	}
-	out, err := a.runUpload(ctx, uploadRun{members: members, policy: opts.Policy, album: true, lenient: opts.ContinueErr})
+	out, err := a.runUpload(ctx, uploadRun{
+		members: members, policy: opts.Policy, album: true, lenient: opts.ContinueErr,
+		opts: UploadOptions{Observer: importUploadObserver(opts.Observer, publish)},
+	})
 	// Lenient failures are reported by source path; map them back onto their
 	// items so the JSON stays per-item.
 	if out != nil {
@@ -1072,7 +1082,7 @@ func (a *App) importStagingDir() string {
 
 // stageSavedItem downloads one saved item into the staging directory and
 // hashes it on the way through, so the bytes are read once.
-func (a *App) stageSavedItem(ctx context.Context, staging string, msg telegram.Message, item *ImportSavedItem) (string, int64, string, error) {
+func (a *App) stageSavedItem(ctx context.Context, staging string, msg telegram.Message, item *ImportSavedItem, obs Observer) (string, int64, string, error) {
 	if err := a.files().MkdirAll(ctx, staging, 0o700); err != nil {
 		return "", 0, "", apperr.Wrap(apperr.ErrLocalNotFound, "create import staging directory", err)
 	}
@@ -1087,7 +1097,10 @@ func (a *App) stageSavedItem(ctx context.Context, staging string, msg telegram.M
 	if item.Kind == importKindText {
 		_, dlErr = io.Copy(dl, strings.NewReader(savedText(msg)))
 	} else {
-		dlErr = a.TG.DownloadSavedMedia(ctx, msg.ID, dl)
+		it := importItem(item)
+		obs.stage(it, StageDownloading)
+		progress := &progressWriter{obs: obs, item: it, total: msg.FileSize}
+		dlErr = a.TG.DownloadSavedMedia(ctx, msg.ID, io.MultiWriter(dl, progress))
 	}
 	closeErr := w.Close()
 	if dlErr != nil {
@@ -1144,8 +1157,42 @@ func (a *App) removeStagedIfNoPending(ctx context.Context, channelID int64, st *
 }
 
 func (a *App) emitImportItem(opts ImportSavedOptions, item *ImportSavedItem) {
+	var err error
+	if item.Action == "fail" {
+		err = errors.New(item.Error)
+	}
+	opts.Observer.changes(opts.DryRun).outcome(importItem(item), item.Action, err)
 	if opts.Emit == nil {
 		return
 	}
 	opts.Emit("import.item", *item)
+}
+
+// importItem is how an import reports one saved message: by the drive path
+// it lands at, once it has one.
+func importItem(item *ImportSavedItem) Item {
+	return Item{Path: item.Path, MessageID: item.MessageID}
+}
+
+// importUploadObserver forwards the upload pipeline's stage and progress
+// reports for the staged items, under the items' own identity. The import
+// reports each item's result itself, so the pipeline's are dropped.
+func importUploadObserver(obs Observer, staged []*stagedItem) Observer {
+	items := make(map[string]Item, len(staged))
+	for _, st := range staged {
+		items[st.item.Path] = importItem(st.item)
+	}
+	as := func(it Item) Item {
+		if mapped, ok := items[it.Path]; ok {
+			return mapped
+		}
+		return it
+	}
+	return Observer{
+		OnStage: func(it Item, st Stage) { obs.stage(as(it), st) },
+		OnProgress: func(p Progress) {
+			p.Item = as(p.Item)
+			obs.progress(p)
+		},
+	}
 }

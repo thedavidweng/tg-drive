@@ -46,7 +46,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dry, err := app.RepairCaptions(ctx, "/stash-browse/832", true, false)
+	dry, err := app.RepairCaptions(ctx, "/stash-browse/832", true, false, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 		t.Fatalf("dry run changed caption: %q", before.Caption)
 	}
 
-	res, err := app.RepairCaptions(ctx, "/stash-browse/832", false, false)
+	res, err := app.RepairCaptions(ctx, "/stash-browse/832", false, false, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 		t.Fatal("caption cleanup removed or failed to preserve discussion manifest")
 	}
 
-	idempotent, err := app.RepairCaptions(ctx, "/stash-browse/832", false, false)
+	idempotent, err := app.RepairCaptions(ctx, "/stash-browse/832", false, false, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestRepairCaptionsCleansOnlyCaptionedAlbumMember(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := app.RepairCaptions(ctx, "/albums", false, false)
+	res, err := app.RepairCaptions(ctx, "/albums", false, false, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestRepairCaptionsSkipsUneditableMessage(t *testing.T) {
 	}
 	tg.SetNotEditable(tgChannelID, messageID, true)
 
-	res, err := app.RepairCaptions(ctx, "/old", false, false)
+	res, err := app.RepairCaptions(ctx, "/old", false, false, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}

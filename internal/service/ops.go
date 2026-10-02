@@ -342,9 +342,17 @@ type DownloadResult struct {
 	Skipped bool   `json:"skipped"` // destination existed and --skip-existing was set
 }
 
+// DownloadOptions are one download call's own settings. The zero value
+// reports nothing.
+type DownloadOptions struct {
+	// Observer receives this call's stages, byte progress, and per-file
+	// results.
+	Observer Observer
+}
+
 // DownloadFile downloads a remote file to local path, streaming through a
 // temp file and verifying size/hash before the atomic rename.
-func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, policy ConflictPolicy) (*DownloadResult, error) {
+func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, policy ConflictPolicy, opts DownloadOptions) (*DownloadResult, error) {
 	p, err := fsmodel.NormalizeCanonicalPath(remotePath)
 	if err != nil {
 		return nil, err
@@ -360,10 +368,29 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	if !found {
 		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
 	}
+	obs := opts.Observer
+	it := Item{Source: localDest, Path: p}
+	res, err := a.downloadRow(ctx, ch, row, &it, policy, obs)
+	switch {
+	case err != nil:
+		obs.done(it, err)
+	case res.Skipped:
+		obs.item(ItemResult{Item: it, Status: ItemSkipped})
+	default:
+		obs.done(it, nil)
+	}
+	return res, err
+}
+
+// downloadRow downloads one resolved active row to it.Source, which it
+// rewrites to the local file the download actually targets.
+func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitestore.FileRow, it *Item, policy ConflictPolicy, obs Observer) (*DownloadResult, error) {
+	p := it.Path
 	if !row.MessageID.Valid {
 		return nil, apperr.New(apperr.ErrDB, fmt.Sprintf("lookup file: active row for %q has no message", p))
 	}
 	messageID, size, hash := int(row.MessageID.Int64), row.Size.Int64, row.ContentHash.String
+	localDest := it.Source
 	// cp convention: a destination that ends with a separator or names an
 	// existing directory keeps the remote file's basename.
 	if strings.HasSuffix(localDest, "/") || strings.HasSuffix(localDest, string(os.PathSeparator)) {
@@ -371,6 +398,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	} else if info, err := a.files().Stat(ctx, localDest); err == nil && info.IsDir {
 		localDest = filepath.Join(localDest, fsmodel.BaseName(p))
 	}
+	it.Source = localDest
 	if _, err := a.files().Stat(ctx, localDest); err == nil {
 		switch policy {
 		case ConflictSkip:
@@ -378,6 +406,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 		case ConflictReplace:
 		case ConflictRename:
 			localDest = autoRenameLocal(ctx, a.files(), localDest)
+			it.Source = localDest
 		default:
 			return nil, apperr.New(apperr.ErrLocalPathExists,
 				fmt.Sprintf("local file %q already exists (use --replace, --skip-existing, or --auto-rename)", localDest))
@@ -386,18 +415,20 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	if err := a.files().MkdirAll(ctx, filepath.Dir(localDest), 0o755); err != nil {
 		return nil, err
 	}
+	obs.stage(*it, StageDownloading)
 	tmp, f, err := a.files().CreateTemp(ctx, localDest)
 	if err != nil {
 		return nil, err
 	}
 	hashEnabled := hash != "" && a.Cfg.Hash.Enabled && strings.HasPrefix(hash, "blake3:")
-	var w io.Writer = f
+	progress := &progressWriter{obs: obs, item: *it, total: size}
+	writers := []io.Writer{f}
 	var h *blake3.Hasher
 	if hashEnabled {
 		h = blake3.New(32, nil)
-		w = io.MultiWriter(f, h)
+		writers = append(writers, h)
 	}
-	nativePhoto, err := a.downloadTo(ctx, ch.tgID, messageID, w)
+	nativePhoto, err := a.downloadTo(ctx, ch.tgID, messageID, io.MultiWriter(append(writers, progress)...), progress)
 	if err != nil {
 		_ = f.Close()
 		_ = a.files().Remove(ctx, tmp)
@@ -441,8 +472,8 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 // downloadTo streams the message's downloadable body. It reports whether the
 // message is a native photo: Telegram serves its own recompressed
 // representation for photos, so the stored size/hash of the original bytes
-// cannot hold for what comes back.
-func (a *App) downloadTo(ctx context.Context, tgChID int64, messageID int, w io.Writer) (bool, error) {
+// cannot hold for what comes back, and progress has no known total.
+func (a *App) downloadTo(ctx context.Context, tgChID int64, messageID int, w io.Writer, progress *progressWriter) (bool, error) {
 	nativePhoto := false
 	if msg, err := a.TG.GetMessage(ctx, tgChID, messageID); err == nil {
 		if msg.Kind == telegram.KindText || (msg.MIME == "text/plain" && len(msg.Data) == 0 && msg.FileName == "") {
@@ -454,6 +485,9 @@ func (a *App) downloadTo(ctx context.Context, tgChID int64, messageID int, w io.
 			return false, err
 		}
 		nativePhoto = msg.Kind == telegram.KindPhoto
+	}
+	if nativePhoto {
+		progress.total = 0
 	}
 	err := a.TG.DownloadMedia(ctx, tgChID, messageID, w)
 	return nativePhoto, err
@@ -766,9 +800,9 @@ type RecursiveDownloadResult struct {
 }
 
 // DownloadRecursive downloads a directory tree and reports per-file results.
-func (a *App) DownloadRecursive(ctx context.Context, remotePath, localDir string, policy ConflictPolicy, continueOnError bool) (*RecursiveDownloadResult, error) {
+func (a *App) DownloadRecursive(ctx context.Context, remotePath, localDir string, policy ConflictPolicy, continueOnError bool, opts DownloadOptions) (*RecursiveDownloadResult, error) {
 	st := &downloadStats{}
-	if err := a.downloadRecursive(ctx, remotePath, localDir, policy, continueOnError, st); err != nil {
+	if err := a.downloadRecursive(ctx, remotePath, localDir, policy, continueOnError, opts, st); err != nil {
 		return nil, err
 	}
 	return &RecursiveDownloadResult{
@@ -788,7 +822,7 @@ type downloadStats struct {
 	errors     []string
 }
 
-func (a *App) downloadRecursive(ctx context.Context, remotePath, localDir string, policy ConflictPolicy, continueOnError bool, st *downloadStats) error {
+func (a *App) downloadRecursive(ctx context.Context, remotePath, localDir string, policy ConflictPolicy, continueOnError bool, opts DownloadOptions, st *downloadStats) error {
 	entries, err := a.ListDir(ctx, remotePath)
 	if err != nil {
 		return err
@@ -804,12 +838,12 @@ func (a *App) downloadRecursive(ctx context.Context, remotePath, localDir string
 				}
 				continue
 			}
-			if err := a.downloadRecursive(ctx, e.Path, localPath, policy, continueOnError, st); err != nil && !continueOnError {
+			if err := a.downloadRecursive(ctx, e.Path, localPath, policy, continueOnError, opts, st); err != nil && !continueOnError {
 				return err
 			}
 			continue
 		}
-		res, err := a.DownloadFile(ctx, e.Path, localPath, policy)
+		res, err := a.DownloadFile(ctx, e.Path, localPath, policy, opts)
 		if err != nil {
 			st.failed++
 			st.errors = append(st.errors, err.Error())

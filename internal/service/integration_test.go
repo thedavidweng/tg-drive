@@ -121,7 +121,7 @@ func TestReplaceFailureKeepsOldActive(t *testing.T) {
 		t.Fatalf("old row status = %q, want active", got)
 	}
 	dest := filepath.Join(t.TempDir(), "out.txt")
-	if _, err := app.DownloadFile(ctx, "/keep.txt", dest, ConflictFail); err != nil {
+	if _, err := app.DownloadFile(ctx, "/keep.txt", dest, ConflictFail, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(dest)
@@ -545,19 +545,19 @@ func TestDownloadConflictFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Default fails.
-	_, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictFail)
+	_, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictFail, DownloadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrLocalPathExists {
 		t.Fatalf("code = %s, want ERR_LOCAL_PATH_EXISTS", code)
 	}
 	// Skip keeps local content.
-	if _, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictSkip); err != nil {
+	if _, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictSkip, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(dest); string(data) != "local-content" {
 		t.Fatalf("skip overwrote local file: %q", data)
 	}
 	// Auto-rename writes " (1)".
-	if _, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictRename); err != nil {
+	if _, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictRename, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	renamed := filepath.Join(destDir, "dl (1).txt")
@@ -565,7 +565,7 @@ func TestDownloadConflictFlags(t *testing.T) {
 		t.Fatalf("auto-rename content = %q", data)
 	}
 	// Replace overwrites.
-	if _, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictReplace); err != nil {
+	if _, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictReplace, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(dest); string(data) != "remote-content" {
@@ -600,7 +600,7 @@ func TestRepairPendingRetriesUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -637,7 +637,7 @@ func TestRecursiveUploadAndDownload(t *testing.T) {
 		t.Fatalf("res = %v", res)
 	}
 	dest := t.TempDir()
-	if _, err := app.DownloadRecursive(ctx, "/backup", dest, ConflictFail, false); err != nil {
+	if _, err := app.DownloadRecursive(ctx, "/backup", dest, ConflictFail, false, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	for rel, want := range map[string]string{"a.txt": "A", "sub/b.txt": "B", "sub/deep/c.txt": "C"} {
@@ -929,7 +929,7 @@ func TestIndexFailureAfterUploadDeletesMedia(t *testing.T) {
 		t.Fatalf("media not rolled back, %d messages remain", n)
 	}
 	app.Index = nil
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -965,7 +965,7 @@ func TestIndexFailureAfterUploadOrphansWhenDeleteFails(t *testing.T) {
 		t.Fatalf("messages = %d, want 1", before)
 	}
 	app.Index = nil
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -994,7 +994,7 @@ func TestRepairPendingDoesNotDuplicateRecordedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := len(tg.Messages(tgChID))
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1157,7 +1157,7 @@ func TestRecursiveGetContinueOnErrorReportsFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := t.TempDir()
-	res, err := app.DownloadRecursive(ctx, "/tree", dest, ConflictFail, true)
+	res, err := app.DownloadRecursive(ctx, "/tree", dest, ConflictFail, true, DownloadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

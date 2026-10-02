@@ -237,7 +237,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			if recursive {
-				data, err := app.DownloadRecursive(context.Background(), args[0], args[1], policy, continueOnError)
+				data, err := app.DownloadRecursive(context.Background(), args[0], args[1], policy, continueOnError, service.DownloadOptions{})
 				if err != nil {
 					return r.Error(err)
 				}
@@ -247,7 +247,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				}
 				return r.Success(data)
 			}
-			res, err := app.DownloadFile(context.Background(), args[0], args[1], policy)
+			res, err := app.DownloadFile(context.Background(), args[0], args[1], policy, service.DownloadOptions{})
 			if err != nil {
 				return r.Error(err)
 			}

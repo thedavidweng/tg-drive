@@ -232,7 +232,7 @@ func TestTypedUploadScanReconstruction(t *testing.T) {
 	}
 
 	dest := filepath.Join(t.TempDir(), "out.bin")
-	dl, err := app.DownloadFile(ctx, "/media/scene.mp4", dest, ConflictFail)
+	dl, err := app.DownloadFile(ctx, "/media/scene.mp4", dest, ConflictFail, DownloadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestTypedUploadScanReconstruction(t *testing.T) {
 		t.Fatalf("reconstructed content mismatch: size=%d", dl.Size)
 	}
 	photoDest := filepath.Join(t.TempDir(), "beach.jpg")
-	if _, err := app.DownloadFile(ctx, "/pics/beach.jpg", photoDest, ConflictFail); err != nil {
+	if _, err := app.DownloadFile(ctx, "/pics/beach.jpg", photoDest, ConflictFail, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	pgot, err := os.ReadFile(photoDest)
