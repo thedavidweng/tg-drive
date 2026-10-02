@@ -39,6 +39,8 @@ needed for private repos.
   releases, then dispatches packaging.
 - `.github/workflows/release.yml` runs GoReleaser on `v*` tags or when
   dispatched with a tag name.
+- `.github/workflows/ui-preview.yml` records screenshots and a video of
+  the real GUI on UI pull requests (see "UI preview" below).
 
 ## Release process
 
@@ -96,6 +98,48 @@ Windows. On Ubuntu it first installs `libgtk-4-dev` and `libwebkitgtk-6.0-dev`;
 on Windows it installs `make` via Chocolatey (the runners ship Git Bash but
 no make). Tools come from `mise-action` at the pinned versions. The job is
 informational, not a required check.
+
+## UI preview
+
+Every pull request that touches `frontend/`, `internal/gui/`,
+`cmd/td-gui/`, or the pipeline itself gets screenshots and a screen
+recording of the real app in a marked block
+(`<!-- td-gui-preview:start -->` … `:end -->`) at the foot of its
+description; re-runs replace the block in place. The harness lives in
+`ui-preview/` and works identically on a developer machine:
+
+```sh
+ui-preview/run.sh out     # seeds, builds, serves, records into out/
+```
+
+`run.sh` seeds a drive through the real CLI against the fake Telegram
+(`TD_FAKE_TELEGRAM_STATE`, login code `12345`), builds td-gui with
+`-tags gui,server` — Wails' headless server mode, CGO-free and needing no
+webview — and drives it with Playwright (`record.mjs`, pinned in
+`ui-preview/package.json`). Each scene is one entry in the scenes list in
+`record.mjs` (color scheme, locale, optional theme override or
+interaction); adding a scene is a new entry plus any seed data in
+`run.sh`. The run writes one 2x PNG per scene, `preview.mp4`, and a
+`manifest.json` the publisher consumes.
+
+The workflow has two jobs with a strict security split (ADR 0036):
+
+- `record` builds and runs the PR's code, so it holds
+  `permissions: contents: read` and checks out the PR with no persisted
+  credentials. It uploads the recording as an artifact.
+- `publish` holds `contents: write` and `pull-requests: write` but never
+  checks out or runs the PR's code: it downloads the artifact, checks out
+  only the default branch for `ui-preview/publish.mjs`, pushes the media
+  to the `previews` branch (one directory per open PR, force-with-lease,
+  closed PRs dropped), and rewrites the PR description block. Fork pull
+  requests hold a read-only token regardless, so `publish` skips them.
+
+One-time setup: enable GitHub Pages on the repository (Settings → Pages →
+deploy from the `previews` branch, root). The Actions token cannot enable
+Pages, so an admin does this once. Until then the block still works: the
+screenshots link `raw.githubusercontent.com` and only the video player
+page needs Pages. The workflow is informational — never add it to the
+required branch-protection checks.
 
 ## Local checks
 
