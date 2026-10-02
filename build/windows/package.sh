@@ -44,14 +44,15 @@ sed "s/@VERSION@/$VERSION/g" build/windows/info.json >"$WORK/info.json"
 	-out cmd/td-gui/td-gui_windows_amd64.syso
 trap 'rm -f cmd/td-gui/*.syso' EXIT
 
+# The evergreen WebView2 bootstrapper is embedded in the wails3 CLI; the
+# installer runs it only when the runtime is missing. This must run BEFORE
+# the go build: the generator cleans the output directory first.
+"$WAILS3" generate webview2bootstrapper -dir "$WORK"
+
 # Windows WebView2 needs no cgo; windowsgui hides the console window.
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
 	go build -tags gui -trimpath -ldflags "-s -w -H windowsgui" \
 	-o "$WORK/td-gui.exe" ./cmd/td-gui
-
-# The evergreen WebView2 bootstrapper is embedded in the wails3 CLI; the
-# installer runs it only when the runtime is missing.
-"$WAILS3" generate webview2bootstrapper -dir "$WORK"
 
 makensis -NOCD \
 	-DVERSION="$VERSION" \
