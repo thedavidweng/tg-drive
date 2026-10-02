@@ -15,7 +15,7 @@ import (
 func NewTransfersCmd(rt Runtime) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "transfers",
-		Short: "List and inspect uploads recorded as Transfers",
+		Short: "List, inspect, and cancel Transfers",
 	}
 	GroupUsage(rt, c)
 	c.AddCommand(newTransfersListCmd(rt), newTransfersShowCmd(rt), newTransfersCancelCmd(rt))

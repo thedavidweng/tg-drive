@@ -128,9 +128,9 @@ func absPath(p string) string {
 
 // SubmitUpload records the upload as a queued Transfer and starts it. ctx
 // bounds the Transfer's whole life: cancelling it cancels the Transfer,
-// queued or running, which then ends failed with ERR_CANCELLED. Every
-// failure of the upload itself ends the Transfer failed with the error the
-// upload use case reports.
+// queued or running, which then ends cancelled, and Handle.Wait reports
+// ERR_CANCELLED. Every failure of the upload itself ends the Transfer
+// failed with the error the upload use case reports.
 func (m *Manager) SubmitUpload(ctx context.Context, req Upload) (*Handle[*service.UploadResult], error) {
 	ctx, channel := m.pinChannel(ctx)
 	source := absPath(req.Source)

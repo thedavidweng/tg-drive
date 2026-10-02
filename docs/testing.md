@@ -28,7 +28,8 @@ Binary-level end-to-end tests live in `internal/app`
 (`e2e_lifecycle_test.go`, `e2e_album_test.go`, `e2e_hardening_test.go`,
 `e2e_events_test.go`, `e2e_observed_output_test.go`,
 `e2e_session_lock_test.go`, `e2e_cancel_test.go`, `e2e_transfers_test.go`,
-`e2e_transfer_kinds_test.go`, `resume_cli_test.go`,
+`e2e_transfer_kinds_test.go`, `e2e_transfer_cancel_test.go`,
+`resume_cli_test.go`,
 `app_test.go`). They build the real `td` binary and drive the full user
 journey — login, init, channels,
 cp, ls, tree, get (single and recursive), mv, rm, share, scan, status,
@@ -46,8 +47,15 @@ long-running use case are pinned against the fake in `internal/service`
 `e2e_cancel_test.go` sends SIGINT during a large `td cp` (after its first
 `cp.progress` event), during `td get --recursive` (after its first file
 lands), and at the `td auth login` code prompt. It asserts a prompt exit 130
-with `ERR_CANCELLED`, and that the next `td cp` resumes from the kept upload
-state. The fake knob `TD_FAKE_TRANSFER_DELAY=<Go duration>` makes every
+with `ERR_CANCELLED`, that the command's Transfers end `cancelled`, and that
+the next `td cp` resumes from the kept upload
+state. `e2e_transfer_cancel_test.go` cancels a running `td cp` from a second
+process (`td transfers cancel`, which acts through the index while the
+uploader holds the Session lock) and kills one with SIGKILL, whose Transfer
+a reader marks `interrupted` once its lease expires. The Transfer lease
+reuses `locks.ttl_seconds`, so both tests shorten it with `td config set`
+to make the owner's cancel poll and the lease expiry land within the tests'
+deadlines. The fake knob `TD_FAKE_TRANSFER_DELAY=<Go duration>` makes every
 resumable part and media download take that long, ending early on
 cancellation, so the signal lands mid-transfer. Like the other `TD_FAKE_*` knobs (documented on
 `fake.NewPersistent`), it is for tests only. The interrupt tests do not run

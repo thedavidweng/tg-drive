@@ -105,8 +105,14 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   throttled byte progress, and item counts, and records how it ended. A
   Transfer's call runs
   its own operations inside the service; the Manager takes no locks.
-  Reading Transfers (`td transfers list` / `show`) needs only the index, so
-  those commands open an offline App and never take the Session lock.
+  The owning Manager leases each Transfer from submission, renewing
+  `lease_expires_at` on the Operation-lock heartbeat and polling the
+  cancel-requested flag on the same tick: `td transfers cancel` sets the
+  flag from any process, and the owner cancels the Transfer's context,
+  which ends it `cancelled`. Readers (`td transfers list` / `show`) mark a
+  Transfer whose lease expired `interrupted`. Reading and cancelling need
+  only the index, so those commands open an offline App and never take the
+  Session lock.
   `internal/transfer` depends on `internal/service`, never the reverse, and
   imports no front-end framework.
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
