@@ -17,3 +17,7 @@ testdata/restore/
 # desktop GUI
 frontend/node_modules/
 frontend/dist/
+
+# UI preview harness (docs/release-and-ci.md)
+ui-preview/node_modules/
+ui-preview/out/

@@ -1,0 +1,12 @@
+{
+  "name": "td-gui-ui-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "record": "node record.mjs",
+    "publish": "node publish.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
