@@ -29,8 +29,8 @@ const progressInterval = 250 * time.Millisecond
 type Observer struct {
 	// OnStage reports a Transfer entering a stage, queued included.
 	OnStage func(Transfer)
-	// OnProgress reports a Transfer's byte progress, at most as often as it
-	// is written to the index.
+	// OnProgress reports a Transfer's byte or item progress, at most as
+	// often as it is written to the index.
 	OnProgress func(Transfer)
 }
 
@@ -88,6 +88,41 @@ type uploadOptions struct {
 	Threads           int                    `json:"threads,omitempty"`
 	PartSizeKB        int                    `json:"part_size_kb,omitempty"`
 	ConfirmReplace    bool                   `json:"confirm_replace,omitempty"`
+	// Sources are an album upload's local files; a single-file upload keeps
+	// its one source in the Transfer's Source.
+	Sources []string `json:"sources,omitempty"`
+	// ContinueOnError and IncludeEmptyDirs belong to recursive uploads.
+	ContinueOnError  bool `json:"continue_on_error,omitempty"`
+	IncludeEmptyDirs bool `json:"include_empty_dirs,omitempty"`
+}
+
+// marshalUploadOptions is the uploadOptions of one upload request.
+func marshalUploadOptions(policy service.ConflictPolicy, noHash bool, pres service.Presentation, opts service.UploadOptions) uploadOptions {
+	return uploadOptions{
+		Policy: policy, NoHash: noHash,
+		Kind: pres.Kind, DurationSeconds: pres.DurationSeconds, Width: pres.Width, Height: pres.Height,
+		SupportsStreaming: pres.SupportsStreaming, ThumbPath: pres.ThumbPath,
+		Threads: opts.Threads, PartSizeKB: opts.PartSizeKB, ConfirmReplace: opts.ConfirmReplace,
+	}
+}
+
+// pinChannel resolves the bound drive channel's Telegram ID for the
+// Transfer record and pins it as the call's channel, so record and call
+// agree. A channel that does not resolve is recorded empty and left to the
+// use case to report, so its errors keep their precedence (a missing source
+// over an unbound drive) and the command's output stays the same.
+func (m *Manager) pinChannel(ctx context.Context) (context.Context, string) {
+	channel, _ := m.app.ChannelTelegramID(ctx)
+	return service.WithChannel(ctx, channel), channel
+}
+
+// absPath makes p absolute, keeping p when it cannot be resolved.
+func absPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return abs
 }
 
 // SubmitUpload records the upload as a queued Transfer and starts it. ctx
@@ -96,30 +131,17 @@ type uploadOptions struct {
 // failure of the upload itself ends the Transfer failed with the error the
 // upload use case reports.
 func (m *Manager) SubmitUpload(ctx context.Context, req Upload) (*Handle[*service.UploadResult], error) {
-	// A channel that does not resolve is recorded empty and left to the use
-	// case to report, so its errors keep their precedence (a missing source
-	// over an unbound drive) and the command's output stays the same.
-	channel, _ := m.app.ChannelTelegramID(ctx)
-	source, err := filepath.Abs(req.Source)
-	if err != nil {
-		source = req.Source
-	}
+	ctx, channel := m.pinChannel(ctx)
+	source := absPath(req.Source)
 	var size int64
 	if st, err := os.Stat(source); err == nil && st.Mode().IsRegular() {
 		size = st.Size()
 	}
-	pres := req.Presentation
-	options, _ := json.Marshal(uploadOptions{
-		Policy: req.Policy, NoHash: req.NoHash,
-		Kind: pres.Kind, DurationSeconds: pres.DurationSeconds, Width: pres.Width, Height: pres.Height,
-		SupportsStreaming: pres.SupportsStreaming, ThumbPath: pres.ThumbPath,
-		Threads: req.Options.Threads, PartSizeKB: req.Options.PartSizeKB, ConfirmReplace: req.Options.ConfirmReplace,
-	})
+	options, _ := json.Marshal(marshalUploadOptions(req.Policy, req.NoHash, req.Presentation, req.Options))
 	t := Transfer{
 		Kind: KindUpload, Channel: channel, Source: source, Dest: req.Dest,
 		BytesTotal: size, ItemsTotal: 1,
 	}
-	ctx = service.WithChannel(ctx, channel)
 	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.UploadResult, error) {
 		opts := req.Options
 		opts.Observer = tr.observe(opts.Observer)
@@ -128,6 +150,151 @@ func (m *Manager) SubmitUpload(ctx context.Context, req Upload) (*Handle[*servic
 			tr.landed(res.Path, res.Size, !res.Skipped)
 		}
 		return res, err
+	})
+}
+
+// AlbumUpload asks for several local files to be uploaded as Telegram
+// albums sharing one remote directory, as service.App.UploadFilesAs does.
+// The whole call is one Transfer whose item counts track the member files.
+type AlbumUpload struct {
+	Sources []string
+	// Dest is the remote directory as the command was given it.
+	Dest         string
+	Policy       service.ConflictPolicy
+	NoHash       bool
+	Presentation service.Presentation
+	// Options are the upload call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.UploadOptions
+}
+
+// SubmitAlbumUpload records the album upload as a queued Transfer and
+// starts it, under the same ctx contract as SubmitUpload. The Transfer's
+// Source is empty: the sources are many, and the stored options list them.
+func (m *Manager) SubmitAlbumUpload(ctx context.Context, req AlbumUpload) (*Handle[*service.AlbumUploadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	stored := marshalUploadOptions(req.Policy, req.NoHash, req.Presentation, req.Options)
+	stored.Sources = req.Sources
+	options, _ := json.Marshal(stored)
+	t := Transfer{
+		Kind: KindAlbumUpload, Channel: channel, Dest: req.Dest,
+		ItemsTotal: len(req.Sources),
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.AlbumUploadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		return m.app.UploadFilesAs(ctx, req.Sources, req.Dest, req.Policy, req.NoHash, req.Presentation, opts)
+	})
+}
+
+// RecursiveUpload asks for one local directory tree to be uploaded, as
+// service.App.UploadRecursive does. The whole tree is one Transfer whose
+// item counts track the files.
+type RecursiveUpload struct {
+	// Source is the local directory.
+	Source string
+	// Dest is the remote directory as the command was given it.
+	Dest             string
+	Policy           service.ConflictPolicy
+	ContinueOnError  bool
+	NoHash           bool
+	IncludeEmptyDirs bool
+	// Options are the upload call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.UploadOptions
+}
+
+// SubmitRecursiveUpload records the recursive upload as a queued Transfer
+// and starts it, under the same ctx contract as SubmitUpload. The walk
+// discovers the files as it runs, so the Transfer's item total grows with
+// each item reported.
+func (m *Manager) SubmitRecursiveUpload(ctx context.Context, req RecursiveUpload) (*Handle[*service.RecursiveUploadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	stored := marshalUploadOptions(req.Policy, req.NoHash, service.Presentation{}, req.Options)
+	stored.ContinueOnError = req.ContinueOnError
+	stored.IncludeEmptyDirs = req.IncludeEmptyDirs
+	options, _ := json.Marshal(stored)
+	t := Transfer{
+		Kind: KindRecursiveUpload, Channel: channel, Source: absPath(req.Source), Dest: req.Dest,
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.RecursiveUploadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		return m.app.UploadRecursive(ctx, req.Source, req.Dest, req.Policy, req.ContinueOnError, req.NoHash, req.IncludeEmptyDirs, opts)
+	})
+}
+
+// Download asks for one remote file to be downloaded, as
+// service.App.DownloadFile does.
+type Download struct {
+	// Source is the remote path to download.
+	Source string
+	// Dest is the local destination as the command was given it.
+	Dest   string
+	Policy service.ConflictPolicy
+	// Options are the download call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.DownloadOptions
+}
+
+// downloadOptions is how a download's settings are stored for retrying it.
+type downloadOptions struct {
+	Policy          service.ConflictPolicy `json:"policy"`
+	ContinueOnError bool                   `json:"continue_on_error,omitempty"`
+}
+
+// SubmitDownload records the download as a queued Transfer and starts it,
+// under the same ctx contract as SubmitUpload. The Transfer reports the
+// downloading stage with byte progress; its Source is the remote path and
+// Dest the local file, replaced by the path actually written once it
+// completes.
+func (m *Manager) SubmitDownload(ctx context.Context, req Download) (*Handle[*service.DownloadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	options, _ := json.Marshal(downloadOptions{Policy: req.Policy})
+	t := Transfer{
+		Kind: KindDownload, Channel: channel, Source: req.Source, Dest: absPath(req.Dest),
+		ItemsTotal: 1,
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.DownloadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		res, err := m.app.DownloadFile(ctx, req.Source, req.Dest, req.Policy, opts)
+		if err == nil {
+			tr.landed(absPath(res.Dest), res.Size, !res.Skipped)
+		}
+		return res, err
+	})
+}
+
+// RecursiveDownload asks for one remote directory tree to be downloaded, as
+// service.App.DownloadRecursive does. The whole tree is one Transfer whose
+// item counts track the files.
+type RecursiveDownload struct {
+	// Source is the remote directory.
+	Source string
+	// Dest is the local directory as the command was given it.
+	Dest            string
+	Policy          service.ConflictPolicy
+	ContinueOnError bool
+	// Options are the download call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.DownloadOptions
+}
+
+// SubmitRecursiveDownload records the recursive download as a queued
+// Transfer and starts it, under the same ctx contract as SubmitUpload. The
+// listing discovers the files as it runs, so the Transfer's item total
+// grows with each item reported.
+func (m *Manager) SubmitRecursiveDownload(ctx context.Context, req RecursiveDownload) (*Handle[*service.RecursiveDownloadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	options, _ := json.Marshal(downloadOptions{Policy: req.Policy, ContinueOnError: req.ContinueOnError})
+	t := Transfer{
+		Kind: KindRecursiveDownload, Channel: channel, Source: req.Source, Dest: absPath(req.Dest),
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.RecursiveDownloadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		return m.app.DownloadRecursive(ctx, req.Source, req.Dest, req.Policy, req.ContinueOnError, opts)
 	})
 }
 
@@ -164,7 +331,10 @@ func submit[T any](ctx context.Context, m *Manager, t Transfer, options string,
 	if err := m.app.DB.InsertTransfer(ctx, row); err != nil {
 		return nil, err
 	}
-	tr := &tracker{m: m, t: t, written: now, ctx: context.WithoutCancel(ctx)}
+	// A Transfer submitted without an item total (the recursive kinds, whose
+	// item count only the walk discovers) grows it as items report; one
+	// submitted with a total keeps it.
+	tr := &tracker{m: m, t: t, written: now, ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0}
 	tr.notify(m.opts.Observer.OnStage)
 	h := &Handle[T]{id: t.ID, done: make(chan struct{})}
 	go func() {
@@ -235,10 +405,12 @@ type tracker struct {
 	m *Manager
 	// ctx writes to the index; it outlives the Transfer's cancellation so
 	// a cancelled Transfer still records how it ended.
-	ctx     context.Context
-	mu      sync.Mutex
-	t       Transfer
-	written time.Time
+	ctx context.Context
+	mu  sync.Mutex
+	t   Transfer
+	// growItems counts each reported item into ItemsTotal.
+	growItems bool
+	written   time.Time
 }
 
 // observe is next with this Transfer's recording in front, so the index
@@ -259,14 +431,20 @@ func (tr *tracker) observe(next service.Observer) service.Observer {
 				next.OnProgress(p)
 			}
 		},
-		OnItem: next.OnItem,
+		OnItem: func(r service.ItemResult) {
+			tr.item(r)
+			if next.OnItem != nil {
+				next.OnItem(r)
+			}
+		},
 	}
 }
 
 var stageOf = map[service.Stage]Stage{
-	service.StageHashing:    StageHashing,
-	service.StageUploading:  StageUploading,
-	service.StagePublishing: StagePublishing,
+	service.StageHashing:     StageHashing,
+	service.StageUploading:   StageUploading,
+	service.StageDownloading: StageDownloading,
+	service.StagePublishing:  StagePublishing,
 }
 
 func (tr *tracker) enter(s Stage) {
@@ -280,14 +458,44 @@ func (tr *tracker) enter(s Stage) {
 	tr.notify(tr.m.opts.Observer.OnStage)
 }
 
+// tracksBytes reports whether a Transfer of this kind records byte
+// progress: single-file Transfers do; multi-item ones count items instead.
+func (k Kind) tracksBytes() bool {
+	return k == KindUpload || k == KindDownload
+}
+
 func (tr *tracker) progress(done, total int64) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	if !tr.t.Kind.tracksBytes() {
+		return
+	}
 	tr.t.BytesDone = done
 	if total > 0 {
 		tr.t.BytesTotal = total
 	}
-	now := time.Now().UTC()
+	tr.throttledWrite(time.Now().UTC())
+}
+
+// item records one item's outcome. Done counts completed and skipped items,
+// so done and failed together account for every item reported.
+func (tr *tracker) item(r service.ItemResult) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if tr.growItems {
+		tr.t.ItemsTotal++
+	}
+	if r.Status == service.ItemFailed {
+		tr.t.ItemsFailed++
+	} else {
+		tr.t.ItemsDone++
+	}
+	tr.throttledWrite(time.Now().UTC())
+}
+
+// throttledWrite saves the Transfer's progress at most once per
+// progressInterval; stage changes and the ending write happen at once.
+func (tr *tracker) throttledWrite(now time.Time) {
 	if now.Sub(tr.written) < progressInterval {
 		return
 	}
@@ -315,7 +523,9 @@ func (tr *tracker) finish(ctx context.Context, err error) {
 	now := time.Now().UTC()
 	if err == nil {
 		tr.t.Stage = StageCompleted
-		tr.t.ItemsDone = tr.t.ItemsTotal
+		// A call can succeed with items failed (its own lenient mode
+		// reports them in the result), so done is what did not fail.
+		tr.t.ItemsDone = tr.t.ItemsTotal - tr.t.ItemsFailed
 	} else {
 		if ctx.Err() != nil {
 			err = apperr.AfterCancel(err)

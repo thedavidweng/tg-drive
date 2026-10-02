@@ -135,7 +135,15 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if includeEmptyDirs {
 					return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 				}
-				data, err := app.UploadFilesAs(cmd.Context(), args[:len(args)-1], args[len(args)-1], policy, noHash, pres, opts)
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				handle, err := manager.SubmitAlbumUpload(cmd.Context(), transfer.AlbumUpload{
+					Sources: args[:len(args)-1], Dest: args[len(args)-1],
+					Policy: policy, NoHash: noHash, Presentation: pres, Options: opts,
+				})
+				if err != nil {
+					return r.Error(err)
+				}
+				data, err := handle.Wait()
 				if err != nil {
 					return r.Error(err)
 				}
@@ -155,7 +163,15 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if presentationFlagsSet(cmd) {
 					return r.Error(apperr.New(apperr.ErrUsage, "presentation flags apply to single-file uploads only"))
 				}
-				data, err := app.UploadRecursive(cmd.Context(), args[0], args[1], policy, continueOnError, noHash, includeEmptyDirs, opts)
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				handle, err := manager.SubmitRecursiveUpload(cmd.Context(), transfer.RecursiveUpload{
+					Source: args[0], Dest: args[1], Policy: policy,
+					ContinueOnError: continueOnError, NoHash: noHash, IncludeEmptyDirs: includeEmptyDirs, Options: opts,
+				})
+				if err != nil {
+					return r.Error(err)
+				}
+				data, err := handle.Wait()
 				if err != nil {
 					return r.Error(err)
 				}
@@ -248,7 +264,14 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			if recursive {
-				data, err := app.DownloadRecursive(cmd.Context(), args[0], args[1], policy, continueOnError, service.DownloadOptions{})
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				handle, err := manager.SubmitRecursiveDownload(cmd.Context(), transfer.RecursiveDownload{
+					Source: args[0], Dest: args[1], Policy: policy, ContinueOnError: continueOnError,
+				})
+				if err != nil {
+					return r.Error(err)
+				}
+				data, err := handle.Wait()
 				if err != nil {
 					return r.Error(err)
 				}
@@ -258,7 +281,14 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				}
 				return r.Success(data)
 			}
-			res, err := app.DownloadFile(cmd.Context(), args[0], args[1], policy, service.DownloadOptions{})
+			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+			handle, err := manager.SubmitDownload(cmd.Context(), transfer.Download{
+				Source: args[0], Dest: args[1], Policy: policy,
+			})
+			if err != nil {
+				return r.Error(err)
+			}
+			res, err := handle.Wait()
 			if err != nil {
 				return r.Error(err)
 			}

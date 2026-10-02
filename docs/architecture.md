@@ -5,7 +5,7 @@
 ```text
 cmd/td
   -> internal/app          CLI wiring and command execution
-  -> internal/transfer     Transfer Manager: uploads as recorded Transfers
+  -> internal/transfer     Transfer Manager: uploads and downloads as recorded Transfers
   -> internal/service      application use cases
   -> core/*                domain: paths, slugs, captions, errors, ports
   -> adapters/native/*     SQLite, local FS, gotd/td
@@ -65,11 +65,13 @@ cmd/td
   `ERR_CANCELLED`. Rollback after a cancel, and operation-lock release, run
   on a context that outlives the cancellation, so an interrupted upload
   keeps its resumable state and strands no lock (ADR 0032).
-- `internal/transfer` is the Transfer Manager (ADR 0033). A single-file
-  `td cp` submits its upload through it and waits. It records each one as a Transfer in the
+- `internal/transfer` is the Transfer Manager (ADR 0033). Every `td cp` and
+  `td get` form — single-file, album, recursive — submits through it and
+  waits. It records each one as a Transfer in the
   `transfers` table, runs at most `transfers.concurrency` at once (the rest
-  stay `queued`), turns the call's Observer reports into Transfer stages and
-  throttled byte progress, and records how it ended. A Transfer's call runs
+  stay `queued`), turns the call's Observer reports into Transfer stages,
+  throttled byte progress, and item counts, and records how it ended. A
+  Transfer's call runs
   its own operations inside the service; the Manager takes no locks.
   Reading Transfers (`td transfers list` / `show`) needs only the index, so
   those commands open an offline App and never take the Session lock.

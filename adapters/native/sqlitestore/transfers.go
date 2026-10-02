@@ -37,6 +37,14 @@ create index if not exists idx_transfers_stage on transfers(stage);
 create index if not exists idx_transfers_created on transfers(created_at);
 `
 
+// transfersFailedItemsSQL adds the failed-item count: multi-item Transfers
+// (ADR 0033) record it apart from the done count, so a completed Transfer
+// that dropped items shows both. An alter of its own so databases already
+// at version 2 gain it.
+const transfersFailedItemsSQL = `
+alter table transfers add column items_failed integer not null default 0;
+`
+
 // TransferRow is one row of the transfers table. Timestamps are RFC3339Nano
 // UTC text; empty means unset.
 type TransferRow struct {
@@ -51,6 +59,7 @@ type TransferRow struct {
 	BytesTotal      int64
 	ItemsDone       int
 	ItemsTotal      int
+	ItemsFailed     int
 	ErrorCode       string
 	ErrorMessage    string
 	FrontEnd        string
@@ -63,15 +72,15 @@ type TransferRow struct {
 }
 
 const transferColumns = `id, kind, channel_tg_id, source, dest, options, stage, bytes_done, bytes_total,
-	items_done, items_total, error_code, error_message, front_end, owner_token, lease_expires_at,
+	items_done, items_total, items_failed, error_code, error_message, front_end, owner_token, lease_expires_at,
 	cancel_requested, created_at, updated_at, finished_at`
 
 // InsertTransfer records a new Transfer.
 func (d *DB) InsertTransfer(ctx context.Context, r TransferRow) error {
 	_, err := d.sql.ExecContext(ctx, `insert into transfers(`+transferColumns+`)
-		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, r.Kind, r.ChannelTGID, r.Source, r.Dest, r.Options, r.Stage, r.BytesDone, r.BytesTotal,
-		r.ItemsDone, r.ItemsTotal, r.ErrorCode, r.ErrorMessage, r.FrontEnd, r.OwnerToken, r.LeaseExpiresAt,
+		r.ItemsDone, r.ItemsTotal, r.ItemsFailed, r.ErrorCode, r.ErrorMessage, r.FrontEnd, r.OwnerToken, r.LeaseExpiresAt,
 		r.CancelRequested, r.CreatedAt, r.UpdatedAt, r.FinishedAt)
 	if err != nil {
 		return apperr.Wrap(apperr.ErrDB, "record transfer", err)
@@ -84,9 +93,9 @@ func (d *DB) InsertTransfer(ctx context.Context, r TransferRow) error {
 // request, and ownership columns are left as they are.
 func (d *DB) UpdateTransferState(ctx context.Context, r TransferRow) error {
 	_, err := d.sql.ExecContext(ctx, `update transfers set dest=?, stage=?, bytes_done=?, bytes_total=?,
-		items_done=?, items_total=?, error_code=?, error_message=?, updated_at=?, finished_at=?
+		items_done=?, items_total=?, items_failed=?, error_code=?, error_message=?, updated_at=?, finished_at=?
 		where id=?`,
-		r.Dest, r.Stage, r.BytesDone, r.BytesTotal, r.ItemsDone, r.ItemsTotal, r.ErrorCode, r.ErrorMessage,
+		r.Dest, r.Stage, r.BytesDone, r.BytesTotal, r.ItemsDone, r.ItemsTotal, r.ItemsFailed, r.ErrorCode, r.ErrorMessage,
 		r.UpdatedAt, r.FinishedAt, r.ID)
 	if err != nil {
 		return apperr.Wrap(apperr.ErrDB, "update transfer", err)
@@ -127,7 +136,7 @@ func (d *DB) queryTransfers(ctx context.Context, tail string, args ...any) ([]Tr
 	for rows.Next() {
 		var r TransferRow
 		if err := rows.Scan(&r.ID, &r.Kind, &r.ChannelTGID, &r.Source, &r.Dest, &r.Options, &r.Stage,
-			&r.BytesDone, &r.BytesTotal, &r.ItemsDone, &r.ItemsTotal, &r.ErrorCode, &r.ErrorMessage,
+			&r.BytesDone, &r.BytesTotal, &r.ItemsDone, &r.ItemsTotal, &r.ItemsFailed, &r.ErrorCode, &r.ErrorMessage,
 			&r.FrontEnd, &r.OwnerToken, &r.LeaseExpiresAt, &r.CancelRequested, &r.CreatedAt, &r.UpdatedAt,
 			&r.FinishedAt); err != nil {
 			return nil, apperr.Wrap(apperr.ErrDB, "read transfers", err)

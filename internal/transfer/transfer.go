@@ -15,26 +15,42 @@ import (
 // Kind is what a Transfer moves.
 type Kind string
 
-// KindUpload uploads one local file.
-const KindUpload Kind = "upload"
+const (
+	// KindUpload uploads one local file.
+	KindUpload Kind = "upload"
+	// KindDownload downloads one remote file. Its Source is the remote
+	// path and Dest the local file, the reverse of an upload.
+	KindDownload Kind = "download"
+	// KindAlbumUpload uploads several local files as Telegram albums to one
+	// remote directory. Its Source is empty; the options carry the sources.
+	KindAlbumUpload Kind = "album_upload"
+	// KindRecursiveUpload uploads one local directory tree.
+	KindRecursiveUpload Kind = "recursive_upload"
+	// KindRecursiveDownload downloads one remote directory tree. Its Source
+	// is the remote path and Dest the local directory.
+	KindRecursiveDownload Kind = "recursive_download"
+)
 
 // Stage is where a Transfer is in its lifecycle. A Transfer only moves
 // forward through the stages, ending in exactly one terminal stage.
 type Stage string
 
 const (
-	StageQueued     Stage = "queued"
-	StageHashing    Stage = "hashing"
-	StageUploading  Stage = "uploading"
-	StagePublishing Stage = "publishing"
-	StageCompleted  Stage = "completed"
+	StageQueued      Stage = "queued"
+	StageHashing     Stage = "hashing"
+	StageUploading   Stage = "uploading"
+	StageDownloading Stage = "downloading"
+	StagePublishing  Stage = "publishing"
+	StageCompleted   Stage = "completed"
 	// StageFailed ends a Transfer whose call failed, including one its
 	// owner cancelled (ERR_CANCELLED).
 	StageFailed Stage = "failed"
 )
 
-// lifecycle is every Stage in the order a Transfer moves through them.
-var lifecycle = []Stage{StageQueued, StageHashing, StageUploading, StagePublishing, StageCompleted, StageFailed}
+// lifecycle is every Stage in the order a Transfer moves through them. One
+// Transfer never visits both upload and download stages; the shared order
+// only fixes how forward each step is.
+var lifecycle = []Stage{StageQueued, StageHashing, StageUploading, StageDownloading, StagePublishing, StageCompleted, StageFailed}
 
 func (s Stage) rank() int {
 	for i, st := range lifecycle {
@@ -84,8 +100,14 @@ type Transfer struct {
 	Dest       string `json:"dest"`
 	BytesDone  int64  `json:"bytes_done"`
 	BytesTotal int64  `json:"bytes_total"`
-	ItemsDone  int    `json:"items_done"`
-	ItemsTotal int    `json:"items_total"`
+	// ItemsDone counts the items completed or skipped, ItemsFailed the
+	// items that failed, of ItemsTotal. A single-file Transfer is one item;
+	// a recursive Transfer's ItemsTotal grows as the walk reports items.
+	ItemsDone  int `json:"items_done"`
+	ItemsTotal int `json:"items_total"`
+	// ItemsFailed is omitted when nothing failed, keeping the shape a
+	// clean Transfer has had since the first kind.
+	ItemsFailed int `json:"items_failed,omitempty"`
 	// ErrorCode and ErrorMessage are the error a failed Transfer ended
 	// with.
 	ErrorCode       string     `json:"error_code,omitempty"`
@@ -122,6 +144,7 @@ func (t Transfer) row() sqlitestore.TransferRow {
 		BytesTotal:      t.BytesTotal,
 		ItemsDone:       t.ItemsDone,
 		ItemsTotal:      t.ItemsTotal,
+		ItemsFailed:     t.ItemsFailed,
 		ErrorCode:       t.ErrorCode,
 		ErrorMessage:    t.ErrorMessage,
 		FrontEnd:        string(t.FrontEnd),
@@ -147,6 +170,7 @@ func fromRow(r sqlitestore.TransferRow) Transfer {
 		BytesTotal:      r.BytesTotal,
 		ItemsDone:       r.ItemsDone,
 		ItemsTotal:      r.ItemsTotal,
+		ItemsFailed:     r.ItemsFailed,
 		ErrorCode:       r.ErrorCode,
 		ErrorMessage:    r.ErrorMessage,
 		FrontEnd:        FrontEnd(r.FrontEnd),

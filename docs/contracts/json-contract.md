@@ -302,15 +302,23 @@ list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
 }
 ```
 
-- `id` is the Transfer ID, a UUID. `kind` is `upload`.
-- `stage` is `queued`, `hashing`, `uploading`, `publishing`, `completed`, or
-  `failed`. A Transfer only moves forward; `completed` and `failed` are
-  terminal.
-- `channel` is the drive channel's Telegram ID. `source` is the absolute
-  local path. `dest` is the requested remote path, and once `completed` the
-  canonical path written.
+- `id` is the Transfer ID, a UUID. `kind` is `upload`, `download`,
+  `album_upload`, `recursive_upload`, or `recursive_download`.
+- `stage` is `queued`, `hashing`, `uploading`, `downloading`, `publishing`,
+  `completed`, or `failed`. A Transfer only moves forward, and visits the
+  stages its kind has: an upload `hashing`, `uploading`, `publishing`; a
+  download `downloading`. `completed` and `failed` are terminal.
+- `channel` is the drive channel's Telegram ID. `source` and `dest` are the
+  two ends of the Transfer: for uploads `source` is the absolute local path
+  and `dest` the requested remote path; for downloads the reverse, with
+  `dest` the absolute local path. An album upload's `source` is empty — its
+  sources are many. Once a single-file Transfer completes, `dest` is the
+  path actually written.
 - `bytes_done` / `bytes_total` are byte progress, refreshed a few times a
-  second while the Transfer runs. `items_done` / `items_total` count files.
+  second while the Transfer runs; only single-file Transfers record them.
+  `items_done` / `items_failed` / `items_total` count files: done includes
+  skipped, and `items_failed` is omitted when nothing failed. A recursive
+  Transfer's `items_total` grows as items report.
 - `error_code` / `error_message` appear only on a `failed` Transfer and match
   the error envelope its command reported. Ctrl-C ends a Transfer `failed`
   with `ERR_CANCELLED`.

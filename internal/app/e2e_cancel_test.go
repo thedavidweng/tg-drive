@@ -189,6 +189,12 @@ func TestE2EInterruptedRecursiveGet(t *testing.T) {
 	lines, code, took := interruptAndWait(t, cmd, sc)
 	assertCancelled(t, lines, code, took, stderr.String())
 
+	cancelled := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "failed")
+	tr := findTransfer(t, cancelled, "recursive_download")
+	if tr["error_code"] != "ERR_CANCELLED" || tr["finished_at"] == nil {
+		t.Fatalf("transfer after SIGINT = %v, want the recursive download failed with ERR_CANCELLED", tr)
+	}
+
 	entries, err := os.ReadDir(out)
 	if err != nil {
 		t.Fatal(err)
