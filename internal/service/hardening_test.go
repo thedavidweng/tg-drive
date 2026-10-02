@@ -56,8 +56,8 @@ func TestTombstoneWinsOverStaleManifestReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != 0 {
-		t.Fatalf("tombstoned file resurrected: active = %v", res["active"])
+	if res.Active != 0 {
+		t.Fatalf("tombstoned file resurrected: active = %v", res.Active)
 	}
 	if got := fileStatus(t, app, remote); got != "deleted" {
 		t.Fatalf("status after scan = %q, want deleted", got)
@@ -96,8 +96,8 @@ func TestAlbumInventoryMissingScanError(t *testing.T) {
 		t.Fatalf("album-inventory scan errors = %d, want 1", n)
 	}
 	// Members are not silently indexed from nothing.
-	if res["active"].(int) != 0 {
-		t.Fatalf("members indexed without inventory: active = %v", res["active"])
+	if res.Active != 0 {
+		t.Fatalf("members indexed without inventory: active = %v", res.Active)
 	}
 	// Strict mode fails on it.
 	if _, err := app.Scan(ctx, ScanOptions{Full: true, Strict: true}); err == nil {
@@ -145,8 +145,8 @@ func TestAlbumScanRebuildIndexesMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != 2 {
-		t.Fatalf("active = %v, want 2", res["active"])
+	if res.Active != 2 {
+		t.Fatalf("active = %v, want 2", res.Active)
 	}
 	for _, p := range []string{"/photos/e.jpg", "/photos/f.jpg"} {
 		if got := fileStatus(t, app, p); got != "active" {
@@ -261,7 +261,7 @@ func TestUploadResumeAdoptsPendingRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data["resumed"] != true {
+	if !data.Resumed {
 		t.Fatalf("retry did not report resumed: %v", data)
 	}
 	if got := fileStatus(t, app, "/resume.bin"); got != "active" {
@@ -372,7 +372,7 @@ func TestRepairPendingLeavesInFlightUploadUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out["repaired"].(int) != 0 {
+	if out.Repaired != 0 {
 		t.Fatalf("repair = %v, want no repairs", out)
 	}
 	var status string
@@ -409,8 +409,8 @@ func TestScanDuplicatePathClaimsNewestWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scan aborted on duplicate claims: %v", err)
 	}
-	if res["active"].(int) != 1 {
-		t.Fatalf("active = %v, want 1", res["active"])
+	if res.Active != 1 {
+		t.Fatalf("active = %v, want 1", res.Active)
 	}
 	if n := scanErrCount(t, app, "ERR_PATH_CONFLICT"); n != 1 {
 		t.Fatalf("path-conflict scan errors = %d, want 1", n)
@@ -544,8 +544,8 @@ func TestFullScanResumesFromCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != total {
-		t.Fatalf("active after resume = %v, want %d", res["active"], total)
+	if res.Active != total {
+		t.Fatalf("active after resume = %v, want %d", res.Active, total)
 	}
 	_ = app.DB.Raw().QueryRow(`select checkpoint_message_id from scan_state`).Scan(&checkpoint)
 	if checkpoint.Valid {
@@ -576,8 +576,8 @@ func TestIncrementalScanPicksUpNewMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["mode"] != "incremental" {
-		t.Fatalf("mode = %v", res["mode"])
+	if res.Mode != "incremental" {
+		t.Fatalf("mode = %v", res.Mode)
 	}
 	if got := fileStatus(t, app, "/late.txt"); got != "active" {
 		t.Fatalf("incremental scan missed the new message: %q", got)
@@ -690,8 +690,8 @@ func TestScanScaleSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != n {
-		t.Fatalf("active = %v, want %d", res["active"], n)
+	if res.Active != n {
+		t.Fatalf("active = %v, want %d", res.Active, n)
 	}
 	if elapsed > timeBound {
 		t.Fatalf("scan of %d messages took %s", n, elapsed)

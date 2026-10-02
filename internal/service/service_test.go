@@ -82,13 +82,12 @@ func TestStatusIncludesUploadLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := res["upload_limit_bytes"]; !ok {
-		t.Fatalf("status = %v", res)
+	if res.UploadLimitBytes == nil {
+		t.Fatalf("status = %+v", res)
 	}
-	if res["authenticated"] != true {
-		t.Fatalf("status = %v", res)
+	if res.Authenticated == nil || !*res.Authenticated {
+		t.Fatalf("status = %+v", res)
 	}
-	_ = fmt.Sprint(res["upload_limit_bytes"])
 }
 
 func TestMapTGErrFloodWaitDetails(t *testing.T) {

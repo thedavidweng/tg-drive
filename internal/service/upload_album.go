@@ -62,6 +62,27 @@ type AlbumGroup struct {
 	Paths          []string `json:"paths"`
 }
 
+// AlbumUploadResult reports a multi-file album upload.
+type AlbumUploadResult struct {
+	Albums     []AlbumGroup `json:"albums"`
+	ChannelID  string       `json:"channel_id"`
+	Errors     []string     `json:"errors"`
+	InviteLink string       `json:"invite_link,omitempty"`
+	Resumed    bool         `json:"resumed,omitempty"`
+	Skipped    int          `json:"skipped"`
+	Uploaded   int          `json:"uploaded"`
+}
+
+// albumMemberFailure is one source dropped from a lenient batch plan.
+type albumMemberFailure struct {
+	localPath string
+	err       error
+}
+
+func (f albumMemberFailure) String() string {
+	return fmt.Sprintf("%s: %v", f.localPath, f.err)
+}
+
 // albumBatch is the outcome of the planning phase plus everything the send
 // phase needs to build requests.
 type albumBatch struct {
@@ -75,7 +96,7 @@ type albumBatch struct {
 // document default; presentation flags apply uniformly to every member.
 // Conflict policies apply per file; --replace is not supported (replace
 // individual files with single-path td cp instead).
-func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir string, policy ConflictPolicy, noHash bool, pres Presentation) (map[string]any, error) {
+func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir string, policy ConflictPolicy, noHash bool, pres Presentation) (*AlbumUploadResult, error) {
 	if len(localPaths) < 2 {
 		return nil, apperr.New(apperr.ErrUsage, "album upload requires at least two local files")
 	}
@@ -132,7 +153,7 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 	if err != nil {
 		return nil, err
 	}
-	data["skipped"] = batch.skipped
+	data.Skipped = batch.skipped
 	return data, nil
 }
 
@@ -173,7 +194,7 @@ func albumDestinationDir(remoteDir string, active []fsmodel.ActivePath) (string,
 // false) the first per-source failure aborts and rolls back freshly inserted
 // pending rows; in lenient mode (--continue-on-error) failures are returned
 // alongside the surviving batch so the caller can report them.
-func (a *App) planAlbumBatch(ctx context.Context, sources []albumSource, policy ConflictPolicy, noHash bool, pres Presentation, lenient bool) (*albumBatch, []string, error) {
+func (a *App) planAlbumBatch(ctx context.Context, sources []albumSource, policy ConflictPolicy, noHash bool, pres Presentation, lenient bool) (*albumBatch, []albumMemberFailure, error) {
 	channelID, _, err := a.channelID(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -190,9 +211,9 @@ func (a *App) planAlbumBatch(ctx context.Context, sources []albumSource, policy 
 	}
 
 	batch := &albumBatch{pres: pres}
-	var failures []string
+	var failures []albumMemberFailure
 	var freshRows []int64 // pending rows inserted here, rolled back on fatal
-	fail := func(err error) (*albumBatch, []string, error) {
+	fail := func(err error) (*albumBatch, []albumMemberFailure, error) {
 		for _, id := range freshRows {
 			_, _ = a.DB.Raw().ExecContext(ctx, `delete from files where id=?`, id)
 		}
@@ -204,7 +225,7 @@ func (a *App) planAlbumBatch(ctx context.Context, sources []albumSource, policy 
 			if !lenient {
 				return fail(err)
 			}
-			failures = append(failures, fmt.Sprintf("%s: %v", src.localPath, err))
+			failures = append(failures, albumMemberFailure{localPath: src.localPath, err: err})
 			continue
 		}
 		if member == nil {
@@ -305,7 +326,7 @@ func (a *App) planAlbumMember(ctx context.Context, channelRowID int64, src album
 // completes each group's publication: message ids recorded, one td-album:v1
 // inventory reply, index rows activated. Every destination path is locked for
 // the whole batch so concurrent mutators cannot interleave.
-func (a *App) runAlbumBatch(ctx context.Context, batch *albumBatch, channelID, tgChID int64, tgIDStr string) (map[string]any, error) {
+func (a *App) runAlbumBatch(ctx context.Context, batch *albumBatch, channelID, tgChID int64, tgIDStr string) (*AlbumUploadResult, error) {
 	dests := make([]string, 0, len(batch.members))
 	for _, m := range batch.members {
 		dests = append(dests, m.src.dest)
@@ -369,17 +390,15 @@ func (a *App) runAlbumBatch(ctx context.Context, batch *albumBatch, channelID, t
 		return nil, lockErr
 	}
 
-	out := map[string]any{
-		"uploaded":   sent,
-		"errors":     []string{},
-		"albums":     groups,
-		"channel_id": tgIDStr,
+	out := &AlbumUploadResult{
+		Uploaded:  sent,
+		Errors:    []string{},
+		Albums:    groups,
+		ChannelID: tgIDStr,
+		Resumed:   resumedAny,
 	}
-	if resumedAny {
-		out["resumed"] = true
-	}
-	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil && link != "" {
-		out["invite_link"] = link
+	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
+		out.InviteLink = link
 	}
 	return out, nil
 }

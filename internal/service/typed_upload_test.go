@@ -135,11 +135,11 @@ func TestTypedUploadResumeAdoptsPendingRow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if data["resumed"] != true {
+			if !data.Resumed {
 				t.Fatalf("retry data = %v, want resumed:true", data)
 			}
 			tgChID, _ := app.tgChannelID(ctx)
-			msg := messageByID(t, tg, tgChID, data["message_id"].(int))
+			msg := messageByID(t, tg, tgChID, data.MessageID)
 			tc.check(t, msg)
 			if got := fileStatus(t, app, "/media/big.bin"); got != "active" {
 				t.Fatalf("status after resume = %q, want active", got)
@@ -203,8 +203,8 @@ func TestTypedUploadScanReconstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != len(paths) {
-		t.Fatalf("active = %v, want %d", res["active"], len(paths))
+	if res.Active != len(paths) {
+		t.Fatalf("active = %v, want %d", res.Active, len(paths))
 	}
 	for p := range paths {
 		if got := fileStatus(t, app, p); got != "active" {

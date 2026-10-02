@@ -36,8 +36,7 @@ func NewDoctorCmd(rt Runtime) *cobra.Command {
 				return r.Success(data)
 			}
 			out := cmd.OutOrStdout()
-			checks, _ := data["checks"].(map[string]string)
-			hints, _ := data["hints"].(map[string]string)
+			checks, hints := data.Checks, data.Hints
 			names := make([]string, 0, len(checks))
 			for k := range checks {
 				names = append(names, k)
@@ -52,8 +51,8 @@ func NewDoctorCmd(rt Runtime) *cobra.Command {
 				}
 				_, _ = fmt.Fprintln(out, line)
 			}
-			if maxBytes, ok := data["max_upload_bytes"].(int64); ok {
-				_, _ = fmt.Fprintf(out, "%-18s %s per file\n", "max_upload", humanSize(maxBytes))
+			if data.MaxUploadBytes != nil {
+				_, _ = fmt.Fprintf(out, "%-18s %s per file\n", "max_upload", humanSize(*data.MaxUploadBytes))
 			}
 			summary := fmt.Sprintf("\n%d passed, %s, %d failed", tally["pass"], plural(tally["warn"], "warning"), tally["fail"])
 			if n := tally["unknown"]; n > 0 {
@@ -91,10 +90,10 @@ func NewDoctorPathCodecCmd(rt Runtime) *cobra.Command {
 				return r.Success(data)
 			}
 			out := cmd.OutOrStdout()
-			_, _ = fmt.Fprintf(out, "fixed-vectors        %s\n", data["fixed_vectors"])
-			_, _ = fmt.Fprintf(out, "db-check             %s\n", data["db_check"])
-			_, _ = fmt.Fprintf(out, "db-rows              %v\n", data["db_rows"])
-			_, _ = fmt.Fprintf(out, "corrupt-rows         %v\n", data["corrupt_rows"])
+			_, _ = fmt.Fprintf(out, "fixed-vectors        %s\n", data.FixedVectors)
+			_, _ = fmt.Fprintf(out, "db-check             %s\n", data.DBCheck)
+			_, _ = fmt.Fprintf(out, "db-rows              %v\n", data.DBRows)
+			_, _ = fmt.Fprintf(out, "corrupt-rows         %v\n", data.CorruptRows)
 			return nil
 		},
 	}

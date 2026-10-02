@@ -40,7 +40,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 		t.Fatal(err)
 	}
 	tgChannelID, _ := app.tgChannelID(ctx)
-	messageID := result["message_id"].(int)
+	messageID := result.MessageID
 	if err := tg.EditCaption(ctx, tgChannelID, messageID,
 		oldRenderedCaption(t, app, channelID, "/stash-browse/832/clip.mp4", "clip.mp4", "source title")); err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dry["planned"] != 1 || dry["cleaned"] != 0 {
+	if dry.Planned != 1 || dry.Cleaned != 0 {
 		t.Fatalf("dry run = %+v", dry)
 	}
 	before, err := tg.GetMessage(ctx, tgChannelID, messageID)
@@ -65,7 +65,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["cleaned"] != 1 || res["failed"] != 0 {
+	if res.Cleaned != 1 || res.Failed != 0 {
 		t.Fatalf("cleanup = %+v", res)
 	}
 	after, err := tg.GetMessage(ctx, tgChannelID, messageID)
@@ -90,7 +90,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if idempotent["cleaned"] != 0 || idempotent["skipped"] != 1 {
+	if idempotent.Cleaned != 0 || idempotent.Skipped != 1 {
 		t.Fatalf("idempotent cleanup = %+v", idempotent)
 	}
 }
@@ -121,7 +121,7 @@ func TestRepairCaptionsCleansOnlyCaptionedAlbumMember(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["cleaned"] != 1 || res["failed"] != 0 {
+	if res.Cleaned != 1 || res.Failed != 0 {
 		t.Fatalf("cleanup = %+v", res)
 	}
 	for _, member := range members {
@@ -152,7 +152,7 @@ func TestRepairCaptionsSkipsUneditableMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	tgChannelID, _ := app.tgChannelID(ctx)
-	messageID := result["message_id"].(int)
+	messageID := result.MessageID
 	if err := tg.EditCaption(ctx, tgChannelID, messageID,
 		oldRenderedCaption(t, app, channelID, "/old/clip.mp4", "clip.mp4", "")); err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestRepairCaptionsSkipsUneditableMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["skipped"] != 1 || res["cleaned"] != 0 || res["failed"] != 0 {
+	if res.Skipped != 1 || res.Cleaned != 0 || res.Failed != 0 {
 		t.Fatalf("cleanup = %+v", res)
 	}
 }
