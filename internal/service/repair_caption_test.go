@@ -100,7 +100,7 @@ func TestRepairCaptionsCleansOnlyCaptionedAlbumMember(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	locals := writeLocals(t, 3)
-	if _, err := app.UploadFilesAs(ctx, locals, "/albums/", ConflictFail, false, Presentation{}); err != nil {
+	if _, err := app.UploadFilesAs(ctx, locals, "/albums/", ConflictFail, false, Presentation{}, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	channelID, _, err := app.channelID(ctx)

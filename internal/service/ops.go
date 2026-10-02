@@ -230,7 +230,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 		// Before init there is nothing to count, but auth and paths are
 		// still worth reporting; an explicit --channel that matches nothing
 		// stays an error.
-		if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrChannelNotFound && a.Channel == "" {
+		if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrChannelNotFound && a.channelSelector(ctx) == "" {
 			out := &StatusResult{
 				Initialized: false,
 				Channels:    channels,
@@ -634,7 +634,7 @@ type RecursiveUploadResult struct {
 // UploadRecursive uploads a directory recursively. Files are published as
 // native media groups: each source directory's direct children form one
 // album, split into consecutive groups of MaxMediaGroupMembers (issue #26).
-func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, policy ConflictPolicy, continueOnError, noHash, includeEmptyDirs bool) (*RecursiveUploadResult, error) {
+func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, policy ConflictPolicy, continueOnError, noHash, includeEmptyDirs bool, opts UploadOptions) (*RecursiveUploadResult, error) {
 	if includeEmptyDirs {
 		return nil, apperr.New(apperr.ErrEmptyDirsUnsupported, "empty directories cannot be persisted to Telegram in V1")
 	}
@@ -692,7 +692,7 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	}
 	sort.Strings(order)
 	for _, dir := range order {
-		out, err := a.runUpload(ctx, uploadRun{members: groups[dir], policy: policy, noHash: noHash, album: true, lenient: continueOnError})
+		out, err := a.runUpload(ctx, uploadRun{members: groups[dir], policy: policy, noHash: noHash, album: true, lenient: continueOnError, opts: opts})
 		if out != nil {
 			skipped += len(out.skipped)
 			failed += len(out.failures)

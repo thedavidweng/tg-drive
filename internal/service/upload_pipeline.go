@@ -47,6 +47,7 @@ type uploadRun struct {
 	// lenient drops a failing member (reported in failures) instead of
 	// aborting the run before any Telegram write (--continue-on-error).
 	lenient bool
+	opts    UploadOptions
 }
 
 func (r uploadRun) replaces() bool {
@@ -122,6 +123,7 @@ func (a *App) runUpload(ctx context.Context, run uploadRun) (*uploadOutcome, err
 	}
 	var failures []indexedFailure
 	report := func(index int, m uploadMember, err error) error {
+		run.opts.Observer.item(ItemResult{Item: m.item(), Status: ItemFailed, Err: err})
 		if !run.lenient {
 			return err
 		}
@@ -146,6 +148,7 @@ func (a *App) runUpload(ctx context.Context, run uploadRun) (*uploadOutcome, err
 		}
 		if s == nil {
 			out.skipped = append(out.skipped, m.dest)
+			run.opts.Observer.item(ItemResult{Item: m.item(), Status: ItemSkipped})
 			continue
 		}
 		planned = append(planned, s)
@@ -272,8 +275,11 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 		// One human caption per batch, on the very first member; a lone
 		// member is an ordinary message and always carries its own.
 		withCaption := i == 0 || len(unit) == 1
-		sent, group, err := a.sendUnit(ctx, ch, unit, withCaption, thumbs)
+		sent, group, err := a.sendUnit(ctx, run.opts, ch, unit, withCaption, thumbs)
 		if err != nil {
+			for _, s := range unit {
+				run.opts.Observer.item(ItemResult{Item: s.item(), Status: ItemFailed, Err: err})
+			}
 			for _, rest := range units[i+1:] {
 				a.discardUnsent(ctx, rest)
 			}
@@ -282,6 +288,9 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 		for _, s := range sent {
 			out.sent = append(out.sent, s)
 			out.resumed = out.resumed || s.resumed
+		}
+		for _, s := range unit {
+			run.opts.Observer.item(ItemResult{Item: s.item(), Status: ItemCompleted})
 		}
 		if group != nil {
 			out.albums = append(out.albums, *group)
@@ -295,6 +304,9 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 // supersede under --replace, refuse otherwise), renders the caption once,
 // and stages the member's pending row.
 func (a *App) stageUpload(ctx context.Context, run uploadRun, ch uploadChannel, s *stagedUpload, existingSlugs map[string]string, now string) error {
+	if a.hashesUpload(run.noHash, s.size) {
+		run.opts.Observer.stage(s.item(), StageHashing)
+	}
 	hash, err := a.hashUpload(ctx, s.localPath, run.noHash, s.size)
 	if err != nil {
 		return err
@@ -401,11 +413,8 @@ func uploadUnits(staged []*stagedUpload) [][]*stagedUpload {
 // ordinary message with its own per-file manifest record; a Telegram media
 // group needs at least two members, so larger units go out as a group with
 // one td-album:v1 inventory. group is nil for a lone member.
-func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUpload, withCaption bool, thumbs map[string][]byte) ([]sentMember, *AlbumGroup, error) {
-	threads := a.Cfg.Upload.Threads
-	if threads <= 0 {
-		threads = 4
-	}
+func (a *App) sendUnit(ctx context.Context, opts UploadOptions, ch uploadChannel, unit []*stagedUpload, withCaption bool, thumbs map[string][]byte) ([]sentMember, *AlbumGroup, error) {
+	threads := opts.threads(a.Cfg)
 	reqs := make([]telegram.UploadRequest, 0, len(unit))
 	var readers []io.Closer
 	defer func() {
@@ -422,11 +431,11 @@ func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUplo
 			ContentHash:    s.hash,
 			Path:           s.localPath,
 			Threads:        threads,
-			PartSize:       a.Cfg.Upload.PartSizeKB * 1024,
+			PartSize:       opts.partSizeBytes(a.Cfg),
 			ResumableKey:   resumableKey(s.fileID),
 			ResumableStore: a.DB,
 			Thumb:          thumbs[s.pres.ThumbPath],
-			Progress:       a.Progress,
+			Progress:       uploadProgress(opts.Observer, s.item()),
 		}
 		if i == 0 && withCaption {
 			req.Caption = s.rendition.Caption()
@@ -446,6 +455,9 @@ func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUplo
 		reqs = append(reqs, req)
 	}
 
+	for _, s := range unit {
+		opts.Observer.stage(s.item(), StageUploading)
+	}
 	group := len(unit) > 1
 	var results []telegram.UploadResult
 	var err error
@@ -471,6 +483,9 @@ func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUplo
 		}
 	}
 
+	for _, s := range unit {
+		opts.Observer.stage(s.item(), StagePublishing)
+	}
 	sent := make([]sentMember, 0, len(unit))
 	replyID := 0
 	if group {
@@ -532,6 +547,27 @@ func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUplo
 		out.MessageIDs = append(out.MessageIDs, s.messageID)
 	}
 	return sent, out, nil
+}
+
+func (m uploadMember) item() Item {
+	return Item{Source: m.localPath, Path: m.dest}
+}
+
+// uploadProgress adapts the Telegram client's part confirmations for one
+// item to obs.
+func uploadProgress(obs Observer, it Item) telegram.UploadProgress {
+	if obs.OnProgress == nil {
+		return nil
+	}
+	return func(_ context.Context, st telegram.UploadProgressState) error {
+		obs.progress(Progress{
+			Item:  it,
+			Done:  st.Uploaded,
+			Total: st.Total,
+			Part:  &UploadPart{FileName: st.FileName, Index: st.Part, Size: st.PartSize},
+		})
+		return nil
+	}
 }
 
 func (s *stagedUpload) sentAs(messageID, manifestMsgID int) sentMember {

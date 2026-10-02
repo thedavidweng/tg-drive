@@ -28,6 +28,23 @@ type channelContext struct {
 	discussion   string
 }
 
+type channelSelectorKey struct{}
+
+// WithChannel returns ctx selecting a bound drive channel, by title or
+// Telegram ID, for the calls made with it. It overrides App.Channel for
+// those calls only; an empty selector keeps App.Channel.
+func WithChannel(ctx context.Context, selector string) context.Context {
+	return context.WithValue(ctx, channelSelectorKey{}, selector)
+}
+
+// channelSelector is the channel selector in effect for a call.
+func (a *App) channelSelector(ctx context.Context) string {
+	if sel, _ := ctx.Value(channelSelectorKey{}).(string); sel != "" {
+		return sel
+	}
+	return a.Channel
+}
+
 // channel returns the bound drive channel. Inside an operation it is the
 // operation's channel; otherwise it is read from the index.
 func (a *App) channel(ctx context.Context) (*channelContext, error) {
@@ -37,11 +54,11 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 	ch := &channelContext{app: a}
 	var title string
 	var err error
-	if a.Channel != "" {
+	if sel := a.channelSelector(ctx); sel != "" {
 		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, title from channels where title=? or tg_channel_id=? limit 1`,
-			a.Channel, a.Channel).Scan(&ch.rowID, &ch.tgIDStr, &title)
+			sel, sel).Scan(&ch.rowID, &ch.tgIDStr, &title)
 		if err == sql.ErrNoRows {
-			return nil, apperr.New(apperr.ErrChannelNotFound, "channel not found: "+a.Channel)
+			return nil, apperr.New(apperr.ErrChannelNotFound, "channel not found: "+sel)
 		}
 	} else {
 		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, title from channels limit 1`).Scan(&ch.rowID, &ch.tgIDStr, &title)

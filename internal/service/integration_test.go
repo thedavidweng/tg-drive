@@ -620,7 +620,7 @@ func TestRecursiveUploadAndDownload(t *testing.T) {
 	mustWrite("a.txt", "A")
 	mustWrite("sub/b.txt", "B")
 	mustWrite("sub/deep/c.txt", "C")
-	res, err := app.UploadRecursive(ctx, src, "/backup", ConflictFail, false, false, false)
+	res, err := app.UploadRecursive(ctx, src, "/backup", ConflictFail, false, false, false, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -645,7 +645,7 @@ func TestRecursiveUploadAndDownload(t *testing.T) {
 func TestIncludeEmptyDirsUnsupported(t *testing.T) {
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)
-	_, err := app.UploadRecursive(context.Background(), t.TempDir(), "/x", ConflictFail, false, false, true)
+	_, err := app.UploadRecursive(context.Background(), t.TempDir(), "/x", ConflictFail, false, false, true, UploadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrEmptyDirsUnsupported {
 		t.Fatalf("code = %s, want ERR_EMPTY_DIRS_UNSUPPORTED", code)
 	}

@@ -110,15 +110,25 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			defer cleanup()
-			if cmd.Flags().Changed("upload-threads") && uploadThreads > 0 {
-				app.Cfg.Upload.Threads = uploadThreads
+			var opts service.UploadOptions
+			if cmd.Flags().Changed("upload-threads") {
+				opts.Threads = uploadThreads
 			}
-			if cmd.Flags().Changed("upload-part-size-kb") && uploadPartSizeKB > 0 {
-				app.Cfg.Upload.PartSizeKB = uploadPartSizeKB
+			if cmd.Flags().Changed("upload-part-size-kb") {
+				opts.PartSizeKB = uploadPartSizeKB
 			}
 			if events {
-				app.Progress = func(ctx context.Context, state telegram.UploadProgressState) error {
-					return r.Event("cp.progress", state)
+				opts.Observer.OnProgress = func(p service.Progress) {
+					if p.Part == nil {
+						return
+					}
+					_ = r.Event("cp.progress", telegram.UploadProgressState{
+						FileName: p.Part.FileName,
+						Part:     p.Part.Index,
+						PartSize: p.Part.Size,
+						Uploaded: p.Done,
+						Total:    p.Total,
+					})
 				}
 			}
 			if len(args) > 2 {
@@ -128,7 +138,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if includeEmptyDirs {
 					return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 				}
-				data, err := app.UploadFilesAs(context.Background(), args[:len(args)-1], args[len(args)-1], policy, noHash, pres)
+				data, err := app.UploadFilesAs(context.Background(), args[:len(args)-1], args[len(args)-1], policy, noHash, pres, opts)
 				if err != nil {
 					return r.Error(err)
 				}
@@ -148,7 +158,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if presentationFlagsSet(cmd) {
 					return r.Error(apperr.New(apperr.ErrUsage, "presentation flags apply to single-file uploads only"))
 				}
-				data, err := app.UploadRecursive(context.Background(), args[0], args[1], policy, continueOnError, noHash, includeEmptyDirs)
+				data, err := app.UploadRecursive(context.Background(), args[0], args[1], policy, continueOnError, noHash, includeEmptyDirs, opts)
 				if err != nil {
 					return r.Error(err)
 				}
@@ -167,7 +177,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 			if includeEmptyDirs {
 				return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 			}
-			data, err := app.UploadFileAs(context.Background(), args[0], args[1], policy, noHash, pres)
+			data, err := app.UploadFileAs(context.Background(), args[0], args[1], policy, noHash, pres, opts)
 			if err != nil {
 				return r.Error(err)
 			}

@@ -50,7 +50,7 @@ func (f albumMemberFailure) String() string {
 // document default; presentation flags apply uniformly to every member.
 // Conflict policies apply per file; --replace is not supported (replace
 // individual files with single-path td cp instead).
-func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir string, policy ConflictPolicy, noHash bool, pres Presentation) (*AlbumUploadResult, error) {
+func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir string, policy ConflictPolicy, noHash bool, pres Presentation, opts UploadOptions) (*AlbumUploadResult, error) {
 	if len(localPaths) < 2 {
 		return nil, apperr.New(apperr.ErrUsage, "album upload requires at least two local files")
 	}
@@ -95,7 +95,7 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 		members = append(members, uploadMember{localPath: lp, dest: dest, pres: pres})
 	}
 
-	out, err := a.runUpload(ctx, uploadRun{members: members, policy: policy, noHash: noHash, album: true})
+	out, err := a.runUpload(ctx, uploadRun{members: members, policy: policy, noHash: noHash, album: true, opts: opts})
 	if err != nil {
 		return nil, err
 	}

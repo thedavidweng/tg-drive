@@ -46,11 +46,11 @@ func TestAlbumPendingRowsStagedUnderLock(t *testing.T) {
 		run  func(ctx context.Context, app *App, locals []string) error
 	}{
 		{name: "files", run: func(ctx context.Context, app *App, locals []string) error {
-			_, err := app.UploadFilesAs(ctx, locals, "/locked/", ConflictFail, false, Presentation{})
+			_, err := app.UploadFilesAs(ctx, locals, "/locked/", ConflictFail, false, Presentation{}, UploadOptions{})
 			return err
 		}},
 		{name: "recursive", run: func(ctx context.Context, app *App, locals []string) error {
-			_, err := app.UploadRecursive(ctx, filepath.Dir(locals[0]), "/locked/", ConflictFail, false, false, false)
+			_, err := app.UploadRecursive(ctx, filepath.Dir(locals[0]), "/locked/", ConflictFail, false, false, false, UploadOptions{})
 			return err
 		}},
 	} {
@@ -109,7 +109,7 @@ func TestAlbumCrashWindowReportsOrphansExactly(t *testing.T) {
 		loginAndInit(t, app, tg)
 		ctx := context.Background()
 		app.Index = failIndex{err: errors.New("index boom")}
-		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{})
+		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{}, UploadOptions{})
 		if code := appErrCode(t, err); code != apperr.ErrDB {
 			t.Fatalf("code = %s, want ERR_DB after a clean rollback (%v)", code, err)
 		}
@@ -130,7 +130,7 @@ func TestAlbumCrashWindowReportsOrphansExactly(t *testing.T) {
 		ctx := context.Background()
 		tg.SetFailReply(true)
 		tg.SetFailDelete(true)
-		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{})
+		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{}, UploadOptions{})
 		if code := appErrCode(t, err); code != apperr.ErrOrphanedUpload {
 			t.Fatalf("code = %s, want ERR_ORPHANED_UPLOAD (%v)", code, err)
 		}
@@ -187,7 +187,7 @@ func TestAlbumIndexingIsAllOrNothing(t *testing.T) {
 		loginAndInit(t, app, tg)
 		ctx := context.Background()
 		failLastMember(t, app)
-		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{})
+		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{}, UploadOptions{})
 		if code := appErrCode(t, err); code != apperr.ErrDB {
 			t.Fatalf("code = %s, want ERR_DB (%v)", code, err)
 		}
@@ -211,7 +211,7 @@ func TestAlbumIndexingIsAllOrNothing(t *testing.T) {
 		ctx := context.Background()
 		failLastMember(t, app)
 		tg.SetFailDelete(true)
-		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{})
+		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{}, UploadOptions{})
 		if code := appErrCode(t, err); code != apperr.ErrOrphanedUpload {
 			t.Fatalf("code = %s, want ERR_ORPHANED_UPLOAD (%v)", code, err)
 		}
@@ -248,7 +248,7 @@ func TestBatchFailureDiscardsUnsentMembers(t *testing.T) {
 		dests = append(dests, "/many/"+name)
 	}
 	tg.SetFailUpload(true)
-	if _, err := app.UploadFilesAs(ctx, locals, "/many/", ConflictFail, false, Presentation{}); err == nil {
+	if _, err := app.UploadFilesAs(ctx, locals, "/many/", ConflictFail, false, Presentation{}, UploadOptions{}); err == nil {
 		t.Fatal("expected the group send to fail")
 	}
 	if n := rowsAt(t, app, dests...); n != 0 {
@@ -256,7 +256,7 @@ func TestBatchFailureDiscardsUnsentMembers(t *testing.T) {
 	}
 
 	tg.SetFailUpload(false)
-	data, err := app.UploadFilesAs(ctx, locals, "/many/", ConflictFail, false, Presentation{})
+	data, err := app.UploadFilesAs(ctx, locals, "/many/", ConflictFail, false, Presentation{}, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestVideoAlbumCarriesThumbnail(t *testing.T) {
 	ctx := context.Background()
 
 	pres := Presentation{Kind: telegram.KindVideo, ThumbPath: writeThumb(t)}
-	data, err := app.UploadFilesAs(ctx, writeLocals(t, 2), "/clips/", ConflictFail, false, pres)
+	data, err := app.UploadFilesAs(ctx, writeLocals(t, 2), "/clips/", ConflictFail, false, pres, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +288,7 @@ func TestVideoAlbumCarriesThumbnail(t *testing.T) {
 	}
 
 	_, err = app.UploadFilesAs(ctx, writeLocals(t, 2), "/pics/", ConflictFail, false,
-		Presentation{Kind: telegram.KindPhoto, ThumbPath: writeThumb(t)})
+		Presentation{Kind: telegram.KindPhoto, ThumbPath: writeThumb(t)}, UploadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrUsage {
 		t.Fatalf("photo album with thumbnail code = %s, want ERR_USAGE", code)
 	}

@@ -318,4 +318,16 @@ func TestE2EInitBindRebuildsIndex(t *testing.T) {
 	if chans, _ := statusB["channels"].([]any); len(chans) != 2 {
 		t.Fatalf("channels = %v, want 2", statusB["channels"])
 	}
+
+	// A --channel selector naming another drive does not redirect init's
+	// scan away from the channel init just created.
+	rootC := filepath.Join(dir, "rootC")
+	if err := os.MkdirAll(rootC, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "--channel", "A", "init", rootC, "--create-channel=C")
+	statusC := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "--channel", "C", "status")
+	if statusC["last_full_scan_at"] == "" {
+		t.Fatalf("init under --channel A did not scan its new channel C: %v", statusC)
+	}
 }

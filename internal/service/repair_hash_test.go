@@ -49,7 +49,7 @@ func TestRepairHashBackfillsSingleAndAlbum(t *testing.T) {
 		t.Fatal(err)
 	}
 	locals := writeLocals(t, 3)
-	if _, err := app.UploadFilesAs(ctx, locals, "/backfill/albums/", ConflictFail, false, Presentation{}); err != nil {
+	if _, err := app.UploadFilesAs(ctx, locals, "/backfill/albums/", ConflictFail, false, Presentation{}, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	stripHashes(t, app)
