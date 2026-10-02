@@ -122,7 +122,7 @@ func TestTypedUploadResumeAdoptsPendingRow(t *testing.T) {
 			}
 			tg.SetPartSize(1024 * 1024)
 			tg.SetFailUploadAfterParts(2)
-			if _, err := app.UploadFileAs(ctx, big, "/media/big.bin", ConflictFail, false, tc.pres); err == nil {
+			if _, err := app.UploadFileAs(ctx, big, "/media/big.bin", ConflictFail, false, tc.pres, UploadOptions{}); err == nil {
 				t.Fatal("expected interrupted upload to fail")
 			}
 			if got := fileStatus(t, app, "/media/big.bin"); got != "pending" {
@@ -131,7 +131,7 @@ func TestTypedUploadResumeAdoptsPendingRow(t *testing.T) {
 
 			tg.SetFailUploadAfterParts(0)
 			tg.ResetPartSubmissions()
-			data, err := app.UploadFileAs(ctx, big, "/media/big.bin", ConflictFail, false, tc.pres)
+			data, err := app.UploadFileAs(ctx, big, "/media/big.bin", ConflictFail, false, tc.pres, UploadOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -173,13 +173,13 @@ func TestTypedUploadScanReconstruction(t *testing.T) {
 		Height:            2160,
 		SupportsStreaming: true,
 		ThumbPath:         writeThumb(t),
-	}); err != nil {
+	}, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.UploadFile(ctx, writeLocal(t, "plain"), "/docs/note.txt", ConflictFail, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFileAs(ctx, writeLocal(t, "pixels"), "/pics/beach.jpg", ConflictFail, false, Presentation{Kind: telegram.KindPhoto}); err != nil {
+	if _, err := app.UploadFileAs(ctx, writeLocal(t, "pixels"), "/pics/beach.jpg", ConflictFail, false, Presentation{Kind: telegram.KindPhoto}, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tg.AddMessage(tgChID, telegram.Message{

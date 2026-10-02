@@ -188,12 +188,9 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 }
 
 // initScan full-scans the channel just bound; without pinning the selector,
-// Scan would pick the first channel in the DB when several are bound.
+// Scan would pick App.Channel or the first channel in the DB.
 func (a *App) initScan(ctx context.Context, tgChannelID int64) (*ScanResult, error) {
-	prev := a.Channel
-	a.Channel = strconv.FormatInt(tgChannelID, 10)
-	defer func() { a.Channel = prev }()
-	return a.Scan(ctx, ScanOptions{Full: true})
+	return a.Scan(WithChannel(ctx, strconv.FormatInt(tgChannelID, 10)), ScanOptions{Full: true})
 }
 
 // findRootBinding returns the channel already bound to localRoot for the

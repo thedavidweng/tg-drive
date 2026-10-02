@@ -34,10 +34,9 @@ type App struct {
 	TG         telegram.Client
 	// Channel optionally selects a configured channel by title or Telegram ID
 	// (from --channel / TD_CHANNEL). Empty selects the first configured one.
+	// It is the default for every call; WithChannel overrides it per call.
 	Channel string
 	Render  func() bool // returns json mode
-	// Progress optionally receives upload part confirmations.
-	Progress telegram.UploadProgress
 	// Index optionally overrides the file index used by the publisher.
 	// Tests inject a failing index to cover the post-upload crash window.
 	Index ports.FileIndex
@@ -188,26 +187,55 @@ func marshalNoEscape(v any) ([]byte, error) {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
+// UploadOptions are one upload call's own settings. The zero value uses the
+// configured transfer settings and reports nothing.
+type UploadOptions struct {
+	// Threads overrides upload.threads for this call when positive.
+	Threads int
+	// PartSizeKB overrides upload.part_size_kb for this call when positive.
+	PartSizeKB int
+	// Observer receives this call's stages, byte progress, and per-file
+	// results.
+	Observer Observer
+}
+
+func (o UploadOptions) threads(cfg config.Config) int {
+	if o.Threads > 0 {
+		return o.Threads
+	}
+	if cfg.Upload.Threads > 0 {
+		return cfg.Upload.Threads
+	}
+	return 4
+}
+
+func (o UploadOptions) partSizeBytes(cfg config.Config) int {
+	if o.PartSizeKB > 0 {
+		return o.PartSizeKB * 1024
+	}
+	return cfg.Upload.PartSizeKB * 1024
+}
+
 // UploadFile uploads a single local file as a plain document.
 func (a *App) UploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool) (*UploadResult, error) {
-	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, Presentation{}, "")
+	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, Presentation{}, "", UploadOptions{})
 }
 
 // uploadFileWithCaption uploads one file keeping humanCaption above the
 // rendered caption block. Imports (td import saved) use it to carry the
 // source message's own text onto the republished message.
 func (a *App) uploadFileWithCaption(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string) (*UploadResult, error) {
-	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, humanCaption)
+	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, humanCaption, UploadOptions{})
 }
 
 // UploadFileAs uploads a single local file with presentation metadata that
 // selects how native Telegram clients render the message. The zero
-// Presentation behaves exactly like UploadFile.
-func (a *App) UploadFileAs(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation) (*UploadResult, error) {
-	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, "")
+// Presentation and UploadOptions behave exactly like UploadFile.
+func (a *App) UploadFileAs(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, opts UploadOptions) (*UploadResult, error) {
+	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, "", opts)
 }
 
-func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string) (*UploadResult, error) {
+func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string, opts UploadOptions) (*UploadResult, error) {
 	if err := pres.Validate(); err != nil {
 		return nil, err
 	}
@@ -250,6 +278,7 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 		members: []uploadMember{{localPath: localPath, dest: dest, pres: pres, humanCaption: humanCaption}},
 		policy:  policy,
 		noHash:  noHash,
+		opts:    opts,
 	})
 	if err != nil {
 		return nil, err

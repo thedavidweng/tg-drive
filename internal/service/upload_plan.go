@@ -94,14 +94,16 @@ func uploadCheckSet(active []fsmodel.ActivePath, dest string, supersede bool) []
 	return checkSet
 }
 
-// hashUpload reads the file once to compute its content hash. The hash is
-// resume identity, so it must never be skipped for a resumable big file:
-// --no-hash is honored only for small files.
+// hashesUpload reports whether an upload of size bytes computes a content
+// hash. The hash is resume identity, so it is never skipped for a resumable
+// big file: --no-hash is honored only for small files.
+func (a *App) hashesUpload(noHash bool, size int64) bool {
+	return size > telegram.ResumableBigFileBytes || (a.Cfg.Hash.Enabled && !noHash)
+}
+
+// hashUpload reads the file once to compute its content hash.
 func (a *App) hashUpload(ctx context.Context, localPath string, noHash bool, size int64) (string, error) {
-	hashEnabled := a.Cfg.Hash.Enabled && !noHash
-	if size > telegram.ResumableBigFileBytes {
-		hashEnabled = true
-	}
+	hashEnabled := a.hashesUpload(noHash, size)
 	hashReader, err := a.files().Open(ctx, localPath)
 	if err != nil {
 		return "", apperr.Wrap(apperr.ErrLocalNotFound, "hash file", err)

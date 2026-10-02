@@ -84,7 +84,7 @@ func TestAlbumUploadNativeGroup(t *testing.T) {
 	ctx := context.Background()
 
 	locals := writeLocals(t, 3)
-	data, err := app.UploadFilesAs(ctx, locals, "/albums/", ConflictFail, false, Presentation{})
+	data, err := app.UploadFilesAs(ctx, locals, "/albums/", ConflictFail, false, Presentation{}, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestAlbumUploadSplitsLargeSets(t *testing.T) {
 		locals = append(locals, p)
 		wantContent["/big/"+name] = content
 	}
-	data, err := app.UploadFilesAs(ctx, locals, "/big/", ConflictFail, false, Presentation{})
+	data, err := app.UploadFilesAs(ctx, locals, "/big/", ConflictFail, false, Presentation{}, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	before := len(tg.Messages(mustChannel(t, app)))
 	_, conflictErr := app.UploadFilesAs(ctx,
 		[]string{writeLocal(t, "three"), writeNamedLocal(t, "taken.bin")},
-		"/dest/", ConflictFail, false, Presentation{})
+		"/dest/", ConflictFail, false, Presentation{}, UploadOptions{})
 	if code := appErrCode(t, conflictErr); code != apperr.ErrPathExists {
 		t.Fatalf("fail policy code = %s, want ERR_PATH_EXISTS", code)
 	}
@@ -304,7 +304,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	}
 	skipData, err := appS.UploadFilesAs(ctx,
 		[]string{writeNamedLocal(t, "taken.bin"), writeNamedLocal(t, "fresh.bin")},
-		"/dest/", ConflictSkip, false, Presentation{})
+		"/dest/", ConflictSkip, false, Presentation{}, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	}
 	if _, err := appR.UploadFilesAs(ctx,
 		[]string{writeNamedLocal(t, "dup.bin"), writeNamedLocal(t, "other.bin")},
-		"/dest/", ConflictRename, false, Presentation{}); err != nil {
+		"/dest/", ConflictRename, false, Presentation{}, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := fileStatus(t, appR, "/dest/dup (1).bin"); got != "active" {
@@ -330,7 +330,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	// Replace is refused without touching Telegram.
 	appW, tgW := testApp(t)
 	loginAndInit(t, appW, tgW)
-	_, repErr := appW.UploadFilesAs(ctx, []string{writeLocal(t, "a"), writeLocal(t, "b")}, "/r/", ConflictReplace, false, Presentation{})
+	_, repErr := appW.UploadFilesAs(ctx, []string{writeLocal(t, "a"), writeLocal(t, "b")}, "/r/", ConflictReplace, false, Presentation{}, UploadOptions{})
 	if code := appErrCode(t, repErr); code != apperr.ErrUsage {
 		t.Fatalf("replace code = %s, want ERR_USAGE", code)
 	}
@@ -341,7 +341,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	// Destination must be directory-shaped.
 	appD, tgD := testApp(t)
 	loginAndInit(t, appD, tgD)
-	_, dirErr := appD.UploadFilesAs(ctx, []string{writeLocal(t, "a"), writeLocal(t, "b")}, "/not-a-dir", ConflictFail, false, Presentation{})
+	_, dirErr := appD.UploadFilesAs(ctx, []string{writeLocal(t, "a"), writeLocal(t, "b")}, "/not-a-dir", ConflictFail, false, Presentation{}, UploadOptions{})
 	if code := appErrCode(t, dirErr); code != apperr.ErrUsage {
 		t.Fatalf("destination code = %s, want ERR_USAGE", code)
 	}
@@ -363,7 +363,7 @@ func TestAlbumUploadPendingAdoptionRetry(t *testing.T) {
 	tg.SetFailUploadAfterParts(2)
 
 	small := writeNamedLocal(t, "small.bin")
-	if _, err := app.UploadFilesAs(ctx, []string{big, small}, "/media/", ConflictFail, false, Presentation{}); err == nil {
+	if _, err := app.UploadFilesAs(ctx, []string{big, small}, "/media/", ConflictFail, false, Presentation{}, UploadOptions{}); err == nil {
 		t.Fatal("expected interrupted batch to fail")
 	}
 	if got := fileStatus(t, app, "/media/big.bin"); got != "pending" {
@@ -372,7 +372,7 @@ func TestAlbumUploadPendingAdoptionRetry(t *testing.T) {
 
 	tg.SetFailUploadAfterParts(0)
 	tg.ResetPartSubmissions()
-	data, err := app.UploadFilesAs(ctx, []string{big, small}, "/media/", ConflictFail, false, Presentation{})
+	data, err := app.UploadFilesAs(ctx, []string{big, small}, "/media/", ConflictFail, false, Presentation{}, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestAlbumUploadPublishFailureAbandonsGroup(t *testing.T) {
 
 	locals := writeLocals(t, 3)
 	tg.SetFailReply(true)
-	if _, err := app.UploadFilesAs(ctx, locals, "/gal/", ConflictFail, false, Presentation{}); err == nil {
+	if _, err := app.UploadFilesAs(ctx, locals, "/gal/", ConflictFail, false, Presentation{}, UploadOptions{}); err == nil {
 		t.Fatal("expected publish failure to surface")
 	}
 	if got := len(tg.Messages(mustChannel(t, app))); got != 0 {
@@ -410,7 +410,7 @@ func TestAlbumUploadPublishFailureAbandonsGroup(t *testing.T) {
 	}
 
 	tg.SetFailReply(false)
-	data, err := app.UploadFilesAs(ctx, locals, "/gal/", ConflictFail, false, Presentation{})
+	data, err := app.UploadFilesAs(ctx, locals, "/gal/", ConflictFail, false, Presentation{}, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestSingleMemberBatchUploadsAlone(t *testing.T) {
 	}
 	data, err := app.UploadFilesAs(ctx,
 		[]string{writeNamedLocal(t, "kept.bin"), writeNamedLocal(t, "new.bin")},
-		"/solo/", ConflictSkip, false, Presentation{})
+		"/solo/", ConflictSkip, false, Presentation{}, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestRecursiveFolderUploadGroupsByDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	data, err := app.UploadRecursive(ctx, root, "/tree/", ConflictFail, false, false, false)
+	data, err := app.UploadRecursive(ctx, root, "/tree/", ConflictFail, false, false, false, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +546,7 @@ func TestReplaceAlbumMemberKeepsInventory(t *testing.T) {
 			ctx := context.Background()
 			tgChID, _ := app.tgChannelID(ctx)
 
-			if _, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/albums/", ConflictFail, false, Presentation{}); err != nil {
+			if _, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/albums/", ConflictFail, false, Presentation{}, UploadOptions{}); err != nil {
 				t.Fatal(err)
 			}
 			var oldMsgID int
@@ -646,7 +646,7 @@ func TestMoveAlbumMemberKeepsCommentCarrier(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 
-	if _, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/albums/", ConflictFail, false, Presentation{}); err != nil {
+	if _, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/albums/", ConflictFail, false, Presentation{}, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	chatOf := func(p string) string {
