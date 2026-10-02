@@ -355,6 +355,29 @@ func (a *App) writeAlbumManifest(ctx context.Context, channelID, tgChID int64, c
 	return id, nil
 }
 
+// retireAlbumMember removes one member from its group in every delete mode:
+// its media message is deleted, because a scan indexes inventory members
+// before it reads caption tombstones, and the shared inventory is rewritten
+// without it (or deleted with the last member). err is a failed media delete;
+// inventoryErr is a failed inventory rewrite after the media is already gone.
+func (a *App) retireAlbumMember(ctx context.Context, channelID, tgChID int64, carrier telegram.ManifestCarrier, manifestID int, album manifest.AlbumMeta, messageID int) (inventoryErr, err error) {
+	if messageID > 0 {
+		if err := a.TG.DeleteMessage(ctx, tgChID, messageID); err != nil && !isMessageGone(err) {
+			return nil, telegram.MapError(err)
+		}
+	}
+	remaining := albumWithout(album, messageID)
+	if len(remaining.Files) == 0 {
+		inventoryErr = carrier.Delete(ctx, tgChID, manifestID)
+	} else {
+		_, inventoryErr = a.writeAlbumManifest(ctx, channelID, tgChID, carrier, manifestID, albumFirstMediaID(remaining), remaining)
+	}
+	if isMessageGone(inventoryErr) {
+		inventoryErr = nil
+	}
+	return inventoryErr, nil
+}
+
 func (a *App) reindexAlbumMember(ctx context.Context, channelID, fileID int64, messageID, manifestID int, dest, hash, mime string, size int64) error {
 	existingSlugs, err := a.loadExistingSlugs(ctx, channelID)
 	if err != nil {

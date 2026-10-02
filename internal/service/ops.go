@@ -653,19 +653,9 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p s
 	if album, ok, err := a.loadAlbumManifest(ctx, tgChID, carrier, manID); err != nil && !isMessageGone(err) {
 		return nil, telegram.MapError(err)
 	} else if ok {
-		if messageID.Valid {
-			if err := a.TG.DeleteMessage(ctx, tgChID, int(messageID.Int64)); err != nil && !isMessageGone(err) {
-				return nil, telegram.MapError(err)
-			}
-		}
-		remaining := albumWithout(album, int(messageID.Int64))
-		if len(remaining.Files) == 0 {
-			manifestErr = carrier.Delete(ctx, tgChID, manID)
-		} else {
-			_, manifestErr = a.writeAlbumManifest(ctx, channelID, tgChID, carrier, manID, albumFirstMediaID(remaining), remaining)
-		}
-		if isMessageGone(manifestErr) {
-			manifestErr = nil
+		manifestErr, err = a.retireAlbumMember(ctx, channelID, tgChID, carrier, manID, album, int(messageID.Int64))
+		if err != nil {
+			return nil, err
 		}
 		err = a.DB.WithTx(ctx, func(tx *sql.Tx) error {
 			if err := a.DB.ClearNodeID(ctx, tx, fileID); err != nil {
