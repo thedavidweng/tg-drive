@@ -103,6 +103,22 @@ func (d *DB) UpdateTransferState(ctx context.Context, r TransferRow) error {
 	return nil
 }
 
+// DeleteTransfers removes the Transfers with the given ids.
+func (d *DB) DeleteTransfers(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	_, err := d.sql.ExecContext(ctx, `delete from transfers where id in (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
+	if err != nil {
+		return apperr.Wrap(apperr.ErrDB, "delete transfers", err)
+	}
+	return nil
+}
+
 // GetTransfer reads one Transfer; nil when no row has id.
 func (d *DB) GetTransfer(ctx context.Context, id string) (*TransferRow, error) {
 	rows, err := d.queryTransfers(ctx, `where id=?`, id)
