@@ -1,6 +1,6 @@
 import { Events } from "@wailsio/runtime"
 
-import { Auth, Channels, Drive, Settings, Transfers } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
+import { Auth, Channels, Drive, Import, Maintenance, Settings, Transfers } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
 import type { Backend, BackendError } from "@/backend"
 
 /**
@@ -116,5 +116,49 @@ export const wailsBackend: Backend = {
     versions: () => call(Settings.Versions()),
     omarchy: async () => (await call(Settings.Omarchy())) ?? { available: false },
     onOmarchyTheme: (cb) => Events.On("omarchy:theme-changed", (ev) => cb(ev.data)),
+  },
+  import: {
+    preview: async (opts) => {
+      const outcome = await call(Import.Preview(opts))
+      if (!outcome) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty import plan" } satisfies BackendError
+      return outcome
+    },
+    run: async (opts) => {
+      const outcome = await call(Import.Run(opts))
+      if (!outcome) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty import result" } satisfies BackendError
+      return outcome
+    },
+    answerPrompt: (id, choice) => call(Import.AnswerPrompt(id, choice)),
+    cancelPrompt: (id) => call(Import.CancelPrompt(id)),
+    onPrompt: (cb) => Events.On("import.prompt", (ev) => cb(ev.data)),
+    onItem: (cb) => Events.On("import.item", (ev) => cb(ev.data)),
+  },
+  maintenance: {
+    previewAdopt: async (opts) => {
+      const outcome = await call(Maintenance.PreviewAdopt(opts))
+      if (!outcome) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty adopt plan" } satisfies BackendError
+      return outcome
+    },
+    adopt: async (opts) => {
+      const outcome = await call(Maintenance.Adopt(opts))
+      if (!outcome) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty adopt result" } satisfies BackendError
+      return outcome
+    },
+    repair: async (opts) => {
+      const outcome = await call(Maintenance.Repair(opts))
+      if (!outcome) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty repair result" } satisfies BackendError
+      return outcome
+    },
+    doctor: async () => {
+      const report = await call(Maintenance.Doctor())
+      if (!report) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty doctor report" } satisfies BackendError
+      return report
+    },
+    pathCodecDoctor: async () => {
+      const report = await call(Maintenance.PathCodecDoctor())
+      if (!report) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty path-codec report" } satisfies BackendError
+      return report
+    },
+    onRepairItem: (cb) => Events.On("repair.item", (ev) => cb(ev.data)),
   },
 }

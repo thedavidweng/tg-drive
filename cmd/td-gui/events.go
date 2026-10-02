@@ -25,4 +25,7 @@ func init() {
 	application.RegisterEvent[gui.Transfer](gui.EventTransferProgress)
 	application.RegisterEvent[gui.TransferRemoved](gui.EventTransferRemoved)
 	application.RegisterEvent[gui.FilesDropped](gui.EventFilesDropped)
+	application.RegisterEvent[gui.ImportPrompt](gui.EventImportPrompt)
+	application.RegisterEvent[gui.ItemEvent](gui.EventImportItem)
+	application.RegisterEvent[gui.ItemEvent](gui.EventRepairItem)
 }

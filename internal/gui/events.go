@@ -2,6 +2,12 @@
 
 package gui
 
+import (
+	"sync"
+
+	"github.com/thedavidweng/tg-drive-cli/internal/service"
+)
+
 // Emitter emits a typed event to the frontend. cmd/td-gui adapts the Wails
 // event manager to it; tests record calls. A nil Emitter drops events.
 type Emitter func(name string, data any)
@@ -30,6 +36,14 @@ const (
 	// EventFilesDropped carries FilesDropped: files were dropped onto a
 	// drop-target element of the window.
 	EventFilesDropped = "files-dropped"
+	// EventImportPrompt carries ImportPrompt: an import found photo
+	// messages and needs to know how to republish them. The frontend
+	// answers with Import.AnswerPrompt (or Import.CancelPrompt).
+	EventImportPrompt = "import.prompt"
+	// EventImportItem carries ItemEvent once per imported saved message.
+	EventImportItem = "import.item"
+	// EventRepairItem carries ItemEvent once per repaired item.
+	EventRepairItem = "repair.item"
 )
 
 // TransferRemoved is the payload of EventTransferRemoved.
@@ -42,6 +56,74 @@ type TransferRemoved struct {
 // native drop event into it; the facade itself never sees the window.
 type FilesDropped struct {
 	Paths []string `json:"paths"`
+}
+
+// ImportPrompt is the import.prompt event payload. The photo presentation
+// has no safe default (documents keep the bytes, native photos are
+// recompressed), so an import that meets photos without a choice asks.
+type ImportPrompt struct {
+	ID string `json:"id"`
+	// Kind is PromptPhotos, the only import prompt.
+	Kind string `json:"kind"`
+	// Photos is how many photo messages wait on the answer.
+	Photos int `json:"photos"`
+}
+
+// Prompt kinds emitted on the import.prompt event.
+const PromptPhotos = "photos"
+
+// ItemEvent is the import.item and repair.item payload: one item's outcome
+// plus the running tally, so the frontend renders item-by-item progress.
+type ItemEvent struct {
+	Path      string `json:"path,omitempty"`
+	MessageID int    `json:"message_id,omitempty"`
+	// Status is "completed", "skipped", or "failed" (service.ItemStatus).
+	Status string `json:"status"`
+	// Error is why a failed item failed.
+	Error     string `json:"error,omitempty"`
+	Completed int    `json:"completed"`
+	Skipped   int    `json:"skipped"`
+	Failed    int    `json:"failed"`
+}
+
+// itemTracker turns a call's per-item observer results into ItemEvent
+// emissions with a running tally. Observer callbacks may run on several
+// goroutines at once.
+type itemTracker struct {
+	emit  func(name string, data any)
+	event string
+
+	mu                         sync.Mutex
+	completed, skipped, failed int
+}
+
+func (t *itemTracker) observer() service.Observer {
+	return service.Observer{OnItem: t.onItem}
+}
+
+func (t *itemTracker) onItem(r service.ItemResult) {
+	t.mu.Lock()
+	switch r.Status {
+	case service.ItemCompleted:
+		t.completed++
+	case service.ItemSkipped:
+		t.skipped++
+	case service.ItemFailed:
+		t.failed++
+	}
+	ev := ItemEvent{
+		Path:      r.Item.Path,
+		MessageID: r.Item.MessageID,
+		Status:    string(r.Status),
+		Completed: t.completed,
+		Skipped:   t.skipped,
+		Failed:    t.failed,
+	}
+	if r.Err != nil {
+		ev.Error = r.Err.Error()
+	}
+	t.mu.Unlock()
+	t.emit(t.event, ev)
 }
 
 // DirectoryChanged is the payload of EventDirectoryChanged: the refreshed

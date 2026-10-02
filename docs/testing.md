@@ -133,8 +133,17 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   index-sync pick-up of a transfer a real CLI process started — cancelled
   from the facade — and clear-finished removals; its file dialogs are an
   injected `FilePicker`, scripted in tests and in server mode through
-  `TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR`. The facade never imports Wails,
-  so these tests run headless with no webview or display.
+  `TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR`. The Import facade is covered by
+  a dry-run preview of seeded Saved Messages, the run's confirmation gate,
+  the delete-source gate on both preview and run, per-item `import.item`
+  events with their running tally, duplicate skips, confirmed source
+  deletion, and the photo prompt answered or cancelled through the
+  prompt-event seam. The Maintenance facade is covered by adopt's preview,
+  run, and confirmation gate; all six repair modes (including hash
+  backfill against a hash-less adopted file and the orphaned-delete gate);
+  doctor's checks and max-upload report; and the path-codec doctor. The
+  facade never imports Wails, so these tests run headless with no webview
+  or display.
 - **Frontend behaviour tests** live beside the screens in `frontend/src`
   and run with `bun test` (Bun's test runner under happy-dom, via
   `@testing-library/react`; Bun is already the package manager, so no
@@ -162,11 +171,18 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   history; and the Settings tab — config keys listed with secrets
   masked until revealed, edits saved through the backend with rejection
   errors shown, the theme and language overrides, and the Omarchy switch
-  applying and clearing the flat theme. The in-memory backend's auth fake
-  mirrors the facade's prompt contract, including the pending-code reuse a
-  restarted login shows. Note: `bun:test`'s `expect` thrown inside a
-  `waitFor` callback is not retried correctly; assert removals with
-  `waitForElementToBeRemoved` instead.
+  applying and clearing the flat theme; the Import tab — the dry-run plan
+  with per-item outcomes, the confirmation sheet blocking the run (with
+  the delete-source warning), the photo prompt answered and cancelled, and
+  the backend's confirmation gates rejecting unconfirmed calls; and the
+  Maintenance tab — adopt's preview and confirmation sheet, repair per
+  mode (with the orphaned-delete sheet), and doctor checks rendered as
+  pass/warn/fail beside the path-codec rows. The in-memory backend's auth
+  fake mirrors the facade's prompt contract, including the pending-code
+  reuse a restarted login shows; its import and maintenance fakes mirror
+  the facade's confirmation and prompt gates. Note: `bun:test`'s `expect`
+  thrown inside a `waitFor` callback is not retried correctly; assert
+  removals with `waitForElementToBeRemoved` instead.
 - Frontend type-check (`tsc -b`) and lint (`eslint --max-warnings 0`) are
   gates, run by `make gui-frontend-check`. The bindings in
   `frontend/bindings` are generated and committed; `make

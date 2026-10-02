@@ -6,8 +6,10 @@ import type { AuthStatus, AuthUser, Backend, BackendError, OmarchyState } from "
 import { ChannelSwitcher } from "@/channels"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DriveScreen } from "@/drive"
+import { ImportScreen } from "@/import"
 import { I18nProvider, storeLanguage, storedLanguage, useI18n, type LanguagePref } from "@/i18n"
 import type { MessageKey } from "@/i18n/en"
+import { MaintenanceScreen } from "@/maintenance"
 import {
   applyOmarchyTheme,
   clearOmarchyTheme,
@@ -175,6 +177,12 @@ function Shell(props: ShellProps) {
         <TabsContent value="transfers">
           <TransfersScreen backend={backend} />
         </TabsContent>
+        <TabsContent value="import">
+          <ImportScreen backend={backend} />
+        </TabsContent>
+        <TabsContent value="maintenance">
+          <MaintenanceScreen backend={backend} />
+        </TabsContent>
         <TabsContent value="settings">
           <SettingsScreen
             backend={backend}
@@ -187,11 +195,6 @@ function Shell(props: ShellProps) {
             onOmarchyToggle={props.onOmarchyToggle}
           />
         </TabsContent>
-        {tabs.slice(2, 4).map((tab) => (
-          <TabsContent key={tab.id} value={tab.id}>
-            <p className="px-1 py-6 text-center text-muted-foreground">{t("placeholder.notYet")}</p>
-          </TabsContent>
-        ))}
       </main>
     </Tabs>
   )

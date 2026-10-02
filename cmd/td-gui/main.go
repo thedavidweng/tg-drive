@@ -39,6 +39,8 @@ func run() error {
 			application.NewService(svc.Channels),
 			application.NewService(svc.Transfers),
 			application.NewService(svc.Settings),
+			application.NewService(svc.Import),
+			application.NewService(svc.Maintenance),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(frontend.Assets()),
@@ -57,6 +59,12 @@ func run() error {
 		app.Event.Emit(name, data)
 	})
 	svc.SetFilePicker(newPicker(app))
+	svc.SetImportEmitter(func(name string, data any) {
+		app.Event.Emit(name, data)
+	})
+	svc.SetMaintenanceEmitter(func(name string, data any) {
+		app.Event.Emit(name, data)
+	})
 	syncCtx, stopSync := context.WithCancel(context.Background())
 	defer stopSync()
 	svc.StartSync(syncCtx, gui.DefaultSyncInterval)

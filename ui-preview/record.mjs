@@ -115,6 +115,68 @@ const scenes = [
       await page.getByText("notes.txt").waitFor()
     },
   },
+  // Import and Maintenance, against the seeded drive. All dry runs or
+  // prompts that get cancelled in leave(), so the drive stays untouched.
+  {
+    name: "import-preview",
+    title: "Import — dry-run plan",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("tab", { name: "Import" }).click()
+      await page.getByText("Import from Saved Messages").waitFor()
+      // Choose a photo presentation so the preview does not pause on the
+      // photo prompt (that prompt gets its own scene below).
+      await page.getByRole("group", { name: "Photos" }).getByRole("button", { name: "Document" }).click()
+      await page.getByRole("button", { name: "Preview" }).click()
+      await page.getByText(/^Plan: /).waitFor()
+    },
+  },
+  {
+    name: "import-photo-prompt",
+    title: "Import — photo presentation prompt",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("tab", { name: "Import" }).click()
+      await page.getByText("Import from Saved Messages").waitFor()
+      await page.getByRole("button", { name: "Import…" }).click()
+      await page
+        .getByRole("dialog", { name: "Import Saved Messages" })
+        .getByRole("button", { name: "Import" })
+        .click()
+      // The run blocks on the photo prompt: the shot shows that sheet.
+      await page.getByRole("dialog", { name: "Republish photos as" }).waitFor()
+    },
+    leave: async (page) => {
+      // Abort the pending run so later scenes see an untouched drive.
+      await page
+        .getByRole("dialog", { name: "Republish photos as" })
+        .getByRole("button", { name: "Cancel" })
+        .click()
+      await page.getByRole("alert").waitFor()
+    },
+  },
+  {
+    name: "maintenance-adopt",
+    title: "Maintenance — adopt preview",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("tab", { name: "Maintenance" }).click()
+      await page.getByText("Adopt existing messages").waitFor()
+      await page.getByRole("button", { name: "Preview" }).click()
+      await page.getByText(/^Plan: /).waitFor()
+    },
+  },
+  {
+    name: "maintenance-doctor",
+    title: "Maintenance — diagnostics",
+    colorScheme: "dark",
+    settle: async (page) => {
+      await page.getByRole("tab", { name: "Maintenance" }).click()
+      await page.getByText("Adopt existing messages").waitFor()
+      await page.getByRole("button", { name: "Run checks" }).click()
+      await page.getByRole("list", { name: "Capability checks" }).waitFor()
+    },
+  },
   // First-run setup and login, against the credential-free server. They
   // chain through the facade's real state: auth-login saves credentials,
   // auth-code starts a login (and cancels it after the shot), so each
