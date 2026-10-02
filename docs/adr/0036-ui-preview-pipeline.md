@@ -1,6 +1,6 @@
 # 0036: UI preview pipeline on scripted scenes over Wails server mode
 
-Status: Proposed.
+Status: Accepted.
 
 Context: Pull requests that change the td-gui frontend or the GUI facade
 (ADR 0031) are hard to review from a diff alone; reviewers need to see the
