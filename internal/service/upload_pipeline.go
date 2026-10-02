@@ -48,6 +48,23 @@ type uploadRun struct {
 	// aborting the run before any Telegram write (--continue-on-error).
 	lenient bool
 	opts    UploadOptions
+	// results reports member outcomes to opts.Observer; runUpload sets it.
+	results *memberResults
+}
+
+// memberResults reports each member's outcome to an observer exactly once,
+// keyed by the member's index in the run.
+type memberResults struct {
+	obs      Observer
+	reported map[int]bool
+}
+
+func (r *memberResults) report(index int, it Item, status ItemStatus, err error) {
+	if r.reported[index] {
+		return
+	}
+	r.reported[index] = true
+	r.obs.item(ItemResult{Item: it, Status: status, Err: err})
 }
 
 func (r uploadRun) replaces() bool {
@@ -105,7 +122,17 @@ type stagedUpload struct {
 // runUpload publishes run.members. Conflict detection and pending-row
 // refusals happen for every member before any Telegram write, so a strict
 // run aborts with nothing sent.
-func (a *App) runUpload(ctx context.Context, run uploadRun) (*uploadOutcome, error) {
+func (a *App) runUpload(ctx context.Context, run uploadRun) (_ *uploadOutcome, err error) {
+	run.results = &memberResults{obs: run.opts.Observer, reported: map[int]bool{}}
+	// A run that aborts accounts for the members it never finished.
+	defer func() {
+		if err == nil {
+			return
+		}
+		for i, m := range run.members {
+			run.results.report(i, m.item(), ItemFailed, err)
+		}
+	}()
 	cc, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
@@ -123,7 +150,7 @@ func (a *App) runUpload(ctx context.Context, run uploadRun) (*uploadOutcome, err
 	}
 	var failures []indexedFailure
 	report := func(index int, m uploadMember, err error) error {
-		run.opts.Observer.item(ItemResult{Item: m.item(), Status: ItemFailed, Err: err})
+		run.results.report(index, m.item(), ItemFailed, err)
 		if !run.lenient {
 			return err
 		}
@@ -148,7 +175,7 @@ func (a *App) runUpload(ctx context.Context, run uploadRun) (*uploadOutcome, err
 		}
 		if s == nil {
 			out.skipped = append(out.skipped, m.dest)
-			run.opts.Observer.item(ItemResult{Item: m.item(), Status: ItemSkipped})
+			run.results.report(i, m.item(), ItemSkipped, nil)
 			continue
 		}
 		planned = append(planned, s)
@@ -278,7 +305,7 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 		sent, group, err := a.sendUnit(ctx, run.opts, ch, unit, withCaption, thumbs)
 		if err != nil {
 			for _, s := range unit {
-				run.opts.Observer.item(ItemResult{Item: s.item(), Status: ItemFailed, Err: err})
+				run.results.report(s.index, s.item(), ItemFailed, err)
 			}
 			for _, rest := range units[i+1:] {
 				a.discardUnsent(ctx, rest)
@@ -290,7 +317,7 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 			out.resumed = out.resumed || s.resumed
 		}
 		for _, s := range unit {
-			run.opts.Observer.item(ItemResult{Item: s.item(), Status: ItemCompleted})
+			run.results.report(s.index, s.item(), ItemCompleted, nil)
 		}
 		if group != nil {
 			out.albums = append(out.albums, *group)

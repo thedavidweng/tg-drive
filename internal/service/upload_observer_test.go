@@ -254,3 +254,37 @@ func TestUploadPerCallStateIsolated(t *testing.T) {
 		t.Fatalf("calls changed the App: channel=%q cfg=%+v", app.Channel, app.Cfg)
 	}
 }
+
+// A strict multi-file upload that aborts still accounts for every member:
+// the one that failed and the ones the abort left unsent.
+func TestUploadObserverAbortReportsEveryMember(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads unreadable files")
+	}
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	a := writeSized(t, dir, "a.bin", 10)
+	b := writeSized(t, dir, "b.bin", 20)
+	c := writeSized(t, dir, "c.bin", 30)
+	if err := os.Chmod(b, 0); err != nil {
+		t.Fatal(err)
+	}
+	var got observed
+	if _, err := app.UploadFilesAs(ctx, []string{a, b, c}, "/abort/", ConflictFail, false, Presentation{},
+		UploadOptions{Observer: got.observer()}); err == nil {
+		t.Fatal("expected the unreadable member to abort the upload")
+	}
+	want := []string{
+		"stage /abort/a.bin hashing",
+		"stage /abort/b.bin hashing",
+		"item /abort/b.bin failed err",
+		"item /abort/a.bin failed err",
+		"item /abort/c.bin failed err",
+	}
+	if !slices.Equal(got.all(), want) {
+		t.Fatalf("observed:\n%v\nwant:\n%v", got.all(), want)
+	}
+}
