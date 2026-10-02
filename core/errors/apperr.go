@@ -26,6 +26,7 @@ const (
 	ErrLocalPathExists            = "ERR_LOCAL_PATH_EXISTS"
 	ErrLocalNotFound              = "ERR_LOCAL_NOT_FOUND"
 	ErrRemoteNotFound             = "ERR_REMOTE_NOT_FOUND"
+	ErrTransferNotFound           = "ERR_TRANSFER_NOT_FOUND"
 	ErrFileTooLarge               = "ERR_FILE_TOO_LARGE"
 	ErrCaptionTooLong             = "ERR_CAPTION_TOO_LONG"
 	ErrManifestInvalid            = "ERR_MANIFEST_INVALID"
@@ -113,7 +114,7 @@ func classify(code string) (Category, bool) {
 		return CatConfig, false
 	case ErrUsage, ErrFlagConflict, ErrPathInvalid, ErrPathExists,
 		ErrPathIsDirectory, ErrPathAncestorIsFile, ErrPathConflict,
-		ErrLocalPathExists, ErrLocalNotFound, ErrRemoteNotFound,
+		ErrLocalPathExists, ErrLocalNotFound, ErrRemoteNotFound, ErrTransferNotFound,
 		ErrDirectoryMoveUnsupported, ErrDirectoryDeleteUnsupported,
 		ErrCrossChannelMove, ErrEmptyDirsUnsupported, ErrSlugCollision:
 		return CatValidation, false
@@ -146,7 +147,7 @@ func ExitCode(err error) int {
 	switch ae.Code {
 	case ErrUsage, ErrFlagConflict, ErrPathInvalid, ErrPathExists,
 		ErrPathIsDirectory, ErrPathAncestorIsFile, ErrPathConflict,
-		ErrLocalPathExists, ErrLocalNotFound, ErrRemoteNotFound,
+		ErrLocalPathExists, ErrLocalNotFound, ErrRemoteNotFound, ErrTransferNotFound,
 		ErrDirectoryMoveUnsupported, ErrDirectoryDeleteUnsupported,
 		ErrCrossChannelMove, ErrEmptyDirsUnsupported, ErrSlugCollision:
 		return 2

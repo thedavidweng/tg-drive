@@ -116,6 +116,10 @@ func (c *Client) SetPartSize(n int) { c.partSize = n }
 // simulated resumable path (tests only).
 func (c *Client) SetResumableThreshold(n int) { c.resumableThreshold = n }
 
+// SetTransferDelay makes each resumable upload part and each media download
+// take d (test hook).
+func (c *Client) SetTransferDelay(d time.Duration) { c.transferDelay = d }
+
 // SetFailUploadAfterParts fails a resumable upload once n parts are confirmed.
 func (c *Client) SetFailUploadAfterParts(n int) { c.failUploadAfterParts = n }
 

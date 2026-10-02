@@ -1,0 +1,162 @@
+// Package transfer is the Transfer Manager (ADR 0033): every front end
+// submits uploads and downloads through it, and it records each one as a
+// Transfer in the shared index so other processes see it.
+package transfer
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
+	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+)
+
+// Kind is what a Transfer moves.
+type Kind string
+
+// KindUpload uploads one local file.
+const KindUpload Kind = "upload"
+
+// Stage is where a Transfer is in its lifecycle. A Transfer only moves
+// forward through the stages, ending in exactly one terminal stage.
+type Stage string
+
+const (
+	StageQueued     Stage = "queued"
+	StageHashing    Stage = "hashing"
+	StageUploading  Stage = "uploading"
+	StagePublishing Stage = "publishing"
+	StageCompleted  Stage = "completed"
+	// StageFailed ends a Transfer whose call failed, including one its
+	// owner cancelled (ERR_CANCELLED).
+	StageFailed Stage = "failed"
+)
+
+// lifecycle is every Stage in the order a Transfer moves through them.
+var lifecycle = []Stage{StageQueued, StageHashing, StageUploading, StagePublishing, StageCompleted, StageFailed}
+
+func (s Stage) rank() int {
+	for i, st := range lifecycle {
+		if st == s {
+			return i
+		}
+	}
+	return -1
+}
+
+// Terminal reports whether a Transfer in s has ended.
+func (s Stage) Terminal() bool {
+	return s == StageCompleted || s == StageFailed
+}
+
+// ParseStage reads a stage name, failing with ERR_USAGE for an unknown one.
+func ParseStage(name string) (Stage, error) {
+	if s := Stage(name); s.rank() >= 0 {
+		return s, nil
+	}
+	names := make([]string, len(lifecycle))
+	for i, s := range lifecycle {
+		names[i] = string(s)
+	}
+	return "", apperr.New(apperr.ErrUsage,
+		fmt.Sprintf("unknown transfer stage %q; valid stages: %s", name, strings.Join(names, ", ")))
+}
+
+// FrontEnd is the program that created a Transfer.
+type FrontEnd string
+
+// FrontEndCLI is the td command line.
+const FrontEndCLI FrontEnd = "cli"
+
+// Transfer is one user-requested upload or download as the index records
+// it.
+type Transfer struct {
+	ID    string `json:"id"`
+	Kind  Kind   `json:"kind"`
+	Stage Stage  `json:"stage"`
+	// Channel is the Telegram ID of the drive channel the Transfer works on.
+	Channel string `json:"channel"`
+	// Source is the absolute local path of an upload.
+	Source string `json:"source"`
+	// Dest is the remote path an upload was asked to write; once it
+	// completes, the canonical path it wrote.
+	Dest       string `json:"dest"`
+	BytesDone  int64  `json:"bytes_done"`
+	BytesTotal int64  `json:"bytes_total"`
+	ItemsDone  int    `json:"items_done"`
+	ItemsTotal int    `json:"items_total"`
+	// ErrorCode and ErrorMessage are the error a failed Transfer ended
+	// with.
+	ErrorCode       string     `json:"error_code,omitempty"`
+	ErrorMessage    string     `json:"error_message,omitempty"`
+	FrontEnd        FrontEnd   `json:"front_end"`
+	CancelRequested bool       `json:"cancel_requested"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+}
+
+// timeLayout is fixed-width so the stored text sorts in time order;
+// RFC3339Nano trims trailing zeros and does not.
+const timeLayout = "2006-01-02T15:04:05.000000000Z"
+
+func formatTime(t time.Time) string {
+	return t.UTC().Format(timeLayout)
+}
+
+func parseTime(s string) time.Time {
+	t, _ := time.Parse(timeLayout, s)
+	return t
+}
+
+func (t Transfer) row() sqlitestore.TransferRow {
+	r := sqlitestore.TransferRow{
+		ID:              t.ID,
+		Kind:            string(t.Kind),
+		ChannelTGID:     t.Channel,
+		Source:          t.Source,
+		Dest:            t.Dest,
+		Stage:           string(t.Stage),
+		BytesDone:       t.BytesDone,
+		BytesTotal:      t.BytesTotal,
+		ItemsDone:       t.ItemsDone,
+		ItemsTotal:      t.ItemsTotal,
+		ErrorCode:       t.ErrorCode,
+		ErrorMessage:    t.ErrorMessage,
+		FrontEnd:        string(t.FrontEnd),
+		CancelRequested: t.CancelRequested,
+		CreatedAt:       formatTime(t.CreatedAt),
+		UpdatedAt:       formatTime(t.UpdatedAt),
+	}
+	if t.FinishedAt != nil {
+		r.FinishedAt = formatTime(*t.FinishedAt)
+	}
+	return r
+}
+
+func fromRow(r sqlitestore.TransferRow) Transfer {
+	t := Transfer{
+		ID:              r.ID,
+		Kind:            Kind(r.Kind),
+		Stage:           Stage(r.Stage),
+		Channel:         r.ChannelTGID,
+		Source:          r.Source,
+		Dest:            r.Dest,
+		BytesDone:       r.BytesDone,
+		BytesTotal:      r.BytesTotal,
+		ItemsDone:       r.ItemsDone,
+		ItemsTotal:      r.ItemsTotal,
+		ErrorCode:       r.ErrorCode,
+		ErrorMessage:    r.ErrorMessage,
+		FrontEnd:        FrontEnd(r.FrontEnd),
+		CancelRequested: r.CancelRequested,
+		CreatedAt:       parseTime(r.CreatedAt),
+		UpdatedAt:       parseTime(r.UpdatedAt),
+	}
+	if r.FinishedAt != "" {
+		f := parseTime(r.FinishedAt)
+		t.FinishedAt = &f
+	}
+	return t
+}

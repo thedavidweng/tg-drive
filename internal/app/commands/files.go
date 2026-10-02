@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
 )
 
 // File transfer commands (cp/get/mv/rm/share) and their shared
@@ -173,7 +174,18 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 			if includeEmptyDirs {
 				return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 			}
-			data, err := app.UploadFileAs(cmd.Context(), args[0], args[1], policy, noHash, pres, opts)
+			var observer transfer.Observer
+			if events {
+				observer.OnStage = func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) }
+			}
+			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
+			handle, err := manager.SubmitUpload(cmd.Context(), transfer.Upload{
+				Source: args[0], Dest: args[1], Policy: policy, NoHash: noHash, Presentation: pres, Options: opts,
+			})
+			if err != nil {
+				return r.Error(err)
+			}
+			data, err := handle.Wait()
 			if err != nil {
 				return r.Error(err)
 			}

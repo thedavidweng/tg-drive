@@ -22,6 +22,7 @@ type Config struct {
 	Delete    DeleteConfig    `toml:"delete"`
 	Limits    LimitsConfig    `toml:"limits"`
 	Upload    UploadConfig    `toml:"upload"`
+	Transfers TransfersConfig `toml:"transfers"`
 	Locks     LocksConfig     `toml:"locks"`
 	RateLimit RateLimitConfig `toml:"rate_limit"`
 	Roots     []RootConfig    `toml:"roots"`
@@ -61,6 +62,12 @@ type LimitsConfig struct {
 type UploadConfig struct {
 	Threads    int `toml:"threads"`
 	PartSizeKB int `toml:"part_size_kb"`
+}
+
+type TransfersConfig struct {
+	// Concurrency bounds how many Transfers one Transfer Manager runs at
+	// once; the rest wait queued.
+	Concurrency int `toml:"concurrency"`
 }
 
 type LocksConfig struct {
@@ -118,6 +125,7 @@ func Defaults() Config {
 			PremiumUploadBytes: 4294967296,
 		},
 		Upload:    UploadConfig{Threads: 4, PartSizeKB: 0},
+		Transfers: TransfersConfig{Concurrency: 2},
 		Locks:     LocksConfig{TTLSeconds: 900, SessionWaitSeconds: 30},
 		RateLimit: RateLimitConfig{DefaultWait: false, MaxWaitSeconds: 300},
 	}
@@ -254,6 +262,8 @@ func GetValue(cfg Config, key string) (any, error) {
 		return cfg.Upload.Threads, nil
 	case "upload.part_size_kb":
 		return cfg.Upload.PartSizeKB, nil
+	case "transfers.concurrency":
+		return cfg.Transfers.Concurrency, nil
 	case "caption.safe_media_caption_utf16_units":
 		return cfg.Caption.SafeMediaCaptionUTF16Units, nil
 	case "caption.safe_text_message_utf16_units":
@@ -325,6 +335,8 @@ func SetValue(cfg *Config, key, value string) error {
 			return apperr.New(apperr.ErrConfigInvalid, "upload.part_size_kb must be a non-negative integer")
 		}
 		cfg.Upload.PartSizeKB = n
+	case "transfers.concurrency":
+		return setPositiveInt(&cfg.Transfers.Concurrency, key, value)
 	case "caption.safe_media_caption_utf16_units":
 		return setPositiveInt(&cfg.Caption.SafeMediaCaptionUTF16Units, key, value)
 	case "caption.safe_text_message_utf16_units":
@@ -376,6 +388,7 @@ var Keys = []string{
 	"delete.mode",
 	"limits.free_upload_bytes", "limits.premium_upload_bytes",
 	"upload.threads", "upload.part_size_kb",
+	"transfers.concurrency",
 	"locks.ttl_seconds", "locks.session_wait_seconds",
 	"rate_limit.default_wait", "rate_limit.max_wait_seconds",
 }

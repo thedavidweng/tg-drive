@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -373,7 +374,11 @@ func TestE2ETypedLifecycle(t *testing.T) {
 		"cp", videoLocal, "/media/again.mp4", "--as", "video", "--duration", "1", "--width", "2", "--height", "2", "--events")
 	photoEvents := runE2EEvents(t, bin, cfgPath, dbPath, statePath,
 		"cp", photoLocal, "/pics/again.jpg", "--as", "photo", "--events")
-	for name, events := range map[string][]map[string]any{"plain": plainEvents, "video": typedEvents, "photo": photoEvents} {
+	withoutStages := func(events []map[string]any) []map[string]any {
+		return slices.DeleteFunc(events, func(ev map[string]any) bool { return cmd(ev) == "transfer.stage" })
+	}
+	plainEvents = withoutStages(plainEvents)
+	for name, events := range map[string][]map[string]any{"plain": plainEvents, "video": withoutStages(typedEvents), "photo": withoutStages(photoEvents)} {
 		if len(events) != 1 {
 			t.Fatalf("%s event count = %d, want 1", name, len(events))
 		}

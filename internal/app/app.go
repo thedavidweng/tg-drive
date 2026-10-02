@@ -154,6 +154,7 @@ Get started:
 	add(commands.NewTreeCmd(opts), "files")
 	add(commands.NewCpCmd(opts), "files")
 	add(commands.NewGetCmd(opts), "files")
+	add(commands.NewTransfersCmd(opts), "files")
 	add(commands.NewMvCmd(opts), "files")
 	add(commands.NewRmCmd(opts), "files")
 	add(commands.NewShareCmd(opts), "maintenance")

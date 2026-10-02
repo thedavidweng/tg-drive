@@ -32,6 +32,9 @@ premium_upload_bytes = 4294967296
 threads = 4
 part_size_kb = 0
 
+[transfers]
+concurrency = 2
+
 [locks]
 ttl_seconds = 900
 session_wait_seconds = 30
@@ -50,6 +53,9 @@ strategy = "single"
 Every key above except `[[roots]]` is readable with `td config get <section.key>`
 and writable with `td config set`, except `hash.algorithm` (always `blake3`). Integer limits must be positive
 (`caption.margin_utf16_units` and `upload.part_size_kb` may be 0).
+
+`transfers.concurrency` bounds how many Transfers one process runs at once;
+the rest wait `queued`.
 
 `locks.session_wait_seconds` bounds how long a command that needs Telegram
 waits for another process to release the Session lock on the same session
