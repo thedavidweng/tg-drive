@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. Superseded in part by ADR 0026 (`adapters/fakefs` removed).
 
 ## Context
 

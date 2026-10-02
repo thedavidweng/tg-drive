@@ -21,7 +21,7 @@ You need Go 1.26 or newer. `make lint` also needs
 ```sh
 make test
 make test-race
-make ci-local          # fmt-check, vet, tests, race, WASM compile
+make ci-local          # fmt-check, vet, tests, race
 ```
 
 To exercise the CLI without a Telegram account or network, use the in-memory

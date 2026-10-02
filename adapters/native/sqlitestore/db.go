@@ -14,12 +14,9 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/model"
-	"github.com/thedavidweng/tg-drive-cli/core/ports"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	_ "modernc.org/sqlite"
 )
-
-var _ ports.Store = (*DB)(nil)
 
 const schemaSQL = `
 create table if not exists schema_version (

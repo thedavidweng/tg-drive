@@ -16,7 +16,7 @@ type FileInfo struct {
 // WalkFunc is the callback for FileSystem.Walk.
 type WalkFunc func(path string, info FileInfo, err error) error
 
-// FileSystem is the local filesystem port for native and browser adapters.
+// FileSystem is the local filesystem port used by the service layer.
 type FileSystem interface {
 	Stat(ctx context.Context, path string) (FileInfo, error)
 	Open(ctx context.Context, path string) (io.ReadCloser, error)

@@ -35,14 +35,10 @@ jobs:
           version: v2.12.2
       - name: Test
         run: go test -coverprofile=coverage.out ./...
-      - name: Core WASM test
-        run: make test-core-wasm
       - name: Race test
         run: make test-race
       - name: Build
         run: make build
-      - name: Build WASM stub
-        run: make build-wasm
       - name: Upload coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:

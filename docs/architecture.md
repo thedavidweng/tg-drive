@@ -10,11 +10,10 @@ cmd/td
   -> adapters/native/*     SQLite, local FS, gotd/td
 ```
 
-`cmd/td-wasm` compiles the same core ports against in-memory adapters for contract tests.
-
 ## Dependency direction
 
 - `cmd/td` imports only `internal/app`.
+- `core/*` imports no adapters, `internal/*`, storage drivers, gotd/td, or cobra.
 - `internal/app` imports command services and output/error packages.
 - `internal/service` owns command behavior and depends on `core` ports, not on `gotd/td`.
 - `adapters/native/telegramgotd` is the only package that imports `github.com/gotd/td`.

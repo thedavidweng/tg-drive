@@ -7,9 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/localfs"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	"github.com/thedavidweng/tg-drive-cli/core/drive"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
@@ -29,10 +27,9 @@ func testApp(t *testing.T) (*App, *fake.Client) {
 	tg := fake.New()
 	tg.SetCredentials("12345", "")
 	app := &App{
-		Cfg:     cfg,
-		DB:      database,
-		TG:      tg,
-		Runtime: drive.NewRuntime(database, localfs.FS{}, tg),
+		Cfg: cfg,
+		DB:  database,
+		TG:  tg,
 	}
 	return app, tg
 }
