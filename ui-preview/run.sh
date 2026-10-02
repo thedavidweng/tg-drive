@@ -75,6 +75,17 @@ echo "12345" | "$WORK/td" auth login > /dev/null
 "$WORK/td" cp "$WORK/files/Photos/taipei.jpg" /Photos/taipei.jpg > /dev/null
 "$WORK/td" cp "$WORK/files/Photos/2024/alley.jpg" /Photos/2024/alley.jpg > /dev/null
 
+# Two more channels for the switcher scenes. Backups is bound to a second
+# root in the same database, so the switcher offers a real switch target;
+# it holds one file so the switched view is not empty. Photos Archive is
+# created against a scratch database: the fake Telegram account owns it,
+# but the preview's database never binds it, so the bind sheet offers it.
+mkdir -p "$STATE/root-backups" "$WORK/scratch-root"
+printf 'nightly backup archive\n' > "$WORK/files/backup.txt"
+"$WORK/td" init "$STATE/root-backups" --create-channel=Backups > /dev/null
+"$WORK/td" cp "$WORK/files/backup.txt" /backup.txt --channel=Backups > /dev/null
+TD_DB="$WORK/scratch.db" "$WORK/td" init "$WORK/scratch-root" --create-channel="Photos Archive" > /dev/null
+
 # Serve the GUI. WAILS_SERVER_PORT=0 would need log parsing, so find a free
 # port first; the race is acceptable for a CI job and a local run.
 PORT=${TD_PREVIEW_PORT:-$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')}
