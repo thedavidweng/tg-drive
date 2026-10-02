@@ -63,9 +63,12 @@ cmd/td-gui (build tag gui, the only package importing Wails)
 - Index sync (ADR 0033): `Services.StartSync` polls `PRAGMA data_version`
   on a pinned connection (the pragma advances only for *other* connections'
   commits) and, on change, re-reads the directory the frontend last listed
-  and emits the typed `directory-changed` event with the fresh listing. The
-  Drive facade's rescan emits throttled typed `scan-progress` events from
-  its per-call Observer.
+  and emits the typed `directory-changed` event with the fresh listing.
+  The poller resolves the App through `appState` every tick: an Auth
+  reopen closes the old pool, so the poller re-pins the new pool and runs
+  one refresh to cover commits that landed while unpinned. The Drive
+  facade's rescan emits throttled typed `scan-progress` events from its
+  per-call Observer.
 
 ## Dependency direction
 
