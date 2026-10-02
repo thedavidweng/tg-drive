@@ -59,8 +59,9 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
 # a working directory the native process may not share with this shell,
 # and backslashes are escape characters in -D defines.
 abspath() {
+	# cygpath leaves relative paths relative, so anchor at $PWD first.
 	if command -v cygpath >/dev/null 2>&1; then
-		cygpath -m "$1"
+		cygpath -m "$PWD/$1"
 	else
 		echo "$PWD/$1"
 	fi
