@@ -39,6 +39,7 @@ export type {
     DiscussionLink,
     DoctorCheck,
     DoctorReport,
+    DownloadOptions,
     Entry,
     FilesDropped,
     HashRepairOutcome,
@@ -66,5 +67,8 @@ export type {
     TransferList,
     TransferRemoved,
     TreeNode,
+    UploadOptions,
+    UploadPlan,
+    UploadPlanFile,
     Versions
 } from "./models.js";

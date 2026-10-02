@@ -239,8 +239,8 @@ them.
   `policy` (`fail`, `replace`, `skip`, `rename`), and for uploads
   `no_hash`, the presentation (`kind`, `duration_seconds`, `width`,
   `height`, `supports_streaming`, `thumb_path`), `threads`, `part_size_kb`,
-  and `confirm_replace`; an album upload adds `sources`; recursive
-  Transfers add `continue_on_error`, and a recursive upload
+  `confirm_replace`, and `caption`; an album upload adds `sources`;
+  recursive Transfers add `continue_on_error`, and a recursive upload
   `include_empty_dirs`. Unset and zero values are omitted.
 - `stage` moves forward only: `queued`, `hashing`, `uploading` /
   `downloading`, `publishing`, then one terminal stage: `completed`,

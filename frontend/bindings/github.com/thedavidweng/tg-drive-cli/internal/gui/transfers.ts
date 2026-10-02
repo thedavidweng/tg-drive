@@ -39,8 +39,8 @@ export function ClearFinished(): $CancellablePromise<number> {
  * Download downloads a remote file or directory into the local directory
  * destDir, under the remote name, and returns the new Transfer's ID.
  */
-export function Download(remotePath: string, destDir: string): $CancellablePromise<string> {
-    return $Call.ByID(3375799640, remotePath, destDir);
+export function Download(remotePath: string, destDir: string, opts: $models.DownloadOptions): $CancellablePromise<string> {
+    return $Call.ByID(3375799640, remotePath, destDir, opts);
 }
 
 /**
@@ -70,6 +70,16 @@ export function PickFiles(): $CancellablePromise<string[] | null> {
 }
 
 /**
+ * PlanUpload previews uploading paths into the remote directory dest under
+ * policy, without starting anything: the service's dry-run plan plus each
+ * file's size against the account's upload limit. It needs a logged-in
+ * App for the limit, like the channel status does.
+ */
+export function PlanUpload(paths: string[] | null, dest: string, policy: string): $CancellablePromise<$models.UploadPlan | null> {
+    return $Call.ByID(276795822, paths, dest, policy);
+}
+
+/**
  * Retry re-runs a failed, cancelled, or interrupted Transfer from its
  * recorded request; this GUI becomes its owner and an interrupted upload
  * resumes from its saved parts. The Manager pre-flights the stage from the
@@ -85,12 +95,14 @@ export function Retry(id: string): $CancellablePromise<$models.Transfer | null> 
  * dest (the one the Drive tab shows), and returns the new Transfers' IDs.
  * One file alone is a single-file Transfer; several files together are one
  * album Transfer; each directory is its own recursive Transfer, landing
- * under dest by its name. Everything else about the upload — conflict
- * policy, presentation — is the default the CLI's cp uses without flags.
+ * under dest by its name. The mistakes the upload use cases would reject
+ * mid-run — an unconfirmed replace, an album replace, an unknown policy or
+ * presentation, presentation on a folder — fail fast here, before any
+ * Transfer exists.
  * 
  * The Transfer outlives the call: the bound method's ctx ends when Upload
  * returns, so the Transfer runs under a ctx bounded only by the process.
  */
-export function Upload(paths: string[] | null, dest: string): $CancellablePromise<string[] | null> {
-    return $Call.ByID(1508530233, paths, dest);
+export function Upload(paths: string[] | null, dest: string, opts: $models.UploadOptions): $CancellablePromise<string[] | null> {
+    return $Call.ByID(1508530233, paths, dest, opts);
 }
