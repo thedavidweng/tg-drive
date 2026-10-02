@@ -63,14 +63,11 @@ type RepairHashResult struct {
 // download also repairs a zero/missing size, which native photo imports
 // never recorded.
 func (a *App) RepairHash(ctx context.Context, remotePath string) (*RepairHashResult, error) {
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	channelID, tgChID := ch.rowID, ch.tgID
 	root := "/"
 	if remotePath != "" {
 		root, err = fsmodel.NormalizeCanonicalPath(remotePath)
@@ -109,7 +106,7 @@ func (a *App) RepairHash(ctx context.Context, remotePath string) (*RepairHashRes
 	backfilled, failed := 0, 0
 	for _, r := range targets {
 		item := hashBackfillItem{Path: r.path}
-		lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, r.path), func(ctx context.Context) error {
+		lockErr := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
 			return a.repairHashTarget(ctx, r, channelID, tgChID, existingSlugs, now)
 		})
 		switch {

@@ -10,7 +10,6 @@ import (
 	"io"
 	"mime"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -80,38 +79,6 @@ const (
 	ConflictRename  ConflictPolicy = "rename"
 )
 
-func (a *App) channelID(ctx context.Context) (int64, string, error) {
-	var id int64
-	var tgID, title string
-	var err error
-	if a.Channel != "" {
-		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, title from channels where title=? or tg_channel_id=? limit 1`,
-			a.Channel, a.Channel).Scan(&id, &tgID, &title)
-		if err == sql.ErrNoRows {
-			return 0, "", apperr.New(apperr.ErrChannelNotFound, "channel not found: "+a.Channel)
-		}
-	} else {
-		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, title from channels limit 1`).Scan(&id, &tgID, &title)
-		if err == sql.ErrNoRows {
-			return 0, "", apperr.New(apperr.ErrChannelNotFound,
-				"no channel bound in this database; run: td init <local-root> --create-channel (new drive) or --bind-channel (existing drive, rebuilds the index)")
-		}
-	}
-	return id, tgID, err
-}
-
-func (a *App) tgChannelID(ctx context.Context) (int64, error) {
-	_, tgID, err := a.channelID(ctx)
-	if err != nil {
-		return 0, err
-	}
-	id, err := strconv.ParseInt(tgID, 10, 64)
-	if err != nil {
-		return 0, apperr.New(apperr.ErrDB, "stored channel id is not numeric: "+tgID)
-	}
-	return id, nil
-}
-
 func (a *App) activePaths(ctx context.Context, channelID int64) ([]fsmodel.ActivePath, error) {
 	rows, err := a.DB.ActivePaths(ctx, channelID)
 	if err != nil {
@@ -172,8 +139,8 @@ func (a *App) uploadLimit(ctx context.Context) int64 {
 		return a.cachedLimit
 	}
 	limit := a.Cfg.Limits.FreeUploadBytes
-	if tgChID, err := a.tgChannelID(ctx); err == nil {
-		if caps, err := a.TG.Doctor(ctx, tgChID); err == nil && caps != nil && caps.MaxUploadBytes > 0 {
+	if ch, err := a.channel(ctx); err == nil {
+		if caps, err := a.TG.Doctor(ctx, ch.tgID); err == nil && caps != nil && caps.MaxUploadBytes > 0 {
 			limit = caps.MaxUploadBytes
 		}
 	}
@@ -259,15 +226,11 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 	if dest == "/" {
 		return nil, apperr.New(apperr.ErrPathInvalid, "destination must include a file name")
 	}
-	channelID, tgIDStr, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	active, err := a.activePaths(ctx, channelID)
+	active, err := a.activePaths(ctx, ch.rowID)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +260,7 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 	sent := out.sent[0]
 	data := &UploadResult{
 		Path:      sent.dest,
-		ChannelID: tgIDStr,
+		ChannelID: ch.tgIDStr,
 		MessageID: sent.messageID,
 		Size:      sent.size,
 		Hash:      sent.hash,
@@ -306,7 +269,7 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 	if sent.manifestMsgID > 0 {
 		data.ManifestMessageID = &sent.manifestMsgID
 	}
-	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
+	if link, err := a.TG.GetInviteLink(ctx, ch.tgID); err == nil {
 		data.InviteLink = link
 	}
 	return data, nil

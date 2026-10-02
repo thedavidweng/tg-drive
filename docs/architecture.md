@@ -26,6 +26,11 @@ cmd/td
   record module (`fileRecord`: `Retire`, `RetireSuperseded`, `Rename`,
   `Rewrite`). The module hides whether the record is a per-file manifest or
   an entry in a shared album inventory (ADR 0028).
+- `internal/service` runs every Telegram write inside an operation
+  (`operate`, `operation.go`). An operation holds the operation locks of the
+  canonical paths it touches and carries the channel context, which is
+  resolved once per use case; nested operations reuse the locks already
+  held (ADR 0030).
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow
@@ -43,7 +48,7 @@ td cp
   resolve channel
   normalize paths
   plan every member: conflict policy, file/dir invariants (no writes)
-  acquire operation locks for every destination
+  start an operation: acquire operation locks for every destination
   check the discussion group, read thumbnails
   per member: compute hash/mime, resolve the pending row (adopt, supersede,
     or refuse), render caption, stage the pending row
@@ -54,7 +59,7 @@ td cp
     commit active DB state
     retire a --replace target
     on any failure after upload: delete the unit's media or mark orphaned
-  release locks
+  end the operation: release locks
   render output
 ```
 

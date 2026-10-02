@@ -243,24 +243,20 @@ func (a *App) Share(ctx context.Context, remotePath string) (*ShareResult, error
 	if err != nil {
 		return nil, err
 	}
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	link, err := a.TG.GetInviteLink(ctx, tgChID)
+	link, err := a.TG.GetInviteLink(ctx, ch.tgID)
 	if err != nil {
 		return nil, telegram.MapError(err)
 	}
 	var tag string
 	_ = a.DB.Raw().QueryRowContext(ctx, `
 		select pt.tag from path_tags pt join files f on f.id=pt.file_id
-		where f.channel_id=? and f.canonical_path=? and f.status='active' order by pt.depth desc limit 1`, channelID, p).Scan(&tag)
+		where f.channel_id=? and f.canonical_path=? and f.status='active' order by pt.depth desc limit 1`, ch.rowID, p).Scan(&tag)
 	if tag == "" {
-		existing, err := a.loadExistingSlugs(ctx, channelID)
+		existing, err := a.loadExistingSlugs(ctx, ch.rowID)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +272,7 @@ func (a *App) Share(ctx context.Context, remotePath string) (*ShareResult, error
 		}
 	}
 	var title string
-	_ = a.DB.Raw().QueryRowContext(ctx, `select title from channels where id=?`, channelID).Scan(&title)
+	_ = a.DB.Raw().QueryRowContext(ctx, `select title from channels where id=?`, ch.rowID).Scan(&title)
 	return &ShareResult{Channel: title, Hashtag: tag, InviteLink: link, Path: p}, nil
 }
 
@@ -351,7 +347,7 @@ func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 		checks["db_wal"] = "unknown"
 	}
 
-	channelID, _, chErr := a.channelID(ctx)
+	ch, chErr := a.channel(ctx)
 	if chErr != nil {
 		checks["channel"] = "fail"
 		hints["channel"] = "no channel bound; run: td init <local-root> --create-channel"
@@ -375,7 +371,7 @@ func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 		}
 	} else {
 		checks["channel"] = "pass"
-		tgChID, _ := a.tgChannelID(ctx)
+		tgChID := ch.tgID
 		// One-message page: proves td scan can page the channel history
 		// without walking it.
 		if _, err := a.TG.History(ctx, tgChID, 0, 1); err != nil {
@@ -417,7 +413,7 @@ func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 				checks["file_size_limit"] = "fail"
 				hints["file_size_limit"] = "upload limit below the expected free tier; check account status"
 			}
-			_, _ = a.DB.Raw().ExecContext(ctx, `update channels set updated_at=? where id=?`, time.Now().UTC().Format(time.RFC3339), channelID)
+			_, _ = a.DB.Raw().ExecContext(ctx, `update channels set updated_at=? where id=?`, time.Now().UTC().Format(time.RFC3339), ch.rowID)
 		}
 	}
 	out.Checks = checks

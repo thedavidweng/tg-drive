@@ -68,7 +68,7 @@ func driveMessageByID(t *testing.T, app *App, ctx context.Context, id int) teleg
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range app.TG.(*fake.Client).Messages(tgChID) {
+	for _, m := range app.TG.(*writeAudit).Messages(tgChID) {
 		if m.ID == id {
 			return m
 		}

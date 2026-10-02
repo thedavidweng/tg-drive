@@ -20,6 +20,7 @@
 - **Slug** — A collision-resistant hashtag segment (`readable_prefix` + 8-character BLAKE3 suffix) used in `#td_` chains. Not the canonical path.
 - **Resumable upload** — A big-file upload whose part state is persisted in `upload_progress` so it can continue after interruption.
 - **Operation lock** — A row in `operation_locks` that serializes path-touching operations across processes.
+- **Operation** — One use case's exclusive claim on canonical paths of the bound channel: it holds their Operation locks while its body runs, and every Telegram write happens inside one (ADR 0030).
 - **File publisher** — The module that publishes a file to the index, turning a canonical path, display name, content hash, and Telegram message into a file row, manifest, hashtag tags, slug mappings, and derived nodes.
 - **Adopt** — Claim an existing message of the bound drive channel into the virtual file tree without re-uploading bytes (`td adopt`). The media message stays where it is; td writes machine records and indexes the file.
 - **Import** — Re-upload content from an external Telegram chat into the bound

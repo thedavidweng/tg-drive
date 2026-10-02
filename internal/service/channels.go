@@ -23,19 +23,15 @@ type LinkDiscussionResult struct {
 // group (creating one when needed) and records it on the channel row
 // (ADR 0018).
 func (a *App) LinkDiscussionGroup(ctx context.Context) (*LinkDiscussionResult, error) {
-	channelRowID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	group, err := a.TG.EnsureDiscussionGroup(ctx, tgChID)
+	group, err := a.TG.EnsureDiscussionGroup(ctx, ch.tgID)
 	if err != nil {
 		return nil, telegram.MapError(err)
 	}
-	if err := a.DB.SetDiscussionGroup(ctx, channelRowID, fmt.Sprintf("%d", group.ID), fmt.Sprintf("%d", group.AccessHash), group.Title); err != nil {
+	if err := a.DB.SetDiscussionGroup(ctx, ch.rowID, fmt.Sprintf("%d", group.ID), fmt.Sprintf("%d", group.AccessHash), group.Title); err != nil {
 		return nil, err
 	}
 	return &LinkDiscussionResult{DiscussionChannelID: group.ID, DiscussionTitle: group.Title}, nil

@@ -63,18 +63,14 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 	if !opts.Unmanaged && opts.MessageID <= 0 {
 		return nil, apperr.New(apperr.ErrUsage, "adopt requires a message id or --unmanaged")
 	}
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
+	channelID, tgChID := ch.rowID, ch.tgID
 	// New machine records are comment threads (ADR 0018): adopt needs the
 	// linked discussion group.
-	manifestChat, err := a.discussionChatID(ctx, channelID)
-	if err != nil {
-		return nil, err
-	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
+	if _, err := ch.discussionChat(ctx); err != nil {
 		return nil, err
 	}
 	into := opts.Into
@@ -174,7 +170,7 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 			active = append(active, fsmodel.ActivePath{Canonical: item.Path, IsDir: false})
 			continue
 		}
-		if err := a.adoptOne(ctx, channelID, tgChID, msg, item.Path, opts); err != nil {
+		if err := a.adoptOne(ctx, ch, msg, item.Path, opts); err != nil {
 			item.Action = "fail"
 			item.Reason = err.Error()
 			out.Failed++
@@ -194,7 +190,7 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 		previewNewManifests(msgs, out)
 		return out, nil
 	}
-	if err := a.ensureTelegramManifests(ctx, channelID, tgChID, manifestChat, msgs, opts, out); err != nil {
+	if err := a.ensureTelegramManifests(ctx, ch, msgs, opts, out); err != nil {
 		return out, err
 	}
 	return out, nil
@@ -384,7 +380,8 @@ func extForMIME(mime string) string {
 	}
 }
 
-func (a *App) adoptOne(ctx context.Context, channelID, tgChID int64, msg telegram.Message, dest string, opts AdoptOptions) error {
+func (a *App) adoptOne(ctx context.Context, ch *channelContext, msg telegram.Message, dest string, opts AdoptOptions) error {
+	channelID, tgChID := ch.rowID, ch.tgID
 	// Adopt only claims the message in the local index. Telegram captions
 	// stay untouched so media albums keep their single human caption.
 	display := fsmodel.BaseName(dest)
@@ -415,7 +412,7 @@ func (a *App) adoptOne(ctx context.Context, channelID, tgChID int64, msg telegra
 
 	// The adoption writes the index under the destination's path lock, so it
 	// cannot race a concurrent move or delete of the same path.
-	return a.withLocks(ctx, lockKeysForPaths(channelID, dest), func(ctx context.Context) error {
+	return a.operate(ctx, ch, []string{dest}, func(ctx context.Context) error {
 		existingSlugs, err := a.loadExistingSlugs(ctx, channelID)
 		if err != nil {
 			return err
@@ -439,18 +436,14 @@ func (a *App) adoptOne(ctx context.Context, channelID, tgChID int64, msg telegra
 }
 
 func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*AdoptResult, error) {
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
+	channelID, tgChID := ch.rowID, ch.tgID
 	// Conversion posts comment records (ADR 0018): the discussion group
 	// must be linked.
-	manifestChat, err := a.discussionChatID(ctx, channelID)
-	if err != nil {
-		return nil, err
-	}
-	tgChID, err := a.tgChannelID(ctx)
-	if err != nil {
+	if _, err := ch.discussionChat(ctx); err != nil {
 		return nil, err
 	}
 	rows, err := a.DB.Raw().QueryContext(ctx, `
@@ -460,6 +453,7 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 		return nil, apperr.Wrap(apperr.ErrDB, "list adopted files", err)
 	}
 	filesByMsg := map[int]fileRowLookup{}
+	pathsByManifest := map[int][]string{}
 	for rows.Next() {
 		var r fileRowLookup
 		if err := rows.Scan(&r.fileID, &r.msgID, &r.manID, &r.path, &r.name); err != nil {
@@ -467,6 +461,9 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 			return nil, err
 		}
 		filesByMsg[r.msgID] = r
+		if r.manID > 0 {
+			pathsByManifest[r.manID] = append(pathsByManifest[r.manID], r.path)
+		}
 	}
 	_ = rows.Close()
 
@@ -488,24 +485,35 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 			out.Items = append(out.Items, item)
 			continue
 		}
-		if err := a.TG.DeleteMessage(ctx, tgChID, msg.ID); err != nil {
-			item.Action = "fail"
-			item.Reason = err.Error()
-			out.Failed++
-			out.Items = append(out.Items, item)
-			if !opts.ContinueErr {
-				return out, telegram.MapError(err)
+		// The reply belongs to the file it answers and to every row that
+		// records it as its manifest; the delete holds all their paths.
+		paths := append([]string(nil), pathsByManifest[msg.ID]...)
+		if msg.ReplyTo != nil {
+			if f, ok := filesByMsg[*msg.ReplyTo]; ok {
+				paths = append(paths, f.path)
 			}
-			continue
 		}
-		if err := a.DB.DetachManifest(ctx, channelID, msg.ID, now); err != nil {
-			dbErr := apperr.Wrap(apperr.ErrDB, "detach deleted manifest reply", err)
+		reason := ""
+		err := a.operate(ctx, ch, paths, func(ctx context.Context) error {
+			if err := a.TG.DeleteMessage(ctx, tgChID, msg.ID); err != nil {
+				reason = err.Error()
+				return telegram.MapError(err)
+			}
+			if err := a.DB.DetachManifest(ctx, channelID, msg.ID, now); err != nil {
+				return apperr.Wrap(apperr.ErrDB, "detach deleted manifest reply", err)
+			}
+			return nil
+		})
+		if err != nil {
+			if reason == "" {
+				reason = err.Error()
+			}
 			item.Action = "fail"
-			item.Reason = dbErr.Error()
+			item.Reason = reason
 			out.Failed++
 			out.Items = append(out.Items, item)
 			if !opts.ContinueErr {
-				return out, dbErr
+				return out, err
 			}
 			continue
 		}
@@ -533,12 +541,12 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 
 	for _, gid := range albumIDs {
 		members := albums[gid]
-		if err := a.restoreAlbumCaptions(ctx, tgChID, members, filesByMsg, opts, out); err != nil {
+		if err := a.restoreAlbumCaptions(ctx, ch, members, filesByMsg, opts, out); err != nil {
 			return out, err
 		}
 	}
 	for _, msg := range singles {
-		if err := a.restoreSingleCaption(ctx, tgChID, msg, filesByMsg, opts, out); err != nil {
+		if err := a.restoreSingleCaption(ctx, ch, msg, filesByMsg, opts, out); err != nil {
 			return out, err
 		}
 	}
@@ -548,14 +556,46 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 			return out, telegram.MapError(err)
 		}
 	}
-	if err := a.ensureTelegramManifests(ctx, channelID, tgChID, manifestChat, history, opts, out); err != nil {
+	if err := a.ensureTelegramManifests(ctx, ch, history, opts, out); err != nil {
 		return out, err
 	}
 	return out, nil
 }
 
-func (a *App) restoreAlbumCaptions(ctx context.Context, tgChID int64, members []telegram.Message, files map[int]fileRowLookup, opts AdoptOptions, out *AdoptResult) error {
+// restoreAlbumCaptions rewrites one album's captions as a single operation
+// holding every indexed member's path. A dry run writes nothing and locks
+// nothing.
+func (a *App) restoreAlbumCaptions(ctx context.Context, ch *channelContext, members []telegram.Message, files map[int]fileRowLookup, opts AdoptOptions, out *AdoptResult) error {
 	sort.Slice(members, func(i, j int) bool { return members[i].ID < members[j].ID })
+	if opts.DryRun {
+		return a.restoreAlbumCaptionsLocked(ctx, ch.tgID, members, files, opts, out)
+	}
+	var paths []string
+	for _, msg := range members {
+		if f, ok := files[msg.ID]; ok {
+			paths = append(paths, f.path)
+		}
+	}
+	err := a.operate(ctx, ch, paths, func(ctx context.Context) error {
+		return a.restoreAlbumCaptionsLocked(ctx, ch.tgID, members, files, opts, out)
+	})
+	if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrOperationLocked {
+		for _, msg := range members {
+			out.Failed++
+			out.Items = append(out.Items, AdoptPlanItem{
+				MessageID: msg.ID, Kind: adoptKind(msg), FileName: msg.FileName,
+				GroupedID: msg.GroupedID, Action: "fail", Reason: err.Error(),
+				Path: files[msg.ID].path,
+			})
+		}
+		if opts.ContinueErr {
+			return nil
+		}
+	}
+	return err
+}
+
+func (a *App) restoreAlbumCaptionsLocked(ctx context.Context, tgChID int64, members []telegram.Message, files map[int]fileRowLookup, opts AdoptOptions, out *AdoptResult) error {
 	want := pickAlbumCaption(members, files)
 	for i, msg := range members {
 		target := ""
@@ -600,7 +640,7 @@ func (a *App) restoreAlbumCaptions(ctx context.Context, tgChID int64, members []
 	return nil
 }
 
-func (a *App) restoreSingleCaption(ctx context.Context, tgChID int64, msg telegram.Message, files map[int]fileRowLookup, opts AdoptOptions, out *AdoptResult) error {
+func (a *App) restoreSingleCaption(ctx context.Context, ch *channelContext, msg telegram.Message, files map[int]fileRowLookup, opts AdoptOptions, out *AdoptResult) error {
 	body := messageBody(msg)
 	if !manifest.HasMachineMeta(body) {
 		out.Skipped++
@@ -627,13 +667,28 @@ func (a *App) restoreSingleCaption(ctx context.Context, tgChID int64, msg telegr
 		out.Items = append(out.Items, item)
 		return nil
 	}
-	if err := a.TG.EditCaption(ctx, tgChID, msg.ID, visible); err != nil {
+	var paths []string
+	if f, ok := files[msg.ID]; ok {
+		paths = []string{f.path}
+	}
+	reason := ""
+	err := a.operate(ctx, ch, paths, func(ctx context.Context) error {
+		if err := a.TG.EditCaption(ctx, ch.tgID, msg.ID, visible); err != nil {
+			reason = err.Error()
+			return telegram.MapError(err)
+		}
+		return nil
+	})
+	if err != nil {
+		if reason == "" {
+			reason = err.Error()
+		}
 		item.Action = "fail"
-		item.Reason = err.Error()
+		item.Reason = reason
 		out.Failed++
 		out.Items = append(out.Items, item)
 		if !opts.ContinueErr {
-			return telegram.MapError(err)
+			return err
 		}
 		return nil
 	}

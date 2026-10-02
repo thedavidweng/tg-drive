@@ -42,14 +42,11 @@ type RepairCaptionsResult struct {
 // the discussion manifest, so this operation only changes the human surface.
 // Legacy rows are excluded because their captions may still carry td:v1.
 func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, continueOnError bool) (*RepairCaptionsResult, error) {
-	channelID, _, err := a.channelID(ctx)
+	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tgChannelID, err := a.tgChannelID(ctx)
-	if err != nil {
-		return nil, err
-	}
+	channelID, tgChannelID := ch.rowID, ch.tgID
 	root := "/"
 	if remotePath != "" {
 		root, err = fsmodel.NormalizeCanonicalPath(remotePath)
@@ -107,7 +104,7 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 			continue
 		}
 
-		repairErr := a.withLocks(ctx, lockKeysForPaths(channelID, target.path), func(ctx context.Context) error {
+		repairErr := a.operate(ctx, ch, []string{target.path}, func(ctx context.Context) error {
 			msg, err := a.TG.GetMessage(ctx, tgChannelID, target.messageID)
 			if err != nil {
 				return telegram.MapError(err)
