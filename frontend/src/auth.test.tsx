@@ -103,6 +103,19 @@ test("restarting login reuses the pending code and says so", async () => {
   expect(await screen.findByText("Reusing the code Telegram sent earlier.")).toBeTruthy()
 })
 
+test("requesting a new code after cancelling sends a fresh one", async () => {
+  render(<App backend={memoryBackend({}, { auth: { authenticated: false } })} languages={["en"]} />)
+
+  fireEvent.click(await screen.findByRole("button", { name: "Send login code" }))
+  await screen.findByLabelText("Login code")
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+
+  fireEvent.click(await screen.findByRole("button", { name: "Request a new code instead" }))
+  // A fresh code, not the reused pending one.
+  expect(await screen.findByText("Enter the login code Telegram sent you.")).toBeTruthy()
+  expect(screen.queryByText("Reusing the code Telegram sent earlier.")).toBeNull()
+})
+
 test("an expired reused code is resent and says so", async () => {
   render(<App backend={memoryBackend({}, { auth: { authenticated: false, expiresReusedCode: true } })} languages={["en"]} />)
 
