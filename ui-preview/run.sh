@@ -63,6 +63,8 @@ printf 'Q3 report draft\n' > "$WORK/files/Documents/report-q3.md"
 printf 'roadmap: preview, auth, transfers\n' > "$WORK/files/Documents/roadmap.md"
 printf 'placeholder bytes for a photo\n' > "$WORK/files/Photos/kyoto.jpg"
 printf 'placeholder bytes for a photo\n' > "$WORK/files/Photos/taipei.jpg"
+mkdir -p "$WORK/files/Photos/2024"
+printf 'placeholder bytes for a photo\n' > "$WORK/files/Photos/2024/alley.jpg"
 
 echo "12345" | "$WORK/td" auth login > /dev/null
 "$WORK/td" init "$STATE/root" --create-channel=Drive > /dev/null
@@ -71,6 +73,7 @@ echo "12345" | "$WORK/td" auth login > /dev/null
 "$WORK/td" cp "$WORK/files/Documents/roadmap.md" /Documents/roadmap.md > /dev/null
 "$WORK/td" cp "$WORK/files/Photos/kyoto.jpg" /Photos/kyoto.jpg > /dev/null
 "$WORK/td" cp "$WORK/files/Photos/taipei.jpg" /Photos/taipei.jpg > /dev/null
+"$WORK/td" cp "$WORK/files/Photos/2024/alley.jpg" /Photos/2024/alley.jpg > /dev/null
 
 # Serve the GUI. WAILS_SERVER_PORT=0 would need log parsing, so find a free
 # port first; the race is acceptable for a CI job and a local run.
