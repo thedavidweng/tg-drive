@@ -42,15 +42,22 @@ const (
 	StageDownloading Stage = "downloading"
 	StagePublishing  Stage = "publishing"
 	StageCompleted   Stage = "completed"
-	// StageFailed ends a Transfer whose call failed, including one its
-	// owner cancelled (ERR_CANCELLED).
+	// StageFailed ends a Transfer whose call failed. A cancellation is not
+	// a failure: it ends the Transfer cancelled.
 	StageFailed Stage = "failed"
+	// StageCancelled ends a Transfer its owner cancelled — by Ctrl-C on
+	// the owning command or by a cancel request from another process.
+	StageCancelled Stage = "cancelled"
+	// StageInterrupted ends a Transfer whose owner vanished mid-run
+	// (killed or crashed), which a reading process marks once the
+	// Transfer's lease expires. Retrying it resumes from saved state.
+	StageInterrupted Stage = "interrupted"
 )
 
 // lifecycle is every Stage in the order a Transfer moves through them. One
 // Transfer never visits both upload and download stages; the shared order
 // only fixes how forward each step is.
-var lifecycle = []Stage{StageQueued, StageHashing, StageUploading, StageDownloading, StagePublishing, StageCompleted, StageFailed}
+var lifecycle = []Stage{StageQueued, StageHashing, StageUploading, StageDownloading, StagePublishing, StageCompleted, StageFailed, StageCancelled, StageInterrupted}
 
 func (s Stage) rank() int {
 	for i, st := range lifecycle {
@@ -63,7 +70,7 @@ func (s Stage) rank() int {
 
 // Terminal reports whether a Transfer in s has ended.
 func (s Stage) Terminal() bool {
-	return s == StageCompleted || s == StageFailed
+	return s == StageCompleted || s == StageFailed || s == StageCancelled || s == StageInterrupted
 }
 
 // ParseStage reads a stage name, failing with ERR_USAGE for an unknown one.

@@ -343,12 +343,18 @@ func submit[T any](ctx context.Context, m *Manager, t Transfer, options string,
 		case m.slots <- struct{}{}:
 		case <-ctx.Done():
 			h.err = apperr.Cancelled()
-			tr.finish(ctx, h.err)
+			tr.finish(h.err)
 			return
 		}
 		defer func() { <-m.slots }()
 		h.result, h.err = run(ctx, tr)
-		tr.finish(ctx, h.err)
+		// A Transfer ends cancelled, not failed, when its context stopped
+		// it; AfterCancel keeps the code of a failure that left durable
+		// state, which still ends the Transfer failed.
+		if h.err != nil && ctx.Err() != nil {
+			h.err = apperr.AfterCancel(h.err)
+		}
+		tr.finish(h.err)
 	}()
 	return h, nil
 }
@@ -514,22 +520,25 @@ func (tr *tracker) landed(dest string, size int64, sent bool) {
 	}
 }
 
-// finish ends the Transfer completed when err is nil and failed with err's
-// code and message otherwise. ctx is the Transfer's context: an error after
-// its cancellation is recorded as the CLI reports it.
-func (tr *tracker) finish(ctx context.Context, err error) {
+// finish ends the Transfer: completed when err is nil, cancelled when err
+// is the cancellation of the Transfer's context, and failed with err's
+// code and message otherwise. A cancellation is recorded once the caller
+// has normalized the error with apperr.AfterCancel, so a failure that left
+// durable state (an orphaned upload, a repair) keeps its code and still
+// ends the Transfer failed.
+func (tr *tracker) finish(err error) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	now := time.Now().UTC()
-	if err == nil {
+	switch {
+	case err == nil:
 		tr.t.Stage = StageCompleted
 		// A call can succeed with items failed (its own lenient mode
 		// reports them in the result), so done is what did not fail.
 		tr.t.ItemsDone = tr.t.ItemsTotal - tr.t.ItemsFailed
-	} else {
-		if ctx.Err() != nil {
-			err = apperr.AfterCancel(err)
-		}
+	case apperr.IsCancelled(err):
+		tr.t.Stage = StageCancelled
+	default:
 		tr.t.Stage = StageFailed
 		if ae, ok := apperr.As(err); ok {
 			tr.t.ErrorCode, tr.t.ErrorMessage = ae.Code, ae.Message

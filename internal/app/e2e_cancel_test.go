@@ -89,7 +89,7 @@ func assertCancelled(t *testing.T, lines []string, code int, took time.Duration,
 }
 
 // TestE2EInterruptedCpResumes: SIGINT during a large td cp exits promptly
-// with ERR_CANCELLED, ends its Transfer failed with that code, keeps the
+// with ERR_CANCELLED, ends its Transfer cancelled, keeps the
 // resumable upload state and releases the
 // path's Operation lock, so the next td cp resumes and sends only the parts
 // that were never confirmed.
@@ -118,9 +118,13 @@ func TestE2EInterruptedCpResumes(t *testing.T) {
 	lines, code, took := interruptAndWait(t, cmd, sc)
 	assertCancelled(t, lines, code, took, stderr.String())
 
-	cancelled := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "failed")
-	if len(cancelled) != 1 || cancelled[0]["error_code"] != "ERR_CANCELLED" {
-		t.Fatalf("failed transfers after SIGINT = %v, want the cp ended with ERR_CANCELLED", cancelled)
+	cancelled := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "cancelled")
+	if len(cancelled) != 1 || cancelled[0]["finished_at"] == nil || cancelled[0]["error_code"] != nil {
+		t.Fatalf("cancelled transfers after SIGINT = %v, want the one cp ended cancelled without an error", cancelled)
+	}
+	failed := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "failed")
+	if len(failed) != 0 {
+		t.Fatalf("failed transfers after SIGINT = %v, want none: Ctrl-C cancels, it does not fail", failed)
 	}
 
 	status := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "status")
@@ -189,10 +193,10 @@ func TestE2EInterruptedRecursiveGet(t *testing.T) {
 	lines, code, took := interruptAndWait(t, cmd, sc)
 	assertCancelled(t, lines, code, took, stderr.String())
 
-	cancelled := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "failed")
+	cancelled := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "cancelled")
 	tr := findTransfer(t, cancelled, "recursive_download")
-	if tr["error_code"] != "ERR_CANCELLED" || tr["finished_at"] == nil {
-		t.Fatalf("transfer after SIGINT = %v, want the recursive download failed with ERR_CANCELLED", tr)
+	if tr["finished_at"] == nil || tr["error_code"] != nil {
+		t.Fatalf("transfer after SIGINT = %v, want the recursive download cancelled without an error", tr)
 	}
 
 	entries, err := os.ReadDir(out)
