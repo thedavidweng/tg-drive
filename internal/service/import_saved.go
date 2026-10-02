@@ -68,6 +68,9 @@ type ImportSavedOptions struct {
 	// NoDedupe uploads even when the content hash already exists in the tree.
 	NoDedupe bool
 	DryRun   bool
+	// Confirm is the ADR 0003 confirmation an import requires unless it is
+	// a dry run. DeleteSource requires it even then.
+	Confirm bool
 	// ContinueErr keeps the batch going after a per-item failure.
 	ContinueErr bool
 	// PhotoPrompt is consulted when the plan holds photos and PhotosAs was
@@ -76,6 +79,21 @@ type ImportSavedOptions struct {
 	PhotoPrompt func(photoCount int) (string, error)
 	// Emit optionally receives per-item progress events.
 	Emit func(event string, payload any)
+}
+
+// Validate rejects an unconfirmed import, and an unconfirmed DeleteSource
+// even on a dry run. ImportSaved applies it; front ends may call it before
+// opening anything so the gate fails fast.
+func (o ImportSavedOptions) Validate() error {
+	if !o.DryRun && !o.Confirm {
+		return apperr.New(apperr.ErrConfirmationRequired,
+			"importing saved messages republishes content and requires --confirm (or --dry-run)")
+	}
+	if o.DeleteSource && !o.Confirm {
+		return apperr.New(apperr.ErrConfirmationRequired,
+			"--delete-source deletes saved originals and requires --confirm")
+	}
+	return nil
 }
 
 // ImportSavedItem is one saved message in the plan or the result.
@@ -157,6 +175,9 @@ func (a *App) ImportSaved(ctx context.Context, opts ImportSavedOptions) (*Import
 	default:
 		return nil, apperr.New(apperr.ErrUsage,
 			fmt.Sprintf("unknown --photos-as value %q (want document or photo)", opts.PhotosAs))
+	}
+	if err := opts.Validate(); err != nil {
+		return nil, err
 	}
 	if opts.Policy == "" {
 		opts.Policy = ConflictFail

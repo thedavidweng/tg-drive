@@ -102,7 +102,7 @@ func TestUploadObserverMultiFile(t *testing.T) {
 	a := writeSized(t, dir, "a.bin", 10)
 	b := writeSized(t, dir, "b.bin", 20)
 	c := writeSized(t, dir, "c.bin", 30)
-	if _, err := app.UploadFile(ctx, b, "/multi/b.bin", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, b, "/multi/b.bin", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	var got observed
@@ -146,7 +146,7 @@ func TestUploadObserverRecursive(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := writeSized(t, filepath.Join(tree, "sub"), "c.bin", 30)
-	if _, err := app.UploadFile(ctx, c, "/rec/sub/c.bin", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, c, "/rec/sub/c.bin", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 

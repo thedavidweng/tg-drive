@@ -93,13 +93,13 @@ func TestTwoFilesSameDirectory(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "hello")
-	if _, err := app.UploadFile(ctx, local, "/Pictures/a.jpg", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/Pictures/a.jpg", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	if _, err := app.UploadFile(ctx, local, "/Pictures/b.jpg", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/Pictures/b.jpg", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatalf("second upload into same dir: %v", err)
 	}
-	if _, err := app.UploadFile(ctx, local, "/Pictures/sub/c.jpg", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/Pictures/sub/c.jpg", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatalf("nested upload: %v", err)
 	}
 }
@@ -109,11 +109,11 @@ func TestReplaceFailureKeepsOldActive(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "v1")
-	if _, err := app.UploadFile(ctx, local, "/keep.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/keep.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tg.SetFailUpload(true)
-	if _, err := app.UploadFile(ctx, local, "/keep.txt", ConflictReplace, false); err == nil {
+	if _, err := app.UploadFile(ctx, local, "/keep.txt", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err == nil {
 		t.Fatal("expected replace upload to fail")
 	}
 	tg.SetFailUpload(false)
@@ -135,11 +135,11 @@ func TestReplaceSupersedesOldRow(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "v1")
-	if _, err := app.UploadFile(ctx, local, "/sup.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/sup.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(local, []byte("v2"), 0o644)
-	if _, err := app.UploadFile(ctx, local, "/sup.txt", ConflictReplace, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/sup.txt", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatal(err)
 	}
 	var superseded, active int
@@ -157,7 +157,7 @@ func TestManifestReplyFailureRollsBack(t *testing.T) {
 	local := writeLocal(t, "payload")
 	remote := deepPath("f.bin")
 	tg.SetFailReply(true)
-	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false); err == nil {
+	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{}); err == nil {
 		t.Fatal("expected upload to fail")
 	}
 	if got := fileStatus(t, app, remote); got != "" {
@@ -177,13 +177,22 @@ func TestManifestReplyFailureRecordsOrphan(t *testing.T) {
 	remote := deepPath("g.bin")
 	tg.SetFailReply(true)
 	tg.SetFailDelete(true)
-	_, err := app.UploadFile(ctx, local, remote, ConflictFail, false)
+	_, err := app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrOrphanedUpload {
 		t.Fatalf("code = %s, want ERR_ORPHANED_UPLOAD", code)
 	}
 	if got := fileStatus(t, app, remote); got != "orphaned" {
 		t.Fatalf("status = %q, want orphaned", got)
 	}
+}
+
+// runOrphanRepair runs an Orphaned-mode repair and unwraps its result.
+func runOrphanRepair(ctx context.Context, app *App, opts RepairOptions) (*RepairOrphanedResult, error) {
+	res, err := app.Repair(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return res.(*RepairOrphanedResult), nil
 }
 
 func TestRepairOrphanedCompletesUpload(t *testing.T) {
@@ -194,10 +203,10 @@ func TestRepairOrphanedCompletesUpload(t *testing.T) {
 	remote := deepPath("h.bin")
 	tg.SetFailReply(true)
 	tg.SetFailDelete(true)
-	_, _ = app.UploadFile(ctx, local, remote, ConflictFail, false)
+	_, _ = app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{})
 	tg.SetFailReply(false)
 	tg.SetFailDelete(false)
-	res, err := app.RepairOrphaned(ctx, false)
+	res, err := runOrphanRepair(ctx, app, RepairOptions{Orphaned: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,10 +235,10 @@ func TestRepairOrphanedDeleteOrphans(t *testing.T) {
 	remote := deepPath("i.bin")
 	tg.SetFailReply(true)
 	tg.SetFailDelete(true)
-	_, _ = app.UploadFile(ctx, local, remote, ConflictFail, false)
+	_, _ = app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{})
 	tg.SetFailReply(false)
 	tg.SetFailDelete(false)
-	res, err := app.RepairOrphaned(ctx, true)
+	res, err := runOrphanRepair(ctx, app, RepairOptions{Orphaned: true, DeleteOrphaned: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,10 +257,10 @@ func TestTombstoneModeRedactsBoth(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "payload")
 	remote := deepPath("t.bin")
-	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	res, err := app.DeleteFile(ctx, remote, DeleteOptions{Tombstone: true})
+	res, err := app.DeleteFile(ctx, remote, DeleteOptions{Tombstone: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,11 +296,11 @@ func TestDeletePermissionDenied(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/perm.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/perm.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tg.SetDenyPermissions(true)
-	_, err := app.DeleteFile(ctx, "/perm.txt", DeleteOptions{})
+	_, err := app.DeleteFile(ctx, "/perm.txt", DeleteOptions{Confirm: true})
 	if code := appErrCode(t, err); code != apperr.ErrChannelPermission {
 		t.Fatalf("code = %s, want ERR_CHANNEL_PERMISSION", code)
 	}
@@ -306,14 +315,14 @@ func TestMoveNotEditable(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/ne.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/ne.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	var msgID int
 	_ = app.DB.Raw().QueryRow(`select message_id from files where canonical_path='/ne.txt' and status='active'`).Scan(&msgID)
 	tgChID, _ := app.tgChannelID(ctx)
 	tg.SetNotEditable(tgChID, msgID, true)
-	err := app.MoveFile(ctx, "/ne.txt", "/ne2.txt")
+	err := app.MoveFile(ctx, "/ne.txt", "/ne2.txt", MoveOptions{Confirm: true})
 	if code := appErrCode(t, err); code != apperr.ErrMessageNotEditable {
 		t.Fatalf("code = %s, want ERR_MESSAGE_NOT_EDITABLE", code)
 	}
@@ -327,9 +336,9 @@ func TestMoveIntoExistingDirectory(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	_, _ = app.UploadFile(ctx, local, "/Archive/existing.txt", ConflictFail, false)
-	_, _ = app.UploadFile(ctx, local, "/a.jpg", ConflictFail, false)
-	if err := app.MoveFile(ctx, "/a.jpg", "/Archive"); err != nil {
+	_, _ = app.UploadFile(ctx, local, "/Archive/existing.txt", ConflictFail, false, UploadOptions{})
+	_, _ = app.UploadFile(ctx, local, "/a.jpg", ConflictFail, false, UploadOptions{})
+	if err := app.MoveFile(ctx, "/a.jpg", "/Archive", MoveOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	if got := fileStatus(t, app, "/Archive/a.jpg"); got != "active" {
@@ -342,9 +351,9 @@ func TestMoveDestinationExists(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	_, _ = app.UploadFile(ctx, local, "/m1.txt", ConflictFail, false)
-	_, _ = app.UploadFile(ctx, local, "/m2.txt", ConflictFail, false)
-	err := app.MoveFile(ctx, "/m1.txt", "/m2.txt")
+	_, _ = app.UploadFile(ctx, local, "/m1.txt", ConflictFail, false, UploadOptions{})
+	_, _ = app.UploadFile(ctx, local, "/m2.txt", ConflictFail, false, UploadOptions{})
+	err := app.MoveFile(ctx, "/m1.txt", "/m2.txt", MoveOptions{Confirm: true})
 	if code := appErrCode(t, err); code != apperr.ErrPathExists {
 		t.Fatalf("code = %s, want ERR_PATH_EXISTS", code)
 	}
@@ -355,11 +364,11 @@ func TestMoveDeepPathCreatesManifestReply(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/shallow.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/shallow.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	deep := deepPath("moved.txt")
-	if err := app.MoveFile(ctx, "/shallow.txt", deep); err != nil {
+	if err := app.MoveFile(ctx, "/shallow.txt", deep, MoveOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	var manifestID int
@@ -375,7 +384,7 @@ func TestFileTooLarge(t *testing.T) {
 	ctx := context.Background()
 	app.cachedLimit = 3
 	local := writeLocal(t, "way too big")
-	_, err := app.UploadFile(ctx, local, "/big.bin", ConflictFail, false)
+	_, err := app.UploadFile(ctx, local, "/big.bin", ConflictFail, false, UploadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrFileTooLarge {
 		t.Fatalf("code = %s, want ERR_FILE_TOO_LARGE", code)
 	}
@@ -392,7 +401,7 @@ func TestConcurrentSamePathUpload(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, errs[i] = app.UploadFile(ctx, local, "/race.txt", ConflictFail, false)
+			_, errs[i] = app.UploadFile(ctx, local, "/race.txt", ConflictFail, false, UploadOptions{})
 		}(i)
 	}
 	wg.Wait()
@@ -425,7 +434,7 @@ func TestScanRebuildFromEmptyDB(t *testing.T) {
 		"/a_b/c.txt",
 	}
 	for _, p := range paths {
-		if _, err := app.UploadFile(ctx, local, p, ConflictFail, false); err != nil {
+		if _, err := app.UploadFile(ctx, local, p, ConflictFail, false, UploadOptions{}); err != nil {
 			t.Fatalf("upload %s: %v", p, err)
 		}
 	}
@@ -502,10 +511,10 @@ func TestScanIncludeDeletedRecordsTombstone(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/tomb.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/tomb.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.DeleteFile(ctx, "/tomb.txt", DeleteOptions{Tombstone: true}); err != nil {
+	if _, err := app.DeleteFile(ctx, "/tomb.txt", DeleteOptions{Tombstone: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate DB loss, then rescan with tombstones included.
@@ -527,7 +536,7 @@ func TestDownloadConflictFlags(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "remote-content")
-	if _, err := app.UploadFile(ctx, local, "/dl.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/dl.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	destDir := t.TempDir()
@@ -570,7 +579,7 @@ func TestUploadPermissionDeniedCleansPending(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "x")
 	tg.SetDenyPermissions(true)
-	_, err := app.UploadFile(ctx, local, "/denied.txt", ConflictFail, false)
+	_, err := app.UploadFile(ctx, local, "/denied.txt", ConflictFail, false, UploadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrChannelPermission {
 		t.Fatalf("code = %s, want ERR_CHANNEL_PERMISSION", code)
 	}
@@ -656,10 +665,10 @@ func TestAutoRenameCompoundExtension(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/archive.tar.gz", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/archive.tar.gz", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, local, "/archive.tar.gz", ConflictRename, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/archive.tar.gz", ConflictRename, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := fileStatus(t, app, "/archive (1).tar.gz"); got != "active" {
@@ -672,8 +681,8 @@ func TestDirectoryDeleteUnsupported(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	_, _ = app.UploadFile(ctx, local, "/dir/f.txt", ConflictFail, false)
-	_, err := app.DeleteFile(ctx, "/dir", DeleteOptions{})
+	_, _ = app.UploadFile(ctx, local, "/dir/f.txt", ConflictFail, false, UploadOptions{})
+	_, err := app.DeleteFile(ctx, "/dir", DeleteOptions{Confirm: true})
 	if code := appErrCode(t, err); code != apperr.ErrDirectoryDeleteUnsupported {
 		t.Fatalf("code = %s, want ERR_DIRECTORY_DELETE_UNSUPPORTED", code)
 	}
@@ -684,8 +693,8 @@ func TestDirectoryMoveUnsupportedIntegration(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	_, _ = app.UploadFile(ctx, local, "/dirmv/f.txt", ConflictFail, false)
-	err := app.MoveFile(ctx, "/dirmv", "/dirmv2")
+	_, _ = app.UploadFile(ctx, local, "/dirmv/f.txt", ConflictFail, false, UploadOptions{})
+	err := app.MoveFile(ctx, "/dirmv", "/dirmv2", MoveOptions{Confirm: true})
 	if code := appErrCode(t, err); code != apperr.ErrDirectoryMoveUnsupported {
 		t.Fatalf("code = %s, want ERR_DIRECTORY_MOVE_UNSUPPORTED", code)
 	}
@@ -696,11 +705,11 @@ func TestFullScanAfterReplace(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "v1")
-	if _, err := app.UploadFile(ctx, local, "/rescan.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/rescan.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(local, []byte("v2"), 0o644)
-	if _, err := app.UploadFile(ctx, local, "/rescan.txt", ConflictReplace, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/rescan.txt", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatal(err)
 	}
 	// Full scan must survive the lingering superseded row.
@@ -718,13 +727,13 @@ func TestFullScanAfterDeleteAndReupload(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "v1")
-	if _, err := app.UploadFile(ctx, local, "/cycle.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/cycle.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.DeleteFile(ctx, "/cycle.txt", DeleteOptions{Tombstone: true}); err != nil {
+	if _, err := app.DeleteFile(ctx, "/cycle.txt", DeleteOptions{Tombstone: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, local, "/cycle.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/cycle.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.Scan(ctx, ScanOptions{Full: true}); err != nil {
@@ -741,11 +750,11 @@ func TestReplaceTombstoneModeRedactsOldMessage(t *testing.T) {
 	app.Cfg.Delete.Mode = "tombstone"
 	ctx := context.Background()
 	local := writeLocal(t, "SECRET-ORIGINAL")
-	if _, err := app.UploadFile(ctx, local, "/leak.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/leak.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(local, []byte("NEW"), 0o644)
-	if _, err := app.UploadFile(ctx, local, "/leak.txt", ConflictReplace, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/leak.txt", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatal(err)
 	}
 	tgChID, _ := app.tgChannelID(ctx)
@@ -775,10 +784,10 @@ func TestUploadOntoDirectoryKeepsBasename(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/repdir/f.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/repdir/f.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := app.UploadFile(ctx, local, "/repdir", ConflictFail, false)
+	data, err := app.UploadFile(ctx, local, "/repdir", ConflictFail, false, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -794,10 +803,10 @@ func TestListDirEscapesLikeWildcards(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "x")
 	// /a_b must not match /aXb children via the LIKE '_' wildcard.
-	if _, err := app.UploadFile(ctx, local, "/a_b/inside.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/a_b/inside.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, local, "/aXb/other.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/aXb/other.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := app.ListDir(ctx, "/a_b")
@@ -820,7 +829,7 @@ func TestMoveCaptionFailureRestoresManifest(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "x")
 	src := deepPath("orig.bin")
-	if _, err := app.UploadFile(ctx, local, src, ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, src, ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	var msgID, manifestID int
@@ -831,7 +840,7 @@ func TestMoveCaptionFailureRestoresManifest(t *testing.T) {
 	tgChID, _ := app.tgChannelID(ctx)
 	tg.SetNotEditable(tgChID, msgID, true)
 	dst := deepPath("moved.bin")
-	if err := app.MoveFile(ctx, src, dst); err == nil {
+	if err := app.MoveFile(ctx, src, dst, MoveOptions{Confirm: true}); err == nil {
 		t.Fatal("expected move to fail")
 	}
 	// The manifest comment must still encode the OLD path so a rescan does
@@ -852,8 +861,8 @@ func TestDirectoryGCAfterDelete(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	_, _ = app.UploadFile(ctx, local, "/gc/only.txt", ConflictFail, false)
-	if _, err := app.DeleteFile(ctx, "/gc/only.txt", DeleteOptions{}); err != nil {
+	_, _ = app.UploadFile(ctx, local, "/gc/only.txt", ConflictFail, false, UploadOptions{})
+	if _, err := app.DeleteFile(ctx, "/gc/only.txt", DeleteOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	var nodes int
@@ -908,7 +917,7 @@ func TestIndexFailureAfterUploadDeletesMedia(t *testing.T) {
 	ctx := context.Background()
 	app.Index = failIndex{err: errors.New("index boom")}
 	local := writeLocal(t, "payload")
-	_, err := app.UploadFile(ctx, local, "/plain.txt", ConflictFail, false)
+	_, err := app.UploadFile(ctx, local, "/plain.txt", ConflictFail, false, UploadOptions{})
 	if err == nil {
 		t.Fatal("expected index failure")
 	}
@@ -939,7 +948,7 @@ func TestIndexFailureAfterUploadOrphansWhenDeleteFails(t *testing.T) {
 	app.Index = failIndex{err: errors.New("index boom")}
 	tg.SetFailDelete(true)
 	local := writeLocal(t, "payload")
-	_, err := app.UploadFile(ctx, local, "/stuck.txt", ConflictFail, false)
+	_, err := app.UploadFile(ctx, local, "/stuck.txt", ConflictFail, false, UploadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrOrphanedUpload {
 		t.Fatalf("code = %s, want ERR_ORPHANED_UPLOAD", code)
 	}
@@ -1009,11 +1018,11 @@ func TestDeleteCommitsWhenManifestFails(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "payload")
 	remote := deepPath("del.bin")
-	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tg.SetFailDeleteAfterFirst(true)
-	_, err := app.DeleteFile(ctx, remote, DeleteOptions{})
+	_, err := app.DeleteFile(ctx, remote, DeleteOptions{Confirm: true})
 	if err == nil {
 		t.Fatal("expected stale-manifest error after media delete")
 	}
@@ -1028,13 +1037,13 @@ func TestTombstoneCommitsWhenManifestEditFails(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "payload")
 	remote := deepPath("tomb.bin")
-	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tg.SetFailEditText(true)
 	// The comment edit fails, but the caption tombstone fallback makes the
 	// delete succeed and keeps deletion sticky across scans (ADR 0018).
-	if _, err := app.DeleteFile(ctx, remote, DeleteOptions{Tombstone: true}); err != nil {
+	if _, err := app.DeleteFile(ctx, remote, DeleteOptions{Tombstone: true, Confirm: true}); err != nil {
 		t.Fatalf("tombstone delete with caption fallback: %v", err)
 	}
 	if got := fileStatus(t, app, remote); got != "deleted" {
@@ -1056,7 +1065,7 @@ func TestDeleteAlreadyGoneMessageMarksDeleted(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "payload")
-	if _, err := app.UploadFile(ctx, local, "/gone.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/gone.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tgChID, _ := app.tgChannelID(ctx)
@@ -1067,7 +1076,7 @@ func TestDeleteAlreadyGoneMessageMarksDeleted(t *testing.T) {
 	if err := tg.DeleteMessage(ctx, tgChID, msgID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.DeleteFile(ctx, "/gone.txt", DeleteOptions{}); err != nil {
+	if _, err := app.DeleteFile(ctx, "/gone.txt", DeleteOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	if got := fileStatus(t, app, "/gone.txt"); got != "deleted" {
@@ -1098,7 +1107,7 @@ func TestShareUsesDeepestTag(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "hello")
-	if _, err := app.UploadFile(ctx, local, "/Pictures/2024/beach.jpg", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/Pictures/2024/beach.jpg", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	res, err := app.Share(ctx, "/Pictures/2024/beach.jpg")
@@ -1133,10 +1142,10 @@ func TestRecursiveGetContinueOnErrorReportsFailures(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "ok")
-	if _, err := app.UploadFile(ctx, local, "/tree/ok.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/tree/ok.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, local, "/tree/missing.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/tree/missing.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tgChID, _ := app.tgChannelID(ctx)

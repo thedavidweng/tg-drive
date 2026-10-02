@@ -102,15 +102,15 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				}
 				return r.Success(plan)
 			}
-			if replace && !confirm {
-				return r.Error(apperr.New(apperr.ErrConfirmationRequired, "replacing an existing remote file requires --confirm"))
+			opts := service.UploadOptions{ConfirmReplace: confirm}
+			if err := opts.Validate(policy); err != nil {
+				return r.Error(err)
 			}
 			app, cleanup, err := rt.OpenApp(cmd)
 			if err != nil {
 				return r.Error(err)
 			}
 			defer cleanup()
-			var opts service.UploadOptions
 			if cmd.Flags().Changed("upload-threads") {
 				opts.Threads = uploadThreads
 			}
@@ -282,15 +282,16 @@ func NewMvCmd(rt Runtime) *cobra.Command {
 			if dryRun {
 				return r.Success(map[string]any{"would_move": args[0], "to": args[1]})
 			}
-			if !confirm {
-				return r.Error(apperr.New(apperr.ErrConfirmationRequired, "moving a remote file requires --confirm"))
+			opts := service.MoveOptions{Confirm: confirm}
+			if err := opts.Validate(); err != nil {
+				return r.Error(err)
 			}
 			app, cleanup, err := rt.OpenApp(cmd)
 			if err != nil {
 				return r.Error(err)
 			}
 			defer cleanup()
-			if err := app.MoveFile(context.Background(), args[0], args[1]); err != nil {
+			if err := app.MoveFile(context.Background(), args[0], args[1], opts); err != nil {
 				return r.Error(err)
 			}
 			if !rt.JSON() {
@@ -315,18 +316,20 @@ func NewRmCmd(rt Runtime) *cobra.Command {
 			if dryRun {
 				return r.Success(map[string]any{"would_delete": args[0], "tombstone": tombstone})
 			}
-			if !confirm {
-				return r.Error(apperr.New(apperr.ErrConfirmationRequired, "deleting a remote file requires --confirm"))
+			opts := service.DeleteOptions{
+				Tombstone:          tombstone,
+				AllowStaleManifest: allowStaleManifest,
+				Confirm:            confirm,
+			}
+			if err := opts.Validate(); err != nil {
+				return r.Error(err)
 			}
 			app, cleanup, err := rt.OpenApp(cmd)
 			if err != nil {
 				return r.Error(err)
 			}
 			defer cleanup()
-			data, err := app.DeleteFile(context.Background(), args[0], service.DeleteOptions{
-				Tombstone:          tombstone,
-				AllowStaleManifest: allowStaleManifest,
-			})
+			data, err := app.DeleteFile(context.Background(), args[0], opts)
 			if err != nil {
 				return r.Error(err)
 			}

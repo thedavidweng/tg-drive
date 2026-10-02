@@ -44,7 +44,7 @@ func TestAdoptRewriteCaptionsHonorsPathLocks(t *testing.T) {
 			ID: 80, Kind: telegram.KindDocument, MIME: "video/mp4",
 			FileName: "clip.mp4", FileSize: 4, Data: []byte("abcd"),
 		})
-		if _, err := app.Adopt(ctx, AdoptOptions{MessageID: 80, Dest: "/videos/clip.mp4", NoHash: true}); err != nil {
+		if _, err := app.Adopt(ctx, AdoptOptions{MessageID: 80, Dest: "/videos/clip.mp4", NoHash: true, Confirm: true}); err != nil {
 			t.Fatal(err)
 		}
 		legacy := "clip.mp4\nvideos/\n\ntd:v1 p=x n=y\n#td_videos_xx"
@@ -53,7 +53,7 @@ func TestAdoptRewriteCaptionsHonorsPathLocks(t *testing.T) {
 		}
 		holdForeignLock(t, app, ctx, "/videos/clip.mp4")
 
-		_, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true})
+		_, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true, Confirm: true})
 		wantOperationLocked(t, err)
 		got, _ := tg.GetMessage(ctx, tgChID, 80)
 		if got.Caption != legacy {
@@ -73,14 +73,14 @@ func TestAdoptRewriteCaptionsHonorsPathLocks(t *testing.T) {
 				Caption: caption, GroupedID: 9,
 			})
 		}
-		if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true}); err != nil {
+		if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true}); err != nil {
 			t.Fatal(err)
 		}
 		rt := 301
 		tg.AddMessage(tgChID, telegram.Message{ID: 400, Text: "td-manifest:v1 p=x", ReplyTo: &rt})
 		holdForeignLock(t, app, ctx, "/videos/b.mp4")
 
-		_, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true})
+		_, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true, Confirm: true})
 		wantOperationLocked(t, err)
 		if _, err := tg.GetMessage(ctx, tgChID, 400); err != nil {
 			t.Fatalf("manifest reply of a locked path deleted: %v", err)

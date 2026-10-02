@@ -191,7 +191,7 @@ func TestImportSavedTextWritesNoteBytes(t *testing.T) {
 		Forward: savedOriginHeader(),
 	})
 
-	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument})
+	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestImportSavedRepublishesWithProvenance(t *testing.T) {
 	ctx := context.Background()
 	seedSavedVideo(tg, 301, "第一次去北海道", []byte("video-bytes"))
 
-	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument})
+	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestImportSavedAlbumStaysAnAlbum(t *testing.T) {
 	}
 	tg.SeedSavedAlbum(members, 9001, savedOriginHeader(), 0, "", "album caption")
 
-	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument})
+	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestImportSavedDedupeRecordsSkippedCaption(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeNamedLocal(t, "shared.bin")
-	if _, err := app.UploadFile(ctx, local, "/shared.bin", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/shared.bin", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tg.AddSavedMessage(telegram.Message{
@@ -360,7 +360,7 @@ func TestImportSavedDedupeRecordsSkippedCaption(t *testing.T) {
 		Caption: "the caption only the saved copy has", Forward: savedOriginHeader(),
 	})
 
-	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument})
+	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestImportSavedMergeCaptions(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeNamedLocal(t, "shared.bin")
-	up, err := app.UploadFile(ctx, local, "/shared.bin", ConflictFail, false)
+	up, err := app.UploadFile(ctx, local, "/shared.bin", ConflictFail, false, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestImportSavedMergeCaptions(t *testing.T) {
 		MIME: "application/octet-stream", FileSize: 20, Data: []byte("content of shared.bin"),
 		Caption: "richer text", Forward: savedOriginHeader(),
 	})
-	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, MergeCaptions: true})
+	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, MergeCaptions: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestImportSavedMergeCaptions(t *testing.T) {
 		MIME: "application/octet-stream", FileSize: 20, Data: []byte("content of shared.bin"),
 		Caption: "another angle", Forward: savedOriginHeader(),
 	})
-	res, err = app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, MergeCaptions: true, ContinueErr: true})
+	res, err = app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, MergeCaptions: true, ContinueErr: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,14 +463,14 @@ func TestImportSavedIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	seedSavedVideo(tg, 701, "same clip", []byte("video-bytes"))
 
-	first, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument})
+	first, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Imported != 1 {
 		t.Fatalf("first run = %+v", first)
 	}
-	second, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument})
+	second, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestImportSavedDeleteSource(t *testing.T) {
 	ctx := context.Background()
 	seedSavedVideo(tg, 801, "clip", []byte("video-bytes"))
 	local := writeNamedLocal(t, "shared.bin")
-	if _, err := app.UploadFile(ctx, local, "/shared.bin", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/shared.bin", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tg.AddSavedMessage(telegram.Message{
@@ -506,7 +506,7 @@ func TestImportSavedDeleteSource(t *testing.T) {
 		Caption: "dupe caption", Forward: savedOriginHeader(),
 	})
 
-	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, DeleteSource: true})
+	res, err := app.ImportSaved(ctx, ImportSavedOptions{PhotosAs: PhotosAsDocument, DeleteSource: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +531,7 @@ func TestImportSavedKeepsSourcesOfFailures(t *testing.T) {
 	seedSavedVideo(tg, 902, "fine", []byte("video-bytes"))
 
 	res, err := app.ImportSaved(ctx, ImportSavedOptions{
-		PhotosAs: PhotosAsDocument, DeleteSource: true, ContinueErr: true,
+		PhotosAs: PhotosAsDocument, DeleteSource: true, ContinueErr: true, Confirm: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -579,7 +579,7 @@ func TestImportSavedIntoAndConflictPolicy(t *testing.T) {
 	local := writeNamedLocal(t, "clip.mp4")
 	// The sub-chat directory is part of the destination, so the occupant has
 	// to sit exactly where the import would land.
-	if _, err := app.UploadFile(ctx, local, "/media/Trips/clip.mp4", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/media/Trips/clip.mp4", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	seedSavedVideo(tg, 1101, "clip", []byte("different bytes"))
@@ -618,6 +618,7 @@ func TestImportSavedEmitsPerItemEvents(t *testing.T) {
 	var events []string
 	if _, err := app.ImportSaved(ctx, ImportSavedOptions{
 		PhotosAs: PhotosAsDocument,
+		Confirm:  true,
 		Emit:     func(event string, payload any) { events = append(events, event) },
 	}); err != nil {
 		t.Fatal(err)
@@ -651,7 +652,7 @@ func TestImportSavedAlbumLoneMembersReportNewMessageIDs(t *testing.T) {
 				}
 				return out
 			},
-			opts: ImportSavedOptions{PhotosAs: PhotosAsDocument, DeleteSource: true},
+			opts: ImportSavedOptions{PhotosAs: PhotosAsDocument, DeleteSource: true, Confirm: true},
 		},
 		{
 			name: "split off by kind",
@@ -666,6 +667,7 @@ func TestImportSavedAlbumLoneMembersReportNewMessageIDs(t *testing.T) {
 			// document share one planned unit and only the pipeline splits it.
 			opts: ImportSavedOptions{
 				DeleteSource: true,
+				Confirm:      true,
 				PhotoPrompt:  func(int) (string, error) { return PhotosAsPhoto, nil },
 			},
 		},

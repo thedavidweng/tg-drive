@@ -45,7 +45,7 @@ func TestRepairHashBackfillsSingleAndAlbum(t *testing.T) {
 	if err := os.WriteFile(single, singleContent, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, single, "/backfill/solo.bin", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, single, "/backfill/solo.bin", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	locals := writeLocals(t, 3)
@@ -128,10 +128,10 @@ func TestRepairHashPathScopeAndSkip(t *testing.T) {
 	ctx := context.Background()
 	in := writeLocal(t, "in scope")
 	out := writeLocal(t, "out of scope")
-	if _, err := app.UploadFile(ctx, in, "/scope/in.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, in, "/scope/in.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, out, "/other/out.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, out, "/other/out.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.DB.Raw().Exec(`update files set content_hash='' where canonical_path in ('/scope/in.txt','/other/out.txt')`); err != nil {

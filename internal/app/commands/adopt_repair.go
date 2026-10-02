@@ -32,6 +32,7 @@ func NewAdoptCmd(rt Runtime) *cobra.Command {
 				ContinueErr:     continueOnError,
 				Into:            into,
 				RewriteCaptions: rewriteCaptions,
+				Confirm:         confirm,
 			}
 			if len(args) >= 1 {
 				id, err := strconv.Atoi(args[0])
@@ -46,8 +47,8 @@ func NewAdoptCmd(rt Runtime) *cobra.Command {
 			if opts.MessageID == 0 && !unmanaged && !rewriteCaptions {
 				return r.Error(apperr.New(apperr.ErrUsage, "adopt requires a message-id, --unmanaged, or --rewrite-captions"))
 			}
-			if !dryRun && !confirm {
-				return r.Error(apperr.New(apperr.ErrConfirmationRequired, "adopting existing messages requires --confirm (or --dry-run)"))
+			if err := opts.Validate(); err != nil {
+				return r.Error(err)
 			}
 			app, cleanup, err := rt.OpenApp(cmd)
 			if err != nil {
@@ -99,51 +100,29 @@ func NewRepairCmd(rt Runtime) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			modes := 0
-			for _, selected := range []bool{pending, orphaned, scanErrors, hash, captions} {
-				if selected {
-					modes++
-				}
+			opts := service.RepairOptions{
+				Pending:         pending,
+				Orphaned:        orphaned,
+				ScanErrors:      scanErrors,
+				Hash:            hash,
+				Captions:        captions,
+				DeleteOrphaned:  deleteOrphans,
+				Confirm:         confirm,
+				DryRun:          dryRun,
+				ContinueOnError: continueOnError,
 			}
-			if modes > 1 {
-				return r.Error(apperr.New(apperr.ErrUsage, "repair modes are mutually exclusive"))
+			if len(args) == 1 {
+				opts.Path = args[0]
 			}
-			if deleteOrphans && !orphaned {
-				return r.Error(apperr.New(apperr.ErrUsage, "--delete-orphaned requires --orphaned"))
-			}
-			if deleteOrphans && !confirm {
-				return r.Error(apperr.New(apperr.ErrConfirmationRequired, "deleting orphaned Telegram messages requires --confirm"))
-			}
-			if (dryRun || continueOnError) && !captions {
-				return r.Error(apperr.New(apperr.ErrUsage, "--dry-run and --continue-on-error require --captions"))
+			if err := opts.Validate(); err != nil {
+				return r.Error(err)
 			}
 			app, cleanup, err := rt.OpenApp(cmd)
 			if err != nil {
 				return r.Error(err)
 			}
 			defer cleanup()
-			ctx := context.Background()
-			var data any
-			pathArg := ""
-			if len(args) == 1 {
-				pathArg = args[0]
-			}
-			switch {
-			case captions:
-				data, err = app.RepairCaptions(ctx, pathArg, dryRun, continueOnError)
-			case hash:
-				data, err = app.RepairHash(ctx, pathArg)
-			case len(args) == 1:
-				data, err = app.RepairPath(ctx, args[0])
-			case pending:
-				data, err = app.RepairPending(ctx)
-			case orphaned:
-				data, err = app.RepairOrphaned(ctx, deleteOrphans)
-			case scanErrors:
-				data, err = app.RepairScanErrors(ctx)
-			default:
-				data, err = app.RepairPending(ctx)
-			}
+			data, err := app.Repair(context.Background(), opts)
 			if err != nil {
 				return r.Error(err)
 			}

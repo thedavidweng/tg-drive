@@ -31,7 +31,7 @@ func TestRepairCaptionsRemovesModernScaffold(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "caption body")
-	result, err := app.UploadFile(ctx, local, "/stash-browse/832/clip.mp4", ConflictFail, false)
+	result, err := app.UploadFile(ctx, local, "/stash-browse/832/clip.mp4", ConflictFail, false, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestRepairCaptionsSkipsUneditableMessage(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "caption body")
-	result, err := app.UploadFile(ctx, local, "/old/clip.mp4", ConflictFail, false)
+	result, err := app.UploadFile(ctx, local, "/old/clip.mp4", ConflictFail, false, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
