@@ -264,7 +264,14 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			if recursive {
-				data, err := app.DownloadRecursive(cmd.Context(), args[0], args[1], policy, continueOnError, service.DownloadOptions{})
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				handle, err := manager.SubmitRecursiveDownload(cmd.Context(), transfer.RecursiveDownload{
+					Source: args[0], Dest: args[1], Policy: policy, ContinueOnError: continueOnError,
+				})
+				if err != nil {
+					return r.Error(err)
+				}
+				data, err := handle.Wait()
 				if err != nil {
 					return r.Error(err)
 				}

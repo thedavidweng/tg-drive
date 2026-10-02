@@ -266,6 +266,38 @@ func (m *Manager) SubmitDownload(ctx context.Context, req Download) (*Handle[*se
 	})
 }
 
+// RecursiveDownload asks for one remote directory tree to be downloaded, as
+// service.App.DownloadRecursive does. The whole tree is one Transfer whose
+// item counts track the files.
+type RecursiveDownload struct {
+	// Source is the remote directory.
+	Source string
+	// Dest is the local directory as the command was given it.
+	Dest            string
+	Policy          service.ConflictPolicy
+	ContinueOnError bool
+	// Options are the download call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.DownloadOptions
+}
+
+// SubmitRecursiveDownload records the recursive download as a queued
+// Transfer and starts it, under the same ctx contract as SubmitUpload. The
+// listing discovers the files as it runs, so the Transfer's item total
+// grows with each item reported.
+func (m *Manager) SubmitRecursiveDownload(ctx context.Context, req RecursiveDownload) (*Handle[*service.RecursiveDownloadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	options, _ := json.Marshal(downloadOptions{Policy: req.Policy, ContinueOnError: req.ContinueOnError})
+	t := Transfer{
+		Kind: KindRecursiveDownload, Channel: channel, Source: req.Source, Dest: absPath(req.Dest),
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.RecursiveDownloadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		return m.app.DownloadRecursive(ctx, req.Source, req.Dest, req.Policy, req.ContinueOnError, opts)
+	})
+}
+
 // Handle is a Transfer submitted to this process's Manager.
 type Handle[T any] struct {
 	id     string

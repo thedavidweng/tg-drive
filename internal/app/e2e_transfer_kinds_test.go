@@ -128,6 +128,69 @@ func TestE2ERecursiveCpRecordsFailedItems(t *testing.T) {
 	}
 }
 
+// uploadTree uploads a three-file tree (a, b, inner/c) to /tree.
+func uploadTree(t *testing.T, bin, cfgPath, dbPath, statePath, dir string) {
+	t.Helper()
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(filepath.Join(tree, "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e2eLocalFile(t, tree, "a.txt", "a")
+	e2eLocalFile(t, tree, "b.txt", "b")
+	e2eLocalFile(t, filepath.Join(tree, "inner"), "c.txt", "c")
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "cp", "--recursive", tree, "/tree")
+}
+
+// TestE2ERecursiveGetIsATransfer: a recursive td get runs as one
+// recursive_download Transfer whose item counts cover every file in the
+// tree. The command's result output is unchanged.
+func TestE2ERecursiveGetIsATransfer(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+	uploadTree(t, bin, cfgPath, dbPath, statePath, dir)
+
+	out := filepath.Join(dir, "out")
+	dl := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "get", "--recursive", "/tree", out)
+	if dl["downloaded"] != float64(3) || dl["local"] != out || dl["path"] != "/tree" {
+		t.Fatalf("result = %v, want 3 files downloaded to %s", dl, out)
+	}
+
+	done := findTransfer(t, listTransfers(t, bin, cfgPath, dbPath, statePath, "--all"), "recursive_download")
+	if done["stage"] != "completed" || done["items_done"] != float64(3) || done["items_total"] != float64(3) ||
+		done["source"] != "/tree" || done["dest"] != out || done["finished_at"] == nil {
+		t.Fatalf("completed recursive download = %v, want 3/3 items from /tree to %s", done, out)
+	}
+}
+
+// TestE2ERecursiveGetCountsSkipped: a recursive download that skips existing
+// local files completes its Transfer with the skipped items counted done
+// and nothing failed.
+func TestE2ERecursiveGetCountsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+	uploadTree(t, bin, cfgPath, dbPath, statePath, dir)
+
+	out := filepath.Join(dir, "out")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e2eLocalFile(t, out, "a.txt", "already here")
+	dl := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "get", "--recursive", "--skip-existing", "/tree", out)
+	if dl["downloaded"] != float64(2) || dl["skipped"] != float64(1) {
+		t.Fatalf("result = %v, want 2 downloaded and 1 skipped", dl)
+	}
+
+	done := findTransfer(t, listTransfers(t, bin, cfgPath, dbPath, statePath, "--all"), "recursive_download")
+	if done["stage"] != "completed" || done["items_done"] != float64(3) || done["items_total"] != float64(3) ||
+		done["items_failed"] != nil {
+		t.Fatalf("completed recursive download = %v, want 3/3 items done (skip counts) and no failures", done)
+	}
+}
+
 // TestE2EGetIsATransfer: td get runs as a download Transfer: a second
 // process sees it in the downloading stage while it runs, and afterwards the
 // index holds it completed with the downloaded byte count. The command's
