@@ -54,14 +54,15 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
 	go build -tags gui -trimpath -ldflags "-s -w -H windowsgui" \
 	-o "$WORK/td-gui.exe" ./cmd/td-gui
 
-# makensis is a native Windows tool: hand it absolute mixed-style paths
-# (C:/... via cygpath -m where available). Relative paths resolve against
-# a working directory the native process may not share with this shell,
-# and backslashes are escape characters in -D defines.
+# makensis is a native Windows tool and only recognizes absolute paths
+# with a backslash after the drive letter — "D:/a/..." is treated as
+# relative and never found. Hand it cygpath -w form. Backslashes are
+# literal in NSIS File specs and pass through the shell untouched in
+# single-quoted -D values.
 abspath() {
 	# cygpath leaves relative paths relative, so anchor at $PWD first.
 	if command -v cygpath >/dev/null 2>&1; then
-		cygpath -m "$PWD/$1"
+		cygpath -w "$PWD/$1"
 	else
 		echo "$PWD/$1"
 	fi
