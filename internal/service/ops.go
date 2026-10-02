@@ -471,8 +471,26 @@ func autoRenameLocal(ctx context.Context, files ports.FileSystem, path string) s
 	return path
 }
 
+// MoveOptions controls td mv behavior.
+type MoveOptions struct {
+	// Confirm is the ADR 0003 confirmation a move requires.
+	Confirm bool
+}
+
+// Validate rejects an unconfirmed move. MoveFile applies it first; front ends
+// may call it before opening anything so the gate fails fast.
+func (o MoveOptions) Validate() error {
+	if !o.Confirm {
+		return apperr.New(apperr.ErrConfirmationRequired, "moving a remote file requires --confirm")
+	}
+	return nil
+}
+
 // MoveFile moves or renames a remote file within the configured channel.
-func (a *App) MoveFile(ctx context.Context, from, to string) error {
+func (a *App) MoveFile(ctx context.Context, from, to string, opts MoveOptions) error {
+	if err := opts.Validate(); err != nil {
+		return err
+	}
 	src, err := fsmodel.NormalizeCanonicalPath(from)
 	if err != nil {
 		return err
@@ -535,6 +553,17 @@ type DeleteOptions struct {
 	// AllowStaleManifest downgrades a failed manifest redaction/removal to a
 	// warning instead of an error.
 	AllowStaleManifest bool
+	// Confirm is the ADR 0003 confirmation a delete requires.
+	Confirm bool
+}
+
+// Validate rejects an unconfirmed delete. DeleteFile applies it first; front
+// ends may call it before opening anything so the gate fails fast.
+func (o DeleteOptions) Validate() error {
+	if !o.Confirm {
+		return apperr.New(apperr.ErrConfirmationRequired, "deleting a remote file requires --confirm")
+	}
+	return nil
 }
 
 // DeleteResult reports how a file was removed. StaleManifest marks a
@@ -547,6 +576,9 @@ type DeleteResult struct {
 
 // DeleteFile removes a remote file according to the delete policy.
 func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOptions) (*DeleteResult, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
 	p, err := fsmodel.NormalizeCanonicalPath(remotePath)
 	if err != nil {
 		return nil, err
@@ -635,6 +667,9 @@ type RecursiveUploadResult struct {
 // native media groups: each source directory's direct children form one
 // album, split into consecutive groups of MaxMediaGroupMembers (issue #26).
 func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, policy ConflictPolicy, continueOnError, noHash, includeEmptyDirs bool, opts UploadOptions) (*RecursiveUploadResult, error) {
+	if err := opts.Validate(policy); err != nil {
+		return nil, err
+	}
 	if includeEmptyDirs {
 		return nil, apperr.New(apperr.ErrEmptyDirsUnsupported, "empty directories cannot be persisted to Telegram in V1")
 	}

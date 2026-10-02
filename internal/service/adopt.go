@@ -30,6 +30,19 @@ type AdoptOptions struct {
 	DryRun          bool
 	ContinueErr     bool
 	RewriteCaptions bool
+	// Confirm is the ADR 0003 confirmation an adopt that edits Telegram
+	// and the index requires; DryRun needs none.
+	Confirm bool
+}
+
+// Validate rejects an adopt that is neither confirmed nor a dry run. Adopt
+// applies it first; front ends may call it before opening anything so the
+// gate fails fast.
+func (o AdoptOptions) Validate() error {
+	if !o.DryRun && !o.Confirm {
+		return apperr.New(apperr.ErrConfirmationRequired, "adopting existing messages requires --confirm (or --dry-run)")
+	}
+	return nil
 }
 
 // AdoptPlanItem is one message that would be adopted or restored.
@@ -57,6 +70,9 @@ type AdoptResult struct {
 }
 
 func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
 	if opts.RewriteCaptions {
 		return a.rewriteAdoptCaptions(ctx, opts)
 	}

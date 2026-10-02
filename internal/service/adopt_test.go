@@ -59,7 +59,7 @@ func TestAdoptAdoptsVideoPhotoAndText(t *testing.T) {
 	tg.AddMessage(tgChID, telegram.Message{
 		ID: 72, Kind: telegram.KindText, MIME: "text/plain", Text: "shopping list\nmilk",
 	})
-	res, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true})
+	res, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,14 +112,14 @@ func TestRewriteCaptionsRestoresHumanText(t *testing.T) {
 		FileName: "clip.mp4", FileSize: 4, Data: []byte("abcd"),
 		Caption: "https://example.com\n#tag",
 	})
-	if _, err := app.Adopt(ctx, AdoptOptions{MessageID: 80, Dest: "/videos/clip.mp4", NoHash: true}); err != nil {
+	if _, err := app.Adopt(ctx, AdoptOptions{MessageID: 80, Dest: "/videos/clip.mp4", NoHash: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate the old bug: machine metadata overwritten onto the media.
 	if err := tg.EditCaption(ctx, tgChID, 80, "https://example.com\n#tag\n\nclip.mp4\nvideos/\n\ntd:v1 p=x n=y\n#td_videos_xx"); err != nil {
 		t.Fatal(err)
 	}
-	res, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true})
+	res, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestAdoptSkipsManagedAndManifestReply(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/already.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/already.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	res, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, DryRun: true, NoHash: true})
@@ -203,7 +203,7 @@ func TestAdoptLeavesAlbumCaptionAlone(t *testing.T) {
 		FileName: "c.mp4", FileSize: 4, Data: []byte("cccc"),
 		GroupedID: 7,
 	})
-	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true}); err != nil {
+	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := tg.GetMessage(ctx, tgChID, 200)
@@ -253,7 +253,7 @@ func TestRewriteAlbumRestoresGroupCaptionAndDeletesReplies(t *testing.T) {
 		FileName: "c.mp4", FileSize: 4, Data: []byte("cccc"),
 		Caption: "c.mp4", GroupedID: 9,
 	})
-	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true}); err != nil {
+	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	rt := 300
@@ -261,7 +261,7 @@ func TestRewriteAlbumRestoresGroupCaptionAndDeletesReplies(t *testing.T) {
 	rt2 := 301
 	tg.AddMessage(tgChID, telegram.Message{ID: 401, Text: "td-manifest:v1 p=y", ReplyTo: &rt2})
 
-	res, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true})
+	res, err := app.Adopt(ctx, AdoptOptions{RewriteCaptions: true, Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestScanRebuildsAlbumFromReply(t *testing.T) {
 		FileName: "b.mp4", FileSize: 4, Data: []byte("bbbb"),
 		GroupedID: 12,
 	})
-	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true}); err != nil {
+	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	channelID, _, _ := app.channelID(ctx)
@@ -354,10 +354,10 @@ func TestMoveAndDeleteAlbumMemberKeepsGroup(t *testing.T) {
 		FileName: "b.mp4", FileSize: 4, Data: []byte("bbbb"),
 		GroupedID: 15,
 	})
-	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true}); err != nil {
+	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.MoveFile(ctx, "/videos/b.mp4", "/clips/b.mp4"); err != nil {
+	if err := app.MoveFile(ctx, "/videos/b.mp4", "/clips/b.mp4", MoveOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := tg.GetMessage(ctx, tgChID, 700)
@@ -371,7 +371,7 @@ func TestMoveAndDeleteAlbumMemberKeepsGroup(t *testing.T) {
 	if got := fileStatus(t, app, "/clips/b.mp4"); got != "active" {
 		t.Fatalf("moved status=%q", got)
 	}
-	if _, err := app.DeleteFile(ctx, "/videos/a.mp4", DeleteOptions{}); err != nil {
+	if _, err := app.DeleteFile(ctx, "/videos/a.mp4", DeleteOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	var albumComments int
@@ -408,7 +408,7 @@ func TestScanKeepsAdoptedFilesWithoutMetadata(t *testing.T) {
 		FileName: "clip.mp4", FileSize: 4, Data: []byte("data"),
 		Caption: "#tag only",
 	})
-	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true}); err != nil {
+	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.Scan(ctx, ScanOptions{Full: true}); err != nil {

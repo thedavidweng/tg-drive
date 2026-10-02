@@ -38,13 +38,13 @@ func TestTombstoneWinsOverStaleManifestReply(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "payload")
 	remote := deepPath("resurrect.bin")
-	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, remote, ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	// Tombstone delete whose comment edit fails: the caption fallback makes
 	// deletion sticky, so the op succeeds with the caption tombstone.
 	tg.SetFailEditText(true)
-	if _, err := app.DeleteFile(ctx, remote, DeleteOptions{Tombstone: true}); err != nil {
+	if _, err := app.DeleteFile(ctx, remote, DeleteOptions{Tombstone: true, Confirm: true}); err != nil {
 		t.Fatalf("tombstone delete with caption fallback: %v", err)
 	}
 	tg.SetFailEditText(false)
@@ -167,7 +167,7 @@ func TestTruncatedHistoryAbortsScan(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "x")
 	for _, p := range []string{"/one.txt", "/two.txt", "/three.txt"} {
-		if _, err := app.UploadFile(ctx, local, p, ConflictFail, false); err != nil {
+		if _, err := app.UploadFile(ctx, local, p, ConflictFail, false, UploadOptions{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -237,7 +237,7 @@ func TestUploadResumeAdoptsPendingRow(t *testing.T) {
 	content, _ := os.ReadFile(local)
 
 	tg.SetFailUploadAfterParts(4)
-	_, err := app.UploadFile(ctx, local, "/resume.bin", ConflictFail, true)
+	_, err := app.UploadFile(ctx, local, "/resume.bin", ConflictFail, true, UploadOptions{})
 	if err == nil {
 		t.Fatal("expected first upload to fail")
 	}
@@ -257,7 +257,7 @@ func TestUploadResumeAdoptsPendingRow(t *testing.T) {
 
 	// Plain retry: only unconfirmed parts are re-sent.
 	tg.ResetPartSubmissions()
-	data, err := app.UploadFile(ctx, local, "/resume.bin", ConflictFail, true)
+	data, err := app.UploadFile(ctx, local, "/resume.bin", ConflictFail, true, UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestUploadResumeIdentityMismatchBlocks(t *testing.T) {
 
 	local := writeBigLocal(t, 12*1024*1024)
 	tg.SetFailUploadAfterParts(4)
-	_, _ = app.UploadFile(ctx, local, "/mismatch.bin", ConflictFail, true)
+	_, _ = app.UploadFile(ctx, local, "/mismatch.bin", ConflictFail, true, UploadOptions{})
 
 	// Same size, different bytes.
 	other := append([]byte(nil), localMustRead(t, local)...)
@@ -307,12 +307,12 @@ func TestUploadResumeIdentityMismatchBlocks(t *testing.T) {
 	if err := os.WriteFile(otherPath, other, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := app.UploadFile(ctx, otherPath, "/mismatch.bin", ConflictFail, true)
+	_, err := app.UploadFile(ctx, otherPath, "/mismatch.bin", ConflictFail, true, UploadOptions{})
 	if code := appErrCode(t, err); code != "ERR_PATH_EXISTS" {
 		t.Fatalf("code = %s, want ERR_PATH_EXISTS", code)
 	}
 	// --replace supersedes the pending row and completes.
-	if _, err := app.UploadFile(ctx, otherPath, "/mismatch.bin", ConflictReplace, true); err != nil {
+	if _, err := app.UploadFile(ctx, otherPath, "/mismatch.bin", ConflictReplace, true, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatalf("replace after mismatch: %v", err)
 	}
 	if got := fileStatus(t, app, "/mismatch.bin"); got != "active" {
@@ -495,10 +495,10 @@ func TestScanDeterministicSlugRebuild(t *testing.T) {
 	// second segment gets the longer collision-fallback hash. Upload in
 	// reverse lexicographic order so a path-ordered rebuild would swap the
 	// chains — proving the rebuild follows upload (chronological) order.
-	if _, err := app.UploadFile(ctx, local, "/my photos/b.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/my photos/b.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, local, "/My Photos/a.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/My Photos/a.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	tagsBefore := slugChains(t, app)
@@ -573,7 +573,7 @@ func TestFullScanResumesFromCheckpoint(t *testing.T) {
 	const total = scanIndexChunk + 5
 	for i := 0; i < total; i++ {
 		dest := fmt.Sprintf("/bulk/f%03d.txt", i)
-		if _, err := app.UploadFile(ctx, local, dest, ConflictFail, false); err != nil {
+		if _, err := app.UploadFile(ctx, local, dest, ConflictFail, false, UploadOptions{}); err != nil {
 			t.Fatalf("upload %s: %v", dest, err)
 		}
 	}
@@ -623,7 +623,7 @@ func TestIncrementalScanPicksUpNewMessage(t *testing.T) {
 	ctx := context.Background()
 	tgChID, _ := app.tgChannelID(ctx)
 	local := writeLocal(t, "x")
-	if _, err := app.UploadFile(ctx, local, "/base.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, local, "/base.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.Scan(ctx, ScanOptions{Full: true}); err != nil {

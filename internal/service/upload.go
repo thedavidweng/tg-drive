@@ -197,6 +197,19 @@ type UploadOptions struct {
 	// Observer receives this call's stages, byte progress, and per-file
 	// results.
 	Observer Observer
+	// ConfirmReplace is the ADR 0003 confirmation that ConflictReplace
+	// requires.
+	ConfirmReplace bool
+}
+
+// Validate rejects an unconfirmed replace. The upload use cases apply it
+// first; front ends may call it before opening anything so the gate fails
+// fast.
+func (o UploadOptions) Validate(policy ConflictPolicy) error {
+	if policy == ConflictReplace && !o.ConfirmReplace {
+		return apperr.New(apperr.ErrConfirmationRequired, "replacing an existing remote file requires --confirm")
+	}
+	return nil
 }
 
 func (o UploadOptions) threads(cfg config.Config) int {
@@ -217,8 +230,11 @@ func (o UploadOptions) partSizeBytes(cfg config.Config) int {
 }
 
 // UploadFile uploads a single local file as a plain document.
-func (a *App) UploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool) (*UploadResult, error) {
-	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, Presentation{}, "", UploadOptions{})
+func (a *App) UploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, opts UploadOptions) (*UploadResult, error) {
+	if err := opts.Validate(policy); err != nil {
+		return nil, err
+	}
+	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, Presentation{}, "", opts)
 }
 
 // uploadFileWithCaption uploads one file keeping humanCaption above the
@@ -232,6 +248,9 @@ func (a *App) uploadFileWithCaption(ctx context.Context, localPath, remotePath s
 // selects how native Telegram clients render the message. The zero
 // Presentation and UploadOptions behave exactly like UploadFile.
 func (a *App) UploadFileAs(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, opts UploadOptions) (*UploadResult, error) {
+	if err := opts.Validate(policy); err != nil {
+		return nil, err
+	}
 	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, "", opts)
 }
 

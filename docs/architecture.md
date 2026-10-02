@@ -43,6 +43,13 @@ cmd/td
   canonical paths it touches and carries the channel context, which is
   resolved once per use case; nested operations reuse the locks already
   held (ADR 0030).
+- `internal/service` enforces the ADR 0003 confirmation gates and the repair
+  mode rules. Each destructive use case takes a typed confirmation on its
+  options (`MoveOptions`, `DeleteOptions`, `UploadOptions`, `AdoptOptions`,
+  `RepairOptions`, `ImportSavedOptions`) and rejects an unconfirmed call with
+  `ERR_CONFIRMATION_REQUIRED`. The options' `Validate` method is the rule;
+  commands call it before opening the app context so a refused call opens
+  nothing (ADR 0032).
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow

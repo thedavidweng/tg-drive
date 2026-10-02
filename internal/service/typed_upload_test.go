@@ -176,7 +176,7 @@ func TestTypedUploadScanReconstruction(t *testing.T) {
 	}, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.UploadFile(ctx, writeLocal(t, "plain"), "/docs/note.txt", ConflictFail, false); err != nil {
+	if _, err := app.UploadFile(ctx, writeLocal(t, "plain"), "/docs/note.txt", ConflictFail, false, UploadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.UploadFileAs(ctx, writeLocal(t, "pixels"), "/pics/beach.jpg", ConflictFail, false, Presentation{Kind: telegram.KindPhoto}, UploadOptions{}); err != nil {

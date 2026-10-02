@@ -7,28 +7,6 @@ import (
 	"testing"
 )
 
-func TestRepairDeleteOrphanedRequiresConfirm(t *testing.T) {
-	bin := buildBinary(t)
-	cmd := exec.Command(bin, "--json", "repair", "--orphaned", "--delete-orphaned")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err == nil {
-		t.Fatal("expected confirmation error")
-	}
-	exit, ok := err.(*exec.ExitError)
-	if !ok {
-		t.Fatalf("err = %v", err)
-	}
-	if exit.ExitCode() != 10 {
-		t.Fatalf("exit = %d, want 10 (stdout=%s stderr=%s)", exit.ExitCode(), stdout.String(), stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "ERR_CONFIRMATION_REQUIRED") {
-		t.Fatalf("stdout = %s", stdout.String())
-	}
-}
-
 // TestRepairDeleteOrphanedConfirm runs the destructive repair end to end:
 // --confirm must clear the confirmation gate and reach the repair itself.
 func TestRepairDeleteOrphanedConfirm(t *testing.T) {
@@ -151,25 +129,5 @@ func TestE2EImportSavedSurface(t *testing.T) {
 	}
 	if data, ok := events[0]["data"].(map[string]any); !ok || data["source"] != "saved" {
 		t.Fatalf("final import event = %v", events[0])
-	}
-}
-
-// TestAdoptRequiresConfirm gates the renamed claim command.
-func TestAdoptRequiresConfirm(t *testing.T) {
-	bin := buildBinary(t)
-	cmd := exec.Command(bin, "--json", "adopt", "--unmanaged")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	exit, ok := err.(*exec.ExitError)
-	if err == nil || !ok || !exit.Exited() {
-		t.Fatalf("err = %v", err)
-	}
-	if exit.ExitCode() != 10 {
-		t.Fatalf("exit = %d, want 10 (stdout=%s)", exit.ExitCode(), stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "ERR_CONFIRMATION_REQUIRED") {
-		t.Fatalf("stdout = %s", stdout.String())
 	}
 }

@@ -279,7 +279,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	// Pre-flight failure: nothing reaches Telegram, nothing lingers.
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)
-	if _, err := app.UploadFile(ctx, writeLocal(t, "existing"), "/dest/taken.bin", ConflictReplace, false); err != nil {
+	if _, err := app.UploadFile(ctx, writeLocal(t, "existing"), "/dest/taken.bin", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatal(err)
 	}
 	before := len(tg.Messages(mustChannel(t, app)))
@@ -299,7 +299,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	// Skip: the taken name is skipped, the rest uploads.
 	appS, tgS := testApp(t)
 	loginAndInit(t, appS, tgS)
-	if _, err := appS.UploadFile(ctx, writeLocal(t, "existing"), "/dest/taken.bin", ConflictReplace, false); err != nil {
+	if _, err := appS.UploadFile(ctx, writeLocal(t, "existing"), "/dest/taken.bin", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatal(err)
 	}
 	skipData, err := appS.UploadFilesAs(ctx,
@@ -315,7 +315,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	// Rename: collision lands under a candidate name.
 	appR, tgR := testApp(t)
 	loginAndInit(t, appR, tgR)
-	if _, err := appR.UploadFile(ctx, writeLocal(t, "existing"), "/dest/dup.bin", ConflictReplace, false); err != nil {
+	if _, err := appR.UploadFile(ctx, writeLocal(t, "existing"), "/dest/dup.bin", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := appR.UploadFilesAs(ctx,
@@ -330,7 +330,7 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	// Replace is refused without touching Telegram.
 	appW, tgW := testApp(t)
 	loginAndInit(t, appW, tgW)
-	_, repErr := appW.UploadFilesAs(ctx, []string{writeLocal(t, "a"), writeLocal(t, "b")}, "/r/", ConflictReplace, false, Presentation{}, UploadOptions{})
+	_, repErr := appW.UploadFilesAs(ctx, []string{writeLocal(t, "a"), writeLocal(t, "b")}, "/r/", ConflictReplace, false, Presentation{}, UploadOptions{ConfirmReplace: true})
 	if code := appErrCode(t, repErr); code != apperr.ErrUsage {
 		t.Fatalf("replace code = %s, want ERR_USAGE", code)
 	}
@@ -430,7 +430,7 @@ func TestSingleMemberBatchUploadsAlone(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 
-	if _, err := app.UploadFile(ctx, writeLocal(t, "occupied"), "/solo/kept.bin", ConflictReplace, false); err != nil {
+	if _, err := app.UploadFile(ctx, writeLocal(t, "occupied"), "/solo/kept.bin", ConflictReplace, false, UploadOptions{ConfirmReplace: true}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := app.UploadFilesAs(ctx,
@@ -556,7 +556,7 @@ func TestReplaceAlbumMemberKeepsInventory(t *testing.T) {
 
 			tg.SetFailEditText(tc.failEdit)
 			replacement := writeLocal(t, "replacement b")
-			data, err := app.UploadFile(ctx, replacement, "/albums/b.bin", ConflictReplace, false)
+			data, err := app.UploadFile(ctx, replacement, "/albums/b.bin", ConflictReplace, false, UploadOptions{ConfirmReplace: true})
 			if err != nil {
 				t.Fatalf("replace album member: %v", err)
 			}
@@ -662,14 +662,14 @@ func TestMoveAlbumMemberKeepsCommentCarrier(t *testing.T) {
 		t.Fatal("album inventory is not a discussion comment")
 	}
 
-	if err := app.MoveFile(ctx, "/albums/b.bin", "/moved/b.bin"); err != nil {
+	if err := app.MoveFile(ctx, "/albums/b.bin", "/moved/b.bin", MoveOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	if got := chatOf("/moved/b.bin"); got != before {
 		t.Fatalf("moved member manifest chat = %q, want %q", got, before)
 	}
 
-	if _, err := app.DeleteFile(ctx, "/moved/b.bin", DeleteOptions{}); err != nil {
+	if _, err := app.DeleteFile(ctx, "/moved/b.bin", DeleteOptions{Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
 	var inventories []manifest.AlbumMeta

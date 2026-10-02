@@ -141,7 +141,7 @@ func TestAlbumCrashWindowReportsOrphansExactly(t *testing.T) {
 		}
 		tg.SetFailReply(false)
 		tg.SetFailDelete(false)
-		res, err := app.RepairOrphaned(ctx, true)
+		res, err := runOrphanRepair(ctx, app, RepairOptions{Orphaned: true, DeleteOrphaned: true, Confirm: true})
 		if err != nil {
 			t.Fatal(err)
 		}

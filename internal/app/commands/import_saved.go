@@ -64,15 +64,6 @@ func NewImportCmd(rt Runtime) *cobra.Command {
 				return r.Error(apperr.New(apperr.ErrUsage,
 					fmt.Sprintf("unknown --photos-as value %q (want document or photo)", photosAs)))
 			}
-			if !dryRun && !confirm {
-				return r.Error(apperr.New(apperr.ErrConfirmationRequired,
-					"importing saved messages republishes content and requires --confirm (or --dry-run)"))
-			}
-			if deleteSource && !confirm {
-				return r.Error(apperr.New(apperr.ErrConfirmationRequired,
-					"--delete-source deletes saved originals and requires --confirm"))
-			}
-
 			opts := service.ImportSavedOptions{
 				MessageIDs:    ids,
 				Into:          into,
@@ -83,6 +74,10 @@ func NewImportCmd(rt Runtime) *cobra.Command {
 				NoDedupe:      noDedupe,
 				DryRun:        dryRun,
 				ContinueErr:   continueOnError,
+				Confirm:       confirm,
+			}
+			if err := opts.Validate(); err != nil {
+				return r.Error(err)
 			}
 			// A missing photo choice is answered interactively, and stays a
 			// usage error everywhere a human cannot answer: a machine-readable

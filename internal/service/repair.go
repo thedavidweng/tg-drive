@@ -12,6 +12,79 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/core/publisher"
 )
 
+// RepairOptions selects one td repair mode. No selection at all repairs
+// pending uploads.
+type RepairOptions struct {
+	// Path is the path argument, nil when none was given. It scopes Captions
+	// and Hash; otherwise it names the one file to repair and takes
+	// precedence over Pending, Orphaned, and ScanErrors. A given empty path
+	// normalizes to "/" like any other.
+	Path       *string
+	Pending    bool
+	Orphaned   bool
+	ScanErrors bool
+	Hash       bool
+	Captions   bool
+	// DeleteOrphaned deletes orphaned Telegram messages instead of
+	// completing them (Orphaned mode only).
+	DeleteOrphaned bool
+	// Confirm is the ADR 0003 confirmation DeleteOrphaned requires.
+	Confirm bool
+	// DryRun and ContinueOnError apply to Captions mode only.
+	DryRun          bool
+	ContinueOnError bool
+}
+
+// Validate rejects conflicting modes, mode-specific flags outside their mode,
+// and an unconfirmed DeleteOrphaned. Repair applies it first; front ends may
+// call it before opening anything so the gate fails fast.
+func (o RepairOptions) Validate() error {
+	modes := 0
+	for _, selected := range []bool{o.Pending, o.Orphaned, o.ScanErrors, o.Hash, o.Captions} {
+		if selected {
+			modes++
+		}
+	}
+	if modes > 1 {
+		return apperr.New(apperr.ErrUsage, "repair modes are mutually exclusive")
+	}
+	if o.DeleteOrphaned && !o.Orphaned {
+		return apperr.New(apperr.ErrUsage, "--delete-orphaned requires --orphaned")
+	}
+	if o.DeleteOrphaned && !o.Confirm {
+		return apperr.New(apperr.ErrConfirmationRequired, "deleting orphaned Telegram messages requires --confirm")
+	}
+	if (o.DryRun || o.ContinueOnError) && !o.Captions {
+		return apperr.New(apperr.ErrUsage, "--dry-run and --continue-on-error require --captions")
+	}
+	return nil
+}
+
+// Repair runs the repair mode opts selects and returns that mode's result.
+func (a *App) Repair(ctx context.Context, opts RepairOptions) (any, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	path := ""
+	if opts.Path != nil {
+		path = *opts.Path
+	}
+	switch {
+	case opts.Captions:
+		return a.RepairCaptions(ctx, path, opts.DryRun, opts.ContinueOnError)
+	case opts.Hash:
+		return a.RepairHash(ctx, path)
+	case opts.Path != nil:
+		return a.RepairPath(ctx, path)
+	case opts.Orphaned:
+		return a.repairOrphaned(ctx, opts.DeleteOrphaned)
+	case opts.ScanErrors:
+		return a.RepairScanErrors(ctx)
+	default:
+		return a.RepairPending(ctx)
+	}
+}
+
 // RepairPendingResult counts how stale pending rows were resolved.
 type RepairPendingResult struct {
 	Invalid      int   `json:"invalid"`
@@ -107,7 +180,7 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 					skipped++
 					continue
 				}
-				if _, err := a.UploadFile(ctx, r.local.String, r.path, ConflictSkip, false); err == nil {
+				if _, err := a.UploadFile(ctx, r.local.String, r.path, ConflictSkip, false, UploadOptions{}); err == nil {
 					repaired++
 					continue
 				}
@@ -133,9 +206,9 @@ type RepairOrphanedResult struct {
 	Repaired int `json:"repaired"`
 }
 
-// RepairOrphaned completes or removes uploads whose media message exists on
+// repairOrphaned completes or removes uploads whose media message exists on
 // Telegram but whose index promotion failed.
-func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOrphanedResult, error) {
+func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOrphanedResult, error) {
 	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
