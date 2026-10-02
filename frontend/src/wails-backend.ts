@@ -1,6 +1,6 @@
 import { Events } from "@wailsio/runtime"
 
-import { Auth, Drive, Settings } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
+import { Auth, Channels, Drive, Settings } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
 import type { Backend, BackendError } from "@/backend"
 
 /**
@@ -41,6 +41,30 @@ export const wailsBackend: Backend = {
   events: {
     onDirectoryChanged: (cb) => Events.On("directory-changed", (ev) => cb(ev.data)),
     onScanProgress: (cb) => Events.On("scan-progress", (ev) => cb(ev.data)),
+  },
+  channels: {
+    list: async () => (await call(Channels.List())) ?? [],
+    status: async () => {
+      const status = await call(Channels.Status())
+      if (!status) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty channel status" } satisfies BackendError
+      return status
+    },
+    choices: async () => (await call(Channels.Choices())) ?? { channels: [], default_title: "" },
+    bind: async (req) => {
+      const result = await call(Channels.Bind(req))
+      if (!result) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty bind result" } satisfies BackendError
+      return result
+    },
+    select: async (channelID) => {
+      const status = await call(Channels.Select(channelID))
+      if (!status) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty channel status" } satisfies BackendError
+      return status
+    },
+    linkDiscussion: async () => {
+      const link = await call(Channels.LinkDiscussion())
+      if (!link) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty discussion link" } satisfies BackendError
+      return link
+    },
   },
   auth: {
     status: async () => {

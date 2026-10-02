@@ -4,6 +4,9 @@ import type {
   AuthUser,
   Backend,
   BackendError,
+  BindResult,
+  ChannelChoice,
+  ChannelStatus,
   ConfigEntry,
   DirectoryChanged,
   Entry,
@@ -253,10 +256,28 @@ class AuthFake {
   }
 }
 
+/** One drive channel the in-memory backend starts with. */
+export interface MemoryChannel {
+  id: string
+  title: string
+  /** The linked discussion group's title; absent means not linked. */
+  discussion?: string
+}
+
 export interface MemoryBackendOptions extends MemorySettings {
   auth?: AuthFakeOptions
   /** When set, every drive listing fails with this error. */
   driveError?: BackendError
+  /**
+   * The bound drive channels; the first is active. Default: one linked
+   * "Drive" channel. Pass [] for a machine with nothing bound.
+   */
+  channels?: MemoryChannel[]
+  /**
+   * Telegram channels the account owns beyond the bound ones, offered as
+   * bind choices. Default: one unbound "Archive".
+   */
+  telegramChannels?: { id: string; title: string }[]
 }
 
 /**
@@ -267,9 +288,16 @@ export interface MemoryBackendOptions extends MemorySettings {
  * screen tests start from the main shell. Tests emit typed events through
  * it.
  */
+interface ChannelTree {
+  files: Map<string, { size: number; date: string }>
+  dirs: Set<string>
+}
+
+function emptyTree(): ChannelTree {
+  return { files: new Map(), dirs: new Set(["/"]) }
+}
+
 export class MemoryBackend implements Backend {
-  private files = new Map<string, { size: number; date: string }>()
-  private dirs = new Set<string>(["/"])
   private dirChangedCbs = new Set<(e: DirectoryChanged) => void>()
   private scanProgressCbs = new Set<(e: ScanProgress) => void>()
   private scanHeld = false
@@ -280,11 +308,44 @@ export class MemoryBackend implements Backend {
   private readonly secrets: Set<string>
   private readonly store: Map<string, string | number | boolean>
 
+  /** The bound channels and their trees; drive calls work on the active one. */
+  private readonly bound: MemoryChannel[]
+  private activeID: string
+  private readonly trees = new Map<string, ChannelTree>()
+  private readonly tgChannels: { id: string; title: string }[]
+  private nextChannelID = 9000
+
   constructor(opts: MemoryBackendOptions = {}) {
     this.opts = opts
     this.authFake = new AuthFake(opts.auth)
     this.secrets = new Set(opts.secrets ?? [])
     this.store = new Map(Object.entries(opts.config ?? {}))
+    this.bound = (opts.channels ?? [{ id: "1001", title: "Drive", discussion: "Drive Discussion" }]).map((c) => ({
+      ...c,
+    }))
+    this.activeID = this.bound[0]?.id ?? ""
+    for (const ch of this.bound) {
+      this.trees.set(ch.id, emptyTree())
+    }
+    this.tgChannels = opts.telegramChannels ?? [{ id: "2001", title: "Archive" }]
+  }
+
+  /** The active channel's tree; rejects the way an unbound App would. */
+  private tree(): ChannelTree {
+    const tree = this.trees.get(this.activeID)
+    if (!tree) {
+      throw backendError(
+        "ERR_CHANNEL_NOT_FOUND",
+        "no channel bound in this database; run: td init <local-root> --create-channel",
+      )
+    }
+    return tree
+  }
+
+  private activeChannel(): MemoryChannel {
+    const ch = this.bound.find((c) => c.id === this.activeID)
+    if (!ch) throw backendError("ERR_CHANNEL_NOT_FOUND", "no channel bound")
+    return ch
   }
 
   private entryOf(key: string): ConfigEntry {
@@ -296,18 +357,19 @@ export class MemoryBackend implements Backend {
   readonly drive: Backend["drive"] = {
     list: async (path) => {
       if (this.opts.driveError) throw this.opts.driveError
-      if (!this.dirs.has(path)) {
+      const { files, dirs } = this.tree()
+      if (!dirs.has(path)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
       }
       const entries: Entry[] = []
       const seen = new Set<string>()
-      for (const dir of this.dirs) {
+      for (const dir of dirs) {
         if (dir !== "/" && parentOf(dir) === path) {
           entries.push({ name: baseName(dir), path: dir, type: "dir", size: 0, date: "2026-01-01T00:00:00Z" })
           seen.add(dir)
         }
       }
-      for (const [file, meta] of this.files) {
+      for (const [file, meta] of files) {
         if (parentOf(file) === path) {
           entries.push({ name: baseName(file), path: file, type: "file", size: meta.size, date: meta.date })
         } else if (file.startsWith(path === "/" ? "/" : path + "/")) {
@@ -324,7 +386,7 @@ export class MemoryBackend implements Backend {
       return entries
     },
     tree: async (path, maxDepth) => {
-      if (!this.dirs.has(path)) {
+      if (!this.tree().dirs.has(path)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
       }
       const build = async (dir: string, depth: number): Promise<TreeNode[]> => {
@@ -341,43 +403,46 @@ export class MemoryBackend implements Backend {
       return build(path, 1)
     },
     mkdir: async (path) => {
-      if (this.dirs.has(path) || this.files.has(path)) {
+      const { files, dirs } = this.tree()
+      if (dirs.has(path) || files.has(path)) {
         throw backendError("ERR_PATH_EXISTS", `path already exists: ${path}`)
       }
-      if (this.files.has(parentOf(path))) {
+      if (files.has(parentOf(path))) {
         throw backendError("ERR_PATH_ANCESTOR_IS_FILE", `ancestor path is a file: ${parentOf(path)}`)
       }
       let cur = ""
       for (const seg of path.split("/").filter(Boolean)) {
         cur += "/" + seg
-        this.dirs.add(cur)
+        dirs.add(cur)
       }
     },
     move: async (from, to, opts) => {
       if (!opts.confirm) throw confirmationRequired
-      const meta = this.files.get(from)
+      const { files, dirs } = this.tree()
+      const meta = files.get(from)
       if (!meta) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${from}" not found`)
       }
-      const dest = this.dirs.has(to) ? (to === "/" ? "" : to) + "/" + baseName(from) : to
-      if (this.files.has(dest) || this.dirs.has(dest)) {
+      const dest = dirs.has(to) ? (to === "/" ? "" : to) + "/" + baseName(from) : to
+      if (files.has(dest) || dirs.has(dest)) {
         throw backendError("ERR_PATH_EXISTS", `file exists at destination: ${dest}`)
       }
-      this.files.delete(from)
-      this.files.set(dest, meta)
+      files.delete(from)
+      files.set(dest, meta)
     },
     delete: async (path, opts) => {
       if (!opts.confirm) throw confirmationRequired
-      if (!this.files.delete(path)) {
+      if (!this.tree().files.delete(path)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
       }
       return { mode: "delete", path }
     },
     share: async (path) => {
-      if (!this.files.has(path) && !this.dirs.has(path)) {
+      const { files, dirs } = this.tree()
+      if (!files.has(path) && !dirs.has(path)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
       }
-      return { url: "https://t.me/+fake1001", hashtag: "#td_fake1001", path, channel: "Drive" }
+      return { url: "https://t.me/+fake1001", hashtag: "#td_fake1001", path, channel: this.activeChannel().title }
     },
     scan: async () => {
       if (this.scanHeld) {
@@ -387,7 +452,75 @@ export class MemoryBackend implements Backend {
         this.scanHeld = false
         this.scanResolve = null
       }
-      return { mode: "full", active: this.files.size, deleted: 0, invalid: 0, missing: 0 }
+      return { mode: "full", active: this.tree().files.size, deleted: 0, invalid: 0, missing: 0 }
+    },
+  }
+
+  readonly channels: Backend["channels"] = {
+    list: async () =>
+      this.bound.map((ch) => ({
+        channel_id: ch.id,
+        title: ch.title,
+        local_root: `/data/drives/${ch.title}`,
+        active: ch.id === this.activeID,
+      })),
+    status: async () => this.activeStatus(),
+    choices: async () => {
+      const seen = new Set<string>()
+      const out: ChannelChoice[] = []
+      // Bound channels are choices too (marked), the way InitChoices lists
+      // every channel the account owns.
+      for (const ch of [
+        ...this.tgChannels,
+        ...this.bound.map((b) => ({ id: b.id, title: b.title })),
+      ]) {
+        if (seen.has(ch.id)) continue
+        seen.add(ch.id)
+        out.push({ channel_id: ch.id, title: ch.title, bound: this.bound.some((b) => b.id === ch.id) })
+      }
+      return { channels: out, default_title: "Drive" }
+    },
+    bind: async (req): Promise<BindResult> => {
+      const channelID = req.channel_id.trim()
+      if (channelID !== "") {
+        const existing = this.bound.find((c) => c.id === channelID)
+        const choice = this.tgChannels.find((c) => c.id === channelID)
+        const title = (existing ?? choice)?.title
+        if (title === undefined) {
+          throw backendError("ERR_CHANNEL_NOT_FOUND", `channel not found: ${channelID}`)
+        }
+        if (!existing) {
+          this.bound.push({ id: channelID, title, discussion: `${title} Discussion` })
+          this.trees.set(channelID, emptyTree())
+        }
+        this.activeID = channelID
+        return { channel_id: channelID, title, created: false, already_initialized: false, indexed_files: 0 }
+      }
+      const title = req.title.trim() || "Drive"
+      // Like the init use case: creating for a root the GUI already bound
+      // reports the existing binding instead of minting another channel.
+      const existing = this.bound.find((c) => c.title === title)
+      if (existing) {
+        this.activeID = existing.id
+        return { channel_id: existing.id, title: existing.title, created: true, already_initialized: true }
+      }
+      const id = String(this.nextChannelID++)
+      this.bound.push({ id, title, discussion: `${title} Discussion` })
+      this.trees.set(id, emptyTree())
+      this.activeID = id
+      return { channel_id: id, title, created: true, already_initialized: false, indexed_files: 0 }
+    },
+    select: async (channelID) => {
+      if (!this.bound.some((c) => c.id === channelID)) {
+        throw backendError("ERR_CHANNEL_NOT_FOUND", `channel not bound: ${channelID}`)
+      }
+      this.activeID = channelID
+      return this.activeStatus()
+    },
+    linkDiscussion: async () => {
+      const ch = this.activeChannel()
+      ch.discussion = ch.discussion ?? `${ch.title} Discussion`
+      return { discussion_channel_id: `9${ch.id}`, discussion_title: ch.discussion }
     },
   }
 
@@ -456,21 +589,41 @@ export class MemoryBackend implements Backend {
   }
 
   /** Test helper: adds a file without going through the facade surface. */
-  putFileForTest(path: string, size: number, date: string): void {
-    this.files.set(path, { size, date: date || "2026-01-01T00:00:00Z" })
+  putFileForTest(path: string, size: number, date: string, channelID?: string): void {
+    const tree = this.trees.get(channelID ?? this.activeID)
+    if (!tree) throw new Error(`no channel ${channelID ?? this.activeID} in the test backend`)
+    tree.files.set(path, { size, date: date || "2026-01-01T00:00:00Z" })
     let cur = parentOf(path)
     while (cur && cur !== "/") {
-      this.dirs.add(cur)
+      tree.dirs.add(cur)
       cur = parentOf(cur)
     }
   }
 
   /** Test helper: adds a directory without going through the facade surface. */
-  mkdirForTest(path: string): void {
+  mkdirForTest(path: string, channelID?: string): void {
+    const tree = this.trees.get(channelID ?? this.activeID)
+    if (!tree) throw new Error(`no channel ${channelID ?? this.activeID} in the test backend`)
     let cur = ""
     for (const seg of path.split("/").filter(Boolean)) {
       cur += "/" + seg
-      this.dirs.add(cur)
+      tree.dirs.add(cur)
+    }
+  }
+
+  private activeStatus(): ChannelStatus {
+    const ch = this.activeChannel()
+    const files = this.trees.get(ch.id)?.files.size ?? 0
+    return {
+      channel_id: ch.id,
+      title: ch.title,
+      local_root: `/data/drives/${ch.title}`,
+      files,
+      discussion_linked: ch.discussion !== undefined,
+      ...(ch.discussion !== undefined ? { discussion_title: ch.discussion } : {}),
+      upload_limit_bytes: 2147483648,
+      last_scan_at: "2026-01-05T09:00:00Z",
+      last_full_scan_at: "2026-01-05T09:00:00Z",
     }
   }
 }
@@ -506,6 +659,14 @@ export function failingBackend(err: BackendError): Backend {
     events: {
       onDirectoryChanged: () => () => {},
       onScanProgress: () => () => {},
+    },
+    channels: {
+      list: fail,
+      status: fail,
+      choices: fail,
+      bind: fail,
+      select: fail,
+      linkDiscussion: fail,
     },
     settings: {
       listConfig: fail,

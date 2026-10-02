@@ -403,7 +403,8 @@ function TreeItem({ node }: { node: TreeNode }) {
   )
 }
 
-function Sheet({
+/** The centred modal sheet every tab's dialogs share. */
+export function Sheet({
   title,
   onClose,
   children,
@@ -428,7 +429,7 @@ function Sheet({
   )
 }
 
-function SheetError({ error }: { error: BackendError | null }) {
+export function SheetError({ error }: { error: BackendError | null }) {
   if (!error) return null
   return (
     <p role="alert" className="mt-2 rounded-control bg-red-soft px-2 py-1.5 text-[12px] text-red">
@@ -437,7 +438,7 @@ function SheetError({ error }: { error: BackendError | null }) {
   )
 }
 
-function SheetButtons({
+export function SheetButtons({
   confirmLabel,
   destructive,
   busy,
@@ -651,13 +652,13 @@ function fileType(name: string, t: Translate): string {
   return name.slice(i + 1).toUpperCase()
 }
 
-function formatDate(iso: string, locale: Locale): string {
+export function formatDate(iso: string, locale: Locale): string {
   const d = new Date(iso)
   if (!iso || Number.isNaN(d.getTime())) return "—"
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(d)
 }
 
-function formatSize(bytes: number, t: Translate): string {
+export function formatSize(bytes: number, t: Translate): string {
   if (bytes < 1024) return t("size.b", { n: bytes })
   const units = ["size.kb", "size.mb", "size.gb"] as const
   let n = bytes / 1024
