@@ -11,7 +11,6 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
 	"github.com/thedavidweng/tg-drive-cli/core/publisher"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
 // RepairPendingResult counts how stale pending rows were resolved.
@@ -262,49 +261,8 @@ func (a *App) RepairPath(ctx context.Context, remotePath string) (*RepairPathRes
 	if !found || !row.MessageID.Valid {
 		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
 	}
-	fileID, messageID, manifestID, manifestChat := row.ID, row.MessageID, row.ManifestMsgID, row.ManifestChat
-	displayName, contentHash, mimeType, size := row.DisplayName, row.ContentHash.String, row.MIME, row.Size.Int64
-	existingSlugs := a.loadSlugMap(ctx, channelID)
 	lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, p), func(ctx context.Context) error {
-		meta := manifest.FileMeta{
-			CanonicalPath: p,
-			DisplayName:   displayName,
-			ParentHuman:   fsmodel.HumanParent(p),
-			Size:          size,
-			Hash:          contentHash,
-			MIME:          mimeType,
-		}
-		oldMeta := meta
-		oldMeta.Tags = nil
-		manifestMsgID := 0
-		if manifestID.Valid {
-			manifestMsgID = int(manifestID.Int64)
-		}
-		carrier := a.manifestCarrier(manifestChat)
-		if album, ok, err := a.loadAlbumManifest(ctx, tgChID, carrier, manifestMsgID); err != nil {
-			return telegram.MapError(err)
-		} else if ok {
-			if _, err := a.writeAlbumManifest(ctx, channelID, tgChID, carrier, manifestMsgID, albumFirstMediaID(album), album); err != nil {
-				return err
-			}
-			return nil
-		}
-		if _, err := a.publisher().Publish(ctx, publisher.PublishRequest{
-			ChannelRowID:      channelID,
-			ChannelID:         tgChID,
-			FileID:            fileID,
-			MessageID:         int(messageID.Int64),
-			ManifestMsgID:     manifestMsgID,
-			ManifestChatID:    manifestChat,
-			Meta:              meta,
-			ExistingSlugs:     existingSlugs,
-			EditCaption:       true,
-			IgnoreNotEditable: true,
-			OldMeta:           &oldMeta,
-		}); err != nil {
-			return err
-		}
-		return nil
+		return a.fileRecord(channelID, tgChID, row).Rewrite(ctx)
 	})
 	if lockErr != nil {
 		return nil, lockErr

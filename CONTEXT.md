@@ -9,6 +9,7 @@
 - **Canonical path** — The stable, slash-separated path used in the SQLite index and manifest (e.g. `/Pictures/2024/beach.jpg`).
 - **Display name** — The human-readable file or directory name stored in a caption or manifest.
 - **Manifest** — Reconstructable machine metadata on Telegram. Since ADR 0018 it lives as a comment in the file's discussion thread: one `td-manifest:v1` comment per ungrouped file, one `td-album:v1` comment per album group. Legacy in-channel replies and `td:v1` captions remain parseable.
+- **File record** — The machine record of one file: its per-file `td-manifest:v1` comment (or legacy reply / `td:v1` caption), or its entry in the `td-album:v1` inventory its album shares. `td rm`, `td mv`, `td repair <path>`, and `cp --replace` change a file through its File record without branching on which kind it is (ADR 0028).
 - **Caption** — The human text attached to a Telegram media message: caller-provided text and display name. Modern captions do not include td's remote parent path or path-derived hashtags; the machine record is the discussion-thread comment.
 - **Discussion group** — The supergroup linked to a drive channel. Every channel post auto-forwards there, and its comment thread carries the post's machine record (ADR 0018).
 - **Hashtag** — A `#` prefixed human token in a caption, or a path-derived `#td_*` token retained in index/manifest data for compatibility. Path-derived tags are not emitted in modern captions and are not the reconstructable storage model.

@@ -22,6 +22,10 @@ cmd/td
   transition and path lookup is an intent-named method (`StagePending`,
   `RecordMessage`, `MarkDeleted`, ...) that runs in its own transaction or the
   caller's (ADR 0024). Services do not write `files` SQL.
+- `internal/service` changes one file's machine record through the File
+  record module (`fileRecord`: `Retire`, `RetireSuperseded`, `Rename`,
+  `Rewrite`). The module hides whether the record is a per-file manifest or
+  an entry in a shared album inventory (ADR 0028).
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow

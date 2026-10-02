@@ -19,9 +19,7 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
 	"github.com/thedavidweng/tg-drive-cli/core/ports"
-	"github.com/thedavidweng/tg-drive-cli/core/publisher"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	"lukechampine.com/blake3"
 )
@@ -528,73 +526,11 @@ func (a *App) MoveFile(ctx context.Context, from, to string) error {
 		}
 		return apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", src))
 	}
-	fileID, messageID, manifestID, manifestChat := srcRow.ID, srcRow.MessageID, srcRow.ManifestMsgID, srcRow.ManifestChat
-	displayName, contentHash, mimeType, size := srcRow.DisplayName, srcRow.ContentHash.String, srcRow.MIME, srcRow.Size.Int64
 	// Path locks (sorted) with heartbeat renewal: a move touching two paths
 	// holds both for the whole operation regardless of duration.
-	lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, src, dst), func(ctx context.Context) error {
-		existingSlugs, err := a.loadExistingSlugs(ctx, channelID)
-		if err != nil {
-			return err
-		}
-		oldTags, _, err := pathcodec.GenerateChain(src, existingSlugs)
-		if err != nil {
-			return err
-		}
-		if !messageID.Valid {
-			return apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", src))
-		}
-
-		oldMeta := manifest.FileMeta{
-			CanonicalPath: src,
-			DisplayName:   displayName,
-			ParentHuman:   fsmodel.HumanParent(src),
-			Size:          size,
-			Hash:          contentHash,
-			MIME:          mimeType,
-			Tags:          oldTags,
-		}
-		meta := manifest.FileMeta{
-			CanonicalPath: dst,
-			DisplayName:   fsmodel.BaseName(dst),
-			ParentHuman:   fsmodel.HumanParent(dst),
-			Size:          size,
-			Hash:          contentHash,
-			MIME:          mimeType,
-		}
-		manifestMsgID := 0
-		if manifestID.Valid {
-			manifestMsgID = int(manifestID.Int64)
-		}
-
-		carrier := a.manifestCarrier(manifestChat)
-		if album, ok, err := a.loadAlbumManifest(ctx, tgChID, carrier, manifestMsgID); err != nil {
-			return telegram.MapError(err)
-		} else if ok {
-			updated := albumReplacePath(album, int(messageID.Int64), dst)
-			if _, err := a.writeAlbumManifest(ctx, channelID, tgChID, carrier, manifestMsgID, albumFirstMediaID(updated), updated); err != nil {
-				return err
-			}
-			return a.reindexAlbumMember(ctx, channelID, fileID, int(messageID.Int64), manifestMsgID, dst, contentHash, mimeType, size)
-		}
-
-		if _, err := a.publisher().Publish(ctx, publisher.PublishRequest{
-			ChannelRowID:   channelID,
-			ChannelID:      tgChID,
-			FileID:         fileID,
-			MessageID:      int(messageID.Int64),
-			ManifestMsgID:  manifestMsgID,
-			ManifestChatID: manifestChat,
-			Meta:           meta,
-			ExistingSlugs:  existingSlugs,
-			EditCaption:    true,
-			OldMeta:        &oldMeta,
-		}); err != nil {
-			return err
-		}
-		return a.DB.RunDirectoryGC(ctx, channelID)
+	return a.withLocks(ctx, lockKeysForPaths(channelID, src, dst), func(ctx context.Context) error {
+		return a.fileRecord(channelID, tgChID, srcRow).Rename(ctx, dst)
 	})
-	return lockErr
 }
 
 // DeleteOptions controls td rm behavior.
@@ -646,13 +582,12 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	if !found {
 		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
 	}
-	fileID, messageID, manifestID, manifestChat := row.ID, row.MessageID, row.ManifestMsgID, row.ManifestChat
 	// Hold the path lock (with heartbeat renewal) for the whole delete: the
 	// Telegram mutations and the index commit must be exclusive.
 	lockKey := sqlitestore.LockKey(channelID, p)
 	var out *DeleteResult
 	lockErr := a.withLocks(ctx, []string{lockKey}, func(ctx context.Context) error {
-		res, err := a.deleteFileLocked(ctx, channelID, tgChID, p, fileID, messageID, manifestID, manifestChat, opts)
+		res, err := a.deleteFileLocked(ctx, channelID, tgChID, row, opts)
 		if err != nil {
 			return err
 		}
@@ -665,98 +600,31 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	return out, nil
 }
 
-func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p string, fileID int64, messageID, manifestID sql.NullInt64, manifestChat string, opts DeleteOptions) (*DeleteResult, error) {
+func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, row sqlitestore.FileRow, opts DeleteOptions) (*DeleteResult, error) {
 	mode := a.Cfg.Delete.Mode
 	if opts.Tombstone {
 		mode = "tombstone"
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	carrier := a.manifestCarrier(manifestChat)
-	var manifestErr error
-	manID := 0
-	if manifestID.Valid {
-		manID = int(manifestID.Int64)
+	retired, err := a.fileRecord(channelID, tgChID, row).Retire(ctx, mode)
+	if err != nil {
+		return nil, err
 	}
-	if album, ok, err := a.loadAlbumManifest(ctx, tgChID, carrier, manID); err != nil && !isMessageGone(err) {
-		return nil, telegram.MapError(err)
-	} else if ok {
-		// The media is already gone when recordErr is set, so the row is still
-		// marked deleted first and the record failure surfaces afterwards.
-		var recordErr error
-		manifestErr, recordErr, err = a.retireAlbumMember(ctx, channelID, tgChID, carrier, manID, album, int(messageID.Int64))
-		if err != nil {
-			return nil, err
-		}
-		if err := a.DB.MarkDeleted(ctx, fileID, now); err != nil {
-			return nil, apperr.Wrap(apperr.ErrDB, "mark deleted", err)
-		}
-		if err := a.DB.RunDirectoryGC(ctx, channelID); err != nil {
-			return nil, err
-		}
-		if recordErr != nil {
-			return nil, recordErr
-		}
-		out := &DeleteResult{Path: p, Mode: "delete"}
-		if manifestErr != nil {
-			out.StaleManifest = true
-			if !opts.AllowStaleManifest {
-				return out, apperr.New(apperr.ErrTelegramRPC,
-					fmt.Sprintf("album inventory %d could not be updated: %v; rerun with --allow-stale-manifest to ignore", manID, manifestErr))
-			}
-		}
-		return out, nil
-	}
-	switch {
-	case mode == "delete":
-		if messageID.Valid {
-			if err := a.TG.DeleteMessage(ctx, tgChID, int(messageID.Int64)); err != nil && !isMessageGone(err) {
-				return nil, telegram.MapError(err)
-			}
-		}
-		if manifestID.Valid {
-			manifestErr = carrier.Delete(ctx, tgChID, int(manifestID.Int64))
-		}
-	case manifestID.Valid && carrier.Comment():
-		// ADR 0018: the comment carries the tombstone. If the comment edit
-		// fails, fall back to a tombstone caption — deletion must stay
-		// sticky even when the thread record cannot be redacted, and a
-		// caption tombstone outranks a stale live comment during scans.
-		manifestErr = carrier.Edit(ctx, tgChID, int(manifestID.Int64), manifest.RenderTombstoneManifest(p))
-		if manifestErr != nil && !isMessageGone(manifestErr) {
-			if messageID.Valid {
-				if capErr := a.TG.EditCaption(ctx, tgChID, int(messageID.Int64), manifest.RenderTombstoneCaption(fsmodel.BaseName(p), p)); capErr == nil || isMessageGone(capErr) {
-					manifestErr = nil
-				}
-			}
-		}
-	default:
-		if messageID.Valid {
-			if err := a.TG.EditCaption(ctx, tgChID, int(messageID.Int64), manifest.RenderTombstoneCaption(fsmodel.BaseName(p), p)); err != nil && !isMessageGone(err) {
-				return nil, telegram.MapError(err)
-			}
-		}
-		if manifestID.Valid {
-			manifestErr = carrier.Edit(ctx, tgChID, int(manifestID.Int64), manifest.RenderTombstoneManifest(p))
-		}
-	}
-	if isMessageGone(manifestErr) {
-		manifestErr = nil
-	}
-	// Media mutation already succeeded (or the message was already gone).
-	// Commit deleted even if the manifest reply cannot be redacted.
-	if err := a.DB.MarkDeleted(ctx, fileID, now); err != nil {
+	// The media mutation already succeeded (or the message was already
+	// gone), so the row is marked deleted even when the record could not be
+	// redacted or recorded; those failures surface afterwards.
+	if err := a.DB.MarkDeleted(ctx, row.ID, now); err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "mark deleted", err)
 	}
 	if err := a.DB.RunDirectoryGC(ctx, channelID); err != nil {
 		return nil, err
 	}
-	out := &DeleteResult{Path: p, Mode: mode}
-	if manifestErr != nil {
-		out.StaleManifest = true
-		if !opts.AllowStaleManifest {
-			return out, apperr.New(apperr.ErrTelegramRPC,
-				fmt.Sprintf("manifest reply %d could not be redacted: %v; rerun with --allow-stale-manifest to ignore", manifestID.Int64, manifestErr))
-		}
+	if retired.recordErr != nil {
+		return nil, retired.recordErr
+	}
+	out := &DeleteResult{Path: row.CanonicalPath, Mode: retired.mode, StaleManifest: retired.stale != nil}
+	if err := retired.staleErr(opts.AllowStaleManifest); err != nil {
+		return out, err
 	}
 	return out, nil
 }
