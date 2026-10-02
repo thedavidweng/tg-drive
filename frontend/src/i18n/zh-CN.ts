@@ -90,6 +90,7 @@ export const zhCN: Record<MessageKey, string> = {
   "upload.replaceAlbumNote": "相册上传不支持替换。",
   "upload.continueOnError": "跳过失败的文件并继续",
   "upload.includeEmptyDirs": "创建空文件夹",
+  "upload.includeEmptyDirsNote": "V1 暂不支持:上传会报错提示该限制。",
   "upload.noHash": "跳过内容哈希",
   "upload.limit": "上传限制:每个文件 {size}",
   "upload.overLimit": "{name} 超过 {size} 的上传限制",

@@ -2,10 +2,9 @@ import { useEffect, useState } from "react"
 import { File, Folder } from "lucide-react"
 
 import type { Backend, BackendError, UploadPlan } from "@/backend"
-import { Button } from "@/components/ui/button"
 import { formatSize } from "@/format"
 import { useI18n, type Translate } from "@/i18n"
-import { Sheet, SheetError } from "@/sheet"
+import { Sheet, SheetButtons, SheetError } from "@/sheet"
 
 /**
  * The upload and download option sheets: every GUI transfer starts through
@@ -144,20 +143,24 @@ export function UploadSheet({
             <>
               <Check label={t("upload.continueOnError")} checked={continueOnError} onChange={setContinueOnError} />
               <Check label={t("upload.includeEmptyDirs")} checked={includeEmptyDirs} onChange={setIncludeEmptyDirs} />
+              {includeEmptyDirs && (
+                // Like the cp flag's help text: the service rejects this
+                // in V1 with its typed error.
+                <p className="mt-1 text-[11.5px] text-muted-foreground">{t("upload.includeEmptyDirsNote")}</p>
+              )}
             </>
           )}
           <Check label={t("upload.noHash")} checked={noHash} onChange={setNoHash} />
         </>
       )}
       <SheetError error={error} />
-      <div className="mt-4 flex justify-end gap-1.5">
-        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-          {t("sheet.cancel")}
-        </Button>
-        <Button size="sm" onClick={start} disabled={startDisabled}>
-          {t("upload.start")}
-        </Button>
-      </div>
+      <SheetButtons
+        confirmLabel={t("upload.start")}
+        busy={busy}
+        disabled={startDisabled}
+        onConfirm={start}
+        onClose={onClose}
+      />
     </Sheet>
   )
 }
@@ -257,14 +260,12 @@ export function DownloadSheet({
         ]}
       />
       <SheetError error={error} />
-      <div className="mt-4 flex justify-end gap-1.5">
-        <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-          {t("sheet.cancel")}
-        </Button>
-        <Button size="sm" onClick={start} disabled={busy}>
-          {t("download.start")}
-        </Button>
-      </div>
+      <SheetButtons
+        confirmLabel={t("download.start")}
+        busy={busy}
+        onConfirm={start}
+        onClose={onClose}
+      />
     </Sheet>
   )
 }

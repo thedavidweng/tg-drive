@@ -89,6 +89,7 @@ export const en = {
   "upload.replaceAlbumNote": "Replace is not available for album uploads.",
   "upload.continueOnError": "Continue past failed files",
   "upload.includeEmptyDirs": "Create empty folders",
+  "upload.includeEmptyDirsNote": "Not supported in V1: the upload reports the limitation.",
   "upload.noHash": "Skip content hashing",
   "upload.limit": "Upload limit: {size} per file",
   "upload.overLimit": "{name} exceeds the {size} upload limit",

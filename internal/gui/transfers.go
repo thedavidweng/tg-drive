@@ -325,9 +325,9 @@ func (t *Transfers) PlanUpload(ctx context.Context, paths []string, dest, policy
 	if st.UploadLimitBytes != nil {
 		out.UploadLimitBytes = *st.UploadLimitBytes
 	}
-	for _, p := range paths {
-		f := UploadPlanFile{Local: p}
-		if info, err := os.Stat(p); err == nil {
+	for _, local := range paths {
+		f := UploadPlanFile{Local: local}
+		if info, err := os.Stat(local); err == nil {
 			f.Dir = info.IsDir()
 			if info.Mode().IsRegular() {
 				f.Size = info.Size()
