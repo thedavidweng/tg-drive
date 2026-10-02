@@ -86,17 +86,16 @@ func TestE2ECpDryRunPlan(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("events dry-run wants one event, got %q", stdout)
 	}
-	var ev e2eEnvelope
-	if err := json.Unmarshal([]byte(lines[0]), &ev); err != nil {
-		t.Fatal(err)
-	}
-	var evMeta struct {
+	var ev struct {
+		Data map[string]any `json:"data"`
 		Meta struct {
 			Command string `json:"command"`
 		} `json:"meta"`
 	}
-	_ = json.Unmarshal([]byte(lines[0]), &evMeta)
-	if evMeta.Meta.Command != "cp.dry-run" || !jsonEqual(ev.Data, map[string]any{"local": []any{a}, "remote": "/a.txt", "policy": "skip"}) {
+	if err := json.Unmarshal([]byte(lines[0]), &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.Meta.Command != "cp.dry-run" || !jsonEqual(ev.Data, map[string]any{"local": []any{a}, "remote": "/a.txt", "policy": "skip"}) {
 		t.Fatalf("dry-run event = %s", lines[0])
 	}
 
@@ -111,6 +110,12 @@ func TestE2ECpDryRunPlan(t *testing.T) {
 
 	runE2EExpectError(t, bin, cfgPath, dbPath, statePath, 2, "ERR_FLAG_CONFLICT", "cp", a, "/a.txt", "--dry-run", "--replace", "--skip-existing")
 	runE2EExpectError(t, bin, cfgPath, dbPath, statePath, 2, "ERR_REMOTE_NOT_FOUND", "ls", "/a.txt")
+}
+
+// credentialFreeEnv keeps the session out of the real home directory and
+// stops ambient TD_* credentials from answering setup prompts.
+func credentialFreeEnv(sessionPath string) []string {
+	return []string{"TD_SESSION=" + sessionPath, "TD_API_ID=", "TD_API_HASH=", "TD_PHONE="}
 }
 
 func jsonEqual(a, b any) bool {
@@ -129,7 +134,7 @@ func TestE2EAuthSetup(t *testing.T) {
 	dbPath := filepath.Join(dir, "db.sqlite")
 	statePath := filepath.Join(dir, "fake-state.json")
 	sessionPath := filepath.Join(dir, "sess", "session.json")
-	env := []string{"TD_SESSION=" + sessionPath, "TD_API_ID=", "TD_API_HASH=", "TD_PHONE="}
+	env := credentialFreeEnv(sessionPath)
 
 	stdout, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, env, "x\n", "--json", "auth", "setup")
 	if code := exitCode(t, err); code != 3 {
@@ -197,7 +202,7 @@ func TestE2ELoginAsksForMissingPhone(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	dbPath := filepath.Join(dir, "db.sqlite")
 	statePath := filepath.Join(dir, "fake-state.json")
-	env := []string{"TD_SESSION=" + filepath.Join(dir, "session.json"), "TD_API_ID=", "TD_API_HASH=", "TD_PHONE="}
+	env := credentialFreeEnv(filepath.Join(dir, "session.json"))
 
 	_, stderr, _ := runTD(t, bin, cfgPath, dbPath, statePath, env, "777\nabc\n+15550001111\n", "--json", "auth", "login")
 	if !strings.Contains(stderr, "phone") {
@@ -217,7 +222,7 @@ func TestE2ELoginAsksForMissingPhone(t *testing.T) {
 func TestE2EConfigRedaction(t *testing.T) {
 	dir := t.TempDir()
 	bin, cfgPath, dbPath, statePath, _ := e2eSetup(t, dir)
-	env := []string{"TD_SESSION=" + filepath.Join(dir, "session.json"), "TD_API_ID=", "TD_API_HASH=", "TD_PHONE="}
+	env := credentialFreeEnv(filepath.Join(dir, "session.json"))
 
 	stdout, _, err := runTD(t, bin, cfgPath, dbPath, statePath, env, "", "--json", "config", "get")
 	if err != nil {
