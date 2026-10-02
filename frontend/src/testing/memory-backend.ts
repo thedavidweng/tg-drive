@@ -11,6 +11,7 @@ import type {
   ConfigEntry,
   DirectoryChanged,
   DoctorReport,
+  DownloadOptions,
   Entry,
   FilesDropped,
   ImportOptions,
@@ -26,6 +27,7 @@ import type {
   Transfer,
   TransferRemoved,
   TreeNode,
+  UploadOptions,
   Versions,
 } from "@/backend"
 import { isTerminalStage } from "@/backend"
@@ -292,6 +294,15 @@ export interface MemoryTransfers {
   pickError?: BackendError
   /** When set, upload and download reject with it. */
   submitError?: BackendError
+  /**
+   * The account's per-file upload limit planUpload reports; defaults to
+   * the fake's 2 GiB free tier.
+   */
+  uploadLimitBytes?: number
+  /** Local file sizes planUpload reports, by path; unknown paths are 0. */
+  fileSizes?: Record<string, number>
+  /** Paths that are directories in the plan (the facade stats them). */
+  dirs?: string[]
 }
 
 /** How the in-memory import fake answers. */
@@ -516,8 +527,8 @@ export class MemoryBackend implements Backend {
   private filesDroppedCbs = new Set<(e: FilesDropped) => void>()
 
   /** Test-visible record of the transfers calls the screens made. */
-  readonly uploads: { paths: string[]; dest: string }[] = []
-  readonly downloads: { remotePath: string; destDir: string }[] = []
+  readonly uploads: { paths: string[]; dest: string; opts: UploadOptions }[] = []
+  readonly downloads: { remotePath: string; destDir: string; opts: DownloadOptions }[] = []
   readonly cancelled: string[] = []
   readonly retried: string[] = []
 
@@ -781,26 +792,67 @@ export class MemoryBackend implements Backend {
         history: all.filter((t) => isTerminalStage(t.stage)),
       }
     },
-    upload: async (paths, dest) => {
+    upload: async (paths, dest, opts) => {
       if (this.opts.transfers?.submitError) throw this.opts.transfers.submitError
-      this.uploads.push({ paths, dest })
+      const policy = opts.policy || "fail"
+      if (policy !== "fail" && policy !== "skip" && policy !== "replace") {
+        throw backendError("ERR_USAGE", `unknown conflict policy "${opts.policy}" (want skip, replace, or fail)`)
+      }
+      // The replace gate, mirroring the facade's fail-fast Validate.
+      if (policy === "replace" && !opts.confirm_replace) {
+        throw {
+          code: "ERR_CONFIRMATION_REQUIRED",
+          category: "safety",
+          message: "replacing an existing remote file requires confirmation",
+        } satisfies BackendError
+      }
+      // Several files are one album, and the service rejects album replace.
+      if (paths.length > 1 && policy === "replace") {
+        throw backendError("ERR_USAGE", "album uploads cannot replace existing files")
+      }
+      this.uploads.push({ paths, dest, opts })
       const kind = paths.length > 1 ? "album_upload" : "upload"
       const destPath = paths.length === 1 ? joinRemote(dest, baseName(paths[0])) : dest
       const t = this.makeTransfer(kind, paths.join("\n"), destPath, paths.length)
       queueMicrotask(() => this.completeTransfer(t.id))
       return [t.id]
     },
-    download: async (remotePath, destDir) => {
+    download: async (remotePath, destDir, opts) => {
       if (this.opts.transfers?.submitError) throw this.opts.transfers.submitError
+      const policy = opts.policy || "fail"
+      if (policy !== "fail" && policy !== "skip" && policy !== "replace") {
+        throw backendError("ERR_USAGE", `unknown conflict policy "${opts.policy}" (want skip, replace, or fail)`)
+      }
       const tree = this.tree()
       if (!tree.files.has(remotePath) && !tree.dirs.has(remotePath)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${remotePath}" not found`)
       }
-      this.downloads.push({ remotePath, destDir })
+      this.downloads.push({ remotePath, destDir, opts })
       const kind = tree.files.has(remotePath) ? "download" : "recursive_download"
       const t = this.makeTransfer(kind, remotePath, joinLocal(destDir, baseName(remotePath)), 1)
       queueMicrotask(() => this.completeTransfer(t.id))
       return t.id
+    },
+    planUpload: async (paths, dest, policy) => {
+      if (paths.length === 0) throw backendError("ERR_USAGE", "nothing to upload")
+      const p = policy || "fail"
+      if (p !== "fail" && p !== "skip" && p !== "replace") {
+        throw backendError("ERR_USAGE", `unknown conflict policy "${policy}" (want skip, replace, or fail)`)
+      }
+      const limit = this.opts.transfers?.uploadLimitBytes ?? 2147483648
+      const dirs = new Set(this.opts.transfers?.dirs ?? [])
+      return {
+        local: paths,
+        remote: dest,
+        policy: p,
+        ...(p === "replace" ? { would_replace: dest } : {}),
+        upload_limit_bytes: limit,
+        files: paths.map((local) => {
+          if (dirs.has(local)) return { local, size: 0, dir: true }
+          const size = this.opts.transfers?.fileSizes?.[local] ?? 0
+          return { local, size, ...(size > limit ? { over_limit: true } : {}) }
+        }),
+      }
     },
     cancel: async (id) => {
       const t = this.transfersById.get(id)
@@ -1101,6 +1153,7 @@ export function failingBackend(err: BackendError): Backend {
       list: fail,
       upload: fail,
       download: fail,
+      planUpload: fail,
       cancel: fail,
       retry: fail,
       clearFinished: fail,

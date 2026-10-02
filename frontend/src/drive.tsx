@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { formatDate, formatSize } from "@/format"
 import { useI18n, type Translate } from "@/i18n"
 import { Sheet, SheetButtons, SheetError } from "@/sheet"
+import { DownloadSheet, UploadSheet } from "@/transfer-options"
 
 type Listing = { state: "loading" } | { state: "ready"; entries: Entry[] } | { state: "failed"; error: BackendError }
 
@@ -36,6 +37,8 @@ type SheetState =
   | { kind: "move"; entry: Entry }
   | { kind: "delete"; entry: Entry }
   | { kind: "share"; entry: Entry }
+  | { kind: "upload"; paths: string[] }
+  | { kind: "download"; entry: Entry; destDir: string }
   | null
 
 type ScanState =
@@ -113,16 +116,13 @@ export function DriveScreen({ backend }: { backend: Backend }) {
   }
 
   // Every upload — picker-chosen or dropped — lands in the directory being
-  // shown and runs as a Transfer the Transfers tab watches.
-  const uploadPaths = async (paths: string[]) => {
+  // shown, and starts through the options sheet, which previews the
+  // dry-run plan before anything runs. The Transfer it starts is the one
+  // the Transfers tab watches.
+  const uploadPaths = (paths: string[]) => {
     const clean = paths.filter((p) => p !== "")
     if (clean.length === 0) return
-    try {
-      await backend.transfers.upload(clean, path)
-      setTransferNote({ state: "started", kind: "upload" })
-    } catch (error) {
-      setTransferNote({ state: "failed", error: error as BackendError })
-    }
+    setSheet({ kind: "upload", paths: clean })
   }
 
   // The picker itself can fail (a server-mode build without a connected
@@ -130,7 +130,7 @@ export function DriveScreen({ backend }: { backend: Backend }) {
   // submission's.
   const pickAndUpload = async (pick: () => Promise<string[]>) => {
     try {
-      await uploadPaths(await pick())
+      uploadPaths(await pick())
     } catch (error) {
       setTransferNote({ state: "failed", error: error as BackendError })
     }
@@ -140,8 +140,7 @@ export function DriveScreen({ backend }: { backend: Backend }) {
     try {
       const dir = await backend.transfers.pickDirectory()
       if (!dir) return
-      await backend.transfers.download(entry.path, dir)
-      setTransferNote({ state: "started", kind: "download" })
+      setSheet({ kind: "download", entry, destDir: dir })
     } catch (error) {
       setTransferNote({ state: "failed", error: error as BackendError })
     }
@@ -151,14 +150,11 @@ export function DriveScreen({ backend }: { backend: Backend }) {
   // target is the whole Drive screen (data-file-drop-target below).
   useEffect(() => {
     return backend.events.onFilesDropped((e) => {
-      const paths = e.paths ?? []
+      const paths = (e.paths ?? []).filter((p) => p !== "")
       if (paths.length === 0) return
-      backend.transfers.upload(paths, path).then(
-        () => setTransferNote({ state: "started", kind: "upload" }),
-        (error: BackendError) => setTransferNote({ state: "failed", error }),
-      )
+      setSheet({ kind: "upload", paths })
     })
-  }, [backend, path])
+  }, [backend])
 
   return (
     <div data-file-drop-target="">
@@ -277,6 +273,30 @@ export function DriveScreen({ backend }: { backend: Backend }) {
       )}
       {sheet?.kind === "share" && (
         <ShareSheet backend={backend} entry={sheet.entry} onClose={() => setSheet(null)} />
+      )}
+      {sheet?.kind === "upload" && (
+        <UploadSheet
+          backend={backend}
+          paths={sheet.paths}
+          dest={path}
+          onStarted={() => {
+            setSheet(null)
+            setTransferNote({ state: "started", kind: "upload" })
+          }}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet?.kind === "download" && (
+        <DownloadSheet
+          backend={backend}
+          remotePath={sheet.entry.path}
+          destDir={sheet.destDir}
+          onStarted={() => {
+            setSheet(null)
+            setTransferNote({ state: "started", kind: "download" })
+          }}
+          onClose={() => setSheet(null)}
+        />
       )}
     </div>
   )

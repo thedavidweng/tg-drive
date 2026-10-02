@@ -48,8 +48,13 @@ export const wailsBackend: Backend = {
   },
   transfers: {
     list: async () => (await call(Transfers.List())) ?? { active: [], history: [] },
-    upload: async (paths, dest) => (await call(Transfers.Upload(paths, dest))) ?? [],
-    download: (remotePath, destDir) => call(Transfers.Download(remotePath, destDir)),
+    upload: async (paths, dest, opts) => (await call(Transfers.Upload(paths, dest, opts))) ?? [],
+    download: (remotePath, destDir, opts) => call(Transfers.Download(remotePath, destDir, opts)),
+    planUpload: async (paths, dest, policy) => {
+      const plan = await call(Transfers.PlanUpload(paths, dest, policy))
+      if (!plan) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty upload plan" } satisfies BackendError
+      return plan
+    },
     cancel: async (id) => {
       const t = await call(Transfers.Cancel(id))
       if (!t) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty transfer" } satisfies BackendError
