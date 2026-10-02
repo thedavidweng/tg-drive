@@ -438,7 +438,7 @@ export function SheetError({ error }: { error: BackendError | null }) {
   )
 }
 
-export function SheetButtons({
+function SheetButtons({
   confirmLabel,
   destructive,
   busy,

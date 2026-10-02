@@ -166,6 +166,44 @@ func TestChannelsBindExistingChannelSwitchesTheDriveView(t *testing.T) {
 	}
 }
 
+func TestChannelsBindTwoChannelsSharingATitle(t *testing.T) {
+	seedDrive(t, nil)
+	// Telegram titles are not unique: two unbound channels share one.
+	app, closeApp, err := service.Open(service.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := app.TG.CreateChannel(context.Background(), "Archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := app.TG.CreateChannel(context.Background(), "Archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeApp()
+	svc := openGUI(t)
+	ctx := context.Background()
+
+	if _, err := svc.Channels.Bind(ctx, gui.BindRequest{ChannelID: strconv.FormatInt(first.ID, 10)}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := svc.Channels.Bind(ctx, gui.BindRequest{ChannelID: strconv.FormatInt(second.ID, 10)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ChannelID != strconv.FormatInt(second.ID, 10) || res.AlreadyInitialized {
+		t.Fatalf("Bind of the second Archive = %+v, want a fresh binding of channel %d", res, second.ID)
+	}
+	channels, err := svc.Channels.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 3 {
+		t.Fatalf("List = %+v, want Drive and both Archives", channels)
+	}
+}
+
 func TestChannelsCreateChannelWithTheDefaultTitle(t *testing.T) {
 	seedLogin(t)
 	svc := openGUI(t)
