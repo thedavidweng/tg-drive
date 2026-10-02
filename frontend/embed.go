@@ -1,8 +1,8 @@
 //go:build gui
 
 // Package frontend embeds the built GUI assets. It lives here because
-// go:embed cannot reach parent directories; build the frontend (dist/)
-// before compiling with the gui tag.
+// embed patterns cannot reach parent directories; build the frontend
+// (dist/) before compiling with the gui tag.
 package frontend
 
 import (
