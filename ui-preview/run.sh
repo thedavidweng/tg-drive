@@ -13,10 +13,13 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 OUT=$(mkdir -p "$1" && cd "$1" && pwd)
 WORK=$(mktemp -d)
 SERVER_LOG=$WORK/server.log
+SETUP_LOG=$WORK/server-setup.log
 PID=""
+SETUP_PID=""
 
 cleanup() {
   [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+  [ -n "$SETUP_PID" ] && kill "$SETUP_PID" 2>/dev/null || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -24,6 +27,7 @@ trap cleanup EXIT
 fail() {
   echo "run.sh: $*" >&2
   [ -f "$SERVER_LOG" ] && { echo "--- td-gui server log ---" >&2; cat "$SERVER_LOG" >&2; }
+  [ -f "$SETUP_LOG" ] && { echo "--- td-gui setup-server log ---" >&2; cat "$SETUP_LOG" >&2; }
   exit 1
 }
 
@@ -47,9 +51,12 @@ phone = "+15551234567"
 EOF
 # Exported, not per-command: the td-gui server must open the same config,
 # database, and fake state the CLI seeds below, never the developer's real
-# defaults.
+# defaults. TD_OMARCHY=0 keeps the preview identical on every machine: on
+# an Omarchy desktop the detected theme would otherwise apply and hide the
+# header's theme toggle the walkthrough video clicks.
 export TD_FAKE_TELEGRAM=1 TD_FAKE_TELEGRAM_STATE="$STATE/fake.json" \
-  TD_CONFIG="$STATE/config.toml" TD_DB="$STATE/td.db" TD_SESSION="$STATE/session.json"
+  TD_CONFIG="$STATE/config.toml" TD_DB="$STATE/td.db" TD_SESSION="$STATE/session.json" \
+  TD_OMARCHY=0
 
 printf 'chapters outline and open questions\n' > "$WORK/files/notes.txt"
 printf 'Q3 report draft\n' > "$WORK/files/Documents/report-q3.md"
@@ -78,9 +85,31 @@ for _ in $(seq 100); do
 done
 curl -sf -o /dev/null "$BASE/" || fail "td-gui did not serve on $BASE"
 
+# The setup and login scenes need a fresh machine: a second td-gui whose
+# config, database, session, and fake state hold no credentials, so the
+# first run starts on the setup form. Its fake account has two-step
+# verification, so the login scenes answer a password after the code.
+# TD_FAKE_AUTH_PASSWORD is per-command on purpose: it must not leak into
+# the seeded drive above.
+STATE_SETUP=$WORK/state-setup
+mkdir -p "$STATE_SETUP"
+SETUP_PORT=${TD_PREVIEW_SETUP_PORT:-$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')}
+TD_CONFIG="$STATE_SETUP/config.toml" TD_DB="$STATE_SETUP/td.db" TD_SESSION="$STATE_SETUP/session.json" \
+  TD_FAKE_TELEGRAM_STATE="$STATE_SETUP/fake.json" TD_FAKE_AUTH_PASSWORD="hunter2" \
+  WAILS_SERVER_HOST=127.0.0.1 WAILS_SERVER_PORT=$SETUP_PORT "$WORK/td-gui" > "$SETUP_LOG" 2>&1 &
+SETUP_PID=$!
+BASE_SETUP=http://127.0.0.1:$SETUP_PORT
+for _ in $(seq 100); do
+  curl -sf -o /dev/null "$BASE_SETUP/" && break
+  kill -0 "$SETUP_PID" 2>/dev/null || fail "td-gui (setup) exited before serving"
+  sleep 0.2
+done
+curl -sf -o /dev/null "$BASE_SETUP/" || fail "td-gui (setup) did not serve on $BASE_SETUP"
+
 # Walk the scenes and normalise the recording to mp4 (Playwright writes
 # webm; Pages visitors get h264).
-PREVIEW_SHA=${PREVIEW_SHA:-$(git rev-parse HEAD)} node "$ROOT/ui-preview/record.mjs" --url "$BASE" --out "$OUT" \
+PREVIEW_SHA=${PREVIEW_SHA:-$(git rev-parse HEAD)} node "$ROOT/ui-preview/record.mjs" \
+  --url "$BASE" --setup-url "$BASE_SETUP" --out "$OUT" \
   || fail "scene recording failed"
 WEBM=$(node -pe 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).video' "$OUT/manifest.json")
 ffmpeg -y -loglevel error -i "$OUT/$WEBM" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$OUT/preview.mp4"

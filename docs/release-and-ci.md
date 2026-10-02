@@ -116,11 +116,17 @@ ui-preview/run.sh out     # seeds, builds, serves, records into out/
 (`TD_FAKE_TELEGRAM_STATE`, login code `12345`), builds td-gui with
 `-tags gui,server` — Wails' headless server mode, CGO-free and needing no
 webview — and drives it with Playwright (`record.mjs`, pinned in
-`ui-preview/package.json`). Each scene is one entry in the scenes list in
+`ui-preview/package.json`). It serves two instances: the seeded,
+authenticated one the Drive scenes record, and a credential-free one for
+the setup and login scenes (its fake account has two-step verification,
+`TD_FAKE_AUTH_PASSWORD`). Each scene is one entry in the scenes list in
 `record.mjs` (color scheme, locale, optional theme override or
-interaction); adding a scene is a new entry plus any seed data in
-`run.sh`. The run writes one 2x PNG per scene, `preview.mp4`, and a
-`manifest.json` the publisher consumes.
+interaction, and `setup` to record against the credential-free server);
+adding a scene is a new entry plus any seed data in `run.sh`. Scenes run
+in order against shared server state, so a scene that starts something
+the next one depends on (or must not see) uses `leave` to restore a clean
+state after its shot. The run writes one 2x PNG per scene, `preview.mp4`,
+and a `manifest.json` the publisher consumes.
 
 The workflow has two jobs with a strict security split (ADR 0036):
 
