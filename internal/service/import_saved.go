@@ -133,7 +133,6 @@ type ImportSavedResult struct {
 // of one saved album that share a presentation kind.
 type importUnit struct {
 	groupedID int64
-	kind      string
 	caption   string
 	items     []*ImportSavedItem
 	msgs      []telegram.Message
@@ -255,14 +254,15 @@ func (a *App) resolvePhotoChoice(opts ImportSavedOptions, photos int) (string, e
 }
 
 // applyPhotoChoice rewrites the planned presentation of photo items once the
-// choice is known, and re-splits units whose kind changed.
+// choice is known. A planned unit can mix photos with documents (both plan as
+// documents before the choice); the upload pipeline splits such a unit by
+// kind when it sends.
 func applyPhotoChoice(units []*importUnit, choice string) {
 	for _, u := range units {
-		if u.kind != importKindPhoto {
-			continue
-		}
-		for i := range u.pres {
-			u.pres[i] = Presentation{Kind: choice}
+		for i, item := range u.items {
+			if item.Kind == importKindPhoto {
+				u.pres[i] = Presentation{Kind: choice}
+			}
 		}
 	}
 }
@@ -397,7 +397,7 @@ func (a *App) planImportSaved(ctx context.Context, channelID int64, into string,
 		key := fmt.Sprintf("%d/%s", msg.GroupedID, pres.Kind)
 		unit := unitByKey[key]
 		if unit == nil || msg.GroupedID == 0 {
-			unit = &importUnit{groupedID: msg.GroupedID, kind: kind, caption: savedCaption(msg)}
+			unit = &importUnit{groupedID: msg.GroupedID, caption: savedCaption(msg)}
 			units = append(units, unit)
 			if msg.GroupedID != 0 {
 				unitByKey[key] = unit
@@ -757,13 +757,12 @@ func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64,
 		}
 		return nil
 	}
+	// out.sent covers every published member, including lone members the
+	// pipeline sent as ordinary messages (a kind split or the group limit);
+	// out.albums lists media groups only.
 	byPath := map[string]int{}
-	for _, g := range out.albums {
-		for i, p := range g.Paths {
-			if i < len(g.MessageIDs) {
-				byPath[p] = g.MessageIDs[i]
-			}
-		}
+	for _, s := range out.sent {
+		byPath[s.dest] = s.messageID
 	}
 	firstMsgID := 0
 	var published []*stagedItem
