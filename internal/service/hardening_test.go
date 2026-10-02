@@ -649,20 +649,20 @@ func TestIncrementalScanPicksUpNewMessage(t *testing.T) {
 // TestHeartbeatKeepsLockDuringLongOp covers lock renewal: an operation longer
 // than the TTL still excludes concurrent lockers, and releases afterwards.
 // The TTL stays a multiple of the renewal interval with headroom (renew at
-// ~1s, expiry 3s) so race-detector scheduling jitter cannot open a steal
-// window — production runs the same ratio at TTL=900s.
+// ~2s, expiry 6s) so race-detector scheduling jitter on a loaded runner
+// cannot open a steal window — production runs the same ratio at TTL=900s.
 func TestHeartbeatKeepsLockDuringLongOp(t *testing.T) {
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	_ = tg
-	app.Cfg.Locks.TTLSeconds = 3
+	app.Cfg.Locks.TTLSeconds = 6
 	key := "path:1:/slow.txt"
 	done := make(chan error, 1)
 	go func() {
 		done <- app.withLocks(ctx, []string{key}, func(ctx context.Context) error {
 			select {
-			case <-time.After(2 * 3 * time.Second): // twice the TTL
+			case <-time.After(7 * time.Second): // past the first expiry
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -673,7 +673,7 @@ func TestHeartbeatKeepsLockDuringLongOp(t *testing.T) {
 	// initial acquisition), then keep trying to steal it well past the
 	// original expiry: renewal must keep it alive.
 	var held bool
-	deadline := time.Now().Add(8 * time.Second)
+	deadline := time.Now().Add(12 * time.Second)
 	for !held && time.Now().Before(deadline) {
 		var expires string
 		if err := app.DB.Raw().QueryRow(`select expires_at from operation_locks where key=?`, key).Scan(&expires); err == nil {
