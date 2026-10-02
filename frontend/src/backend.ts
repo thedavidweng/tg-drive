@@ -17,6 +17,7 @@ import type {
   DiscussionLink,
   DoctorCheck,
   DoctorReport,
+  DownloadOptions,
   Entry,
   FilesDropped,
   ImportItem,
@@ -38,6 +39,9 @@ import type {
   TransferList,
   TransferRemoved,
   TreeNode,
+  UploadOptions,
+  UploadPlan,
+  UploadPlanFile,
   Versions,
 } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui/models"
 
@@ -60,6 +64,7 @@ export type {
   DiscussionLink,
   DoctorCheck,
   DoctorReport,
+  DownloadOptions,
   Entry,
   FilesDropped,
   ImportItem,
@@ -81,6 +86,9 @@ export type {
   TransferList,
   TransferRemoved,
   TreeNode,
+  UploadOptions,
+  UploadPlan,
+  UploadPlanFile,
   Versions,
 }
 
@@ -135,9 +143,14 @@ export interface Backend {
      * Several files together are one album Transfer; each directory its
      * own recursive Transfer. Resolves to the new Transfers' IDs.
      */
-    upload(paths: string[], dest: string): Promise<string[]>
+    upload(paths: string[], dest: string, opts: UploadOptions): Promise<string[]>
     /** Download a remote file or directory into a local directory. */
-    download(remotePath: string, destDir: string): Promise<string>
+    download(remotePath: string, destDir: string, opts: DownloadOptions): Promise<string>
+    /**
+     * The dry-run preview of an upload: the plan td cp --dry-run prints
+     * plus each file's size against the account's upload limit.
+     */
+    planUpload(paths: string[], dest: string, policy: string): Promise<UploadPlan>
     /** Request a running Transfer's cancellation, any front end's. */
     cancel(id: string): Promise<Transfer>
     /** Re-run a failed, cancelled, or interrupted Transfer. */

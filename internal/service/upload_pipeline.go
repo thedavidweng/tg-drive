@@ -31,7 +31,7 @@ type uploadMember struct {
 	dest string
 	pres Presentation
 	// humanCaption is source text kept above the rendered caption block
-	// (imports only); empty renders the block alone.
+	// (UploadOptions.Caption, and imports); empty renders the block alone.
 	humanCaption string
 }
 

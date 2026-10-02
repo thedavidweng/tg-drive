@@ -39,8 +39,9 @@ const scenes = [
   { name: "drive-zh-CN", title: "Drive — 简体中文", colorScheme: "light", locale: "zh-CN" },
   // The Drive tab's file-manager surfaces: breadcrumb navigation into a
   // folder, a destructive row action blocked by its confirmation sheet,
-  // and the tree view. All three only navigate or open a sheet — no
-  // server state changes, so later scenes see the seeded drive intact.
+  // the tree view, and the upload options sheet. All four only navigate
+  // or open a sheet — the upload sheet previews the dry-run plan and
+  // starts nothing — so later scenes see the seeded drive intact.
   {
     name: "drive-breadcrumbs",
     title: "Drive — breadcrumbs in a folder",
@@ -72,6 +73,20 @@ const scenes = [
       // The tree view is a static outline: a named nested list, not the
       // interactive tree role.
       await page.getByRole("list", { name: "Tree of /" }).waitFor()
+    },
+  },
+  {
+    name: "drive-upload-sheet",
+    title: "Drive — upload options and dry-run plan",
+    colorScheme: "light",
+    settle: async (page) => {
+      // The picker answers from TD_GUI_PICK_FILES; the sheet then shows
+      // the facade's dry-run plan before its start button enables.
+      await page.getByRole("button", { name: "Upload files" }).click()
+      const sheet = page.getByRole("dialog", { name: "Upload to /" })
+      await sheet.waitFor()
+      await sheet.getByRole("list", { name: "Files to upload" }).getByRole("listitem").first().waitFor()
+      await page.getByText("Upload limit: 2 GB per file").waitFor()
     },
   },
   // The channel switcher: the sheet lists the bound drives and the active
@@ -300,6 +315,11 @@ const scenes = [
     colorScheme: "light",
     settle: async (page) => {
       await page.getByRole("button", { name: "Upload files" }).click()
+      const sheet = page.getByRole("dialog", { name: "Upload to /" })
+      await sheet.waitFor()
+      // The start button only enables once the dry-run plan is in.
+      await sheet.getByRole("list", { name: "Files to upload" }).getByRole("listitem").first().waitFor()
+      await sheet.getByRole("button", { name: "Start upload" }).click()
       await page.getByRole("tab", { name: "Transfers" }).click()
       const active = page.getByRole("region", { name: "Active" })
       await active.getByText("Uploading").first().waitFor()

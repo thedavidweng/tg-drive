@@ -200,6 +200,10 @@ type UploadOptions struct {
 	// ConfirmReplace is the ADR 0003 confirmation that ConflictReplace
 	// requires.
 	ConfirmReplace bool
+	// Caption is human text rendered above the upload's caption block: on
+	// the file's own message for a single upload, on the first member of
+	// an album. Empty renders the caption block alone.
+	Caption string
 }
 
 // Validate rejects an unconfirmed replace. The upload use cases apply it
@@ -244,7 +248,7 @@ func (a *App) UploadFileAs(ctx context.Context, localPath, remotePath string, po
 	if err := opts.Validate(policy); err != nil {
 		return nil, err
 	}
-	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, "", opts)
+	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, opts.Caption, opts)
 }
 
 func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string, opts UploadOptions) (*UploadResult, error) {

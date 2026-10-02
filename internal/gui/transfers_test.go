@@ -163,7 +163,7 @@ func TestTransfersUploadEmitsTheStageAndProgressSequence(t *testing.T) {
 
 	const size = 12 * 1024 * 1024
 	src := bigFile(t, "big.bin", size)
-	ids, err := svc.Transfers.Upload(ctx, []string{src}, "/uploads")
+	ids, err := svc.Transfers.Upload(ctx, []string{src}, "/uploads", gui.UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestTransfersUploadSeveralFilesIsOneAlbumTransfer(t *testing.T) {
 	ids, err := svc.Transfers.Upload(ctx, []string{
 		bigFile(t, "a.txt", 100),
 		bigFile(t, "b.txt", 100),
-	}, "/album")
+	}, "/album", gui.UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestTransfersUploadDirectoryIsARecursiveTransfer(t *testing.T) {
 	}
 	// A picked directory lands under the current remote directory by name,
 	// the way a file manager copy would place it.
-	ids, err := svc.Transfers.Upload(ctx, []string{dir}, "/tree")
+	ids, err := svc.Transfers.Upload(ctx, []string{dir}, "/tree", gui.UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestTransfersDownloadWritesTheFile(t *testing.T) {
 	ctx := context.Background()
 	dest := t.TempDir()
 
-	id, err := svc.Transfers.Download(ctx, "/notes.txt", dest)
+	id, err := svc.Transfers.Download(ctx, "/notes.txt", dest, gui.DownloadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestTransfersDownloadWritesTheFile(t *testing.T) {
 		t.Fatalf("downloaded notes.txt = %q, want hello", body)
 	}
 
-	id, err = svc.Transfers.Download(ctx, "/photos", dest)
+	id, err = svc.Transfers.Download(ctx, "/photos", dest, gui.DownloadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestTransfersCancelEndsARunningUpload(t *testing.T) {
 	svc.SetTransferEmitter(rec.emit)
 	ctx := context.Background()
 
-	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "slow.bin", 24*1024*1024)}, "/slow.bin")
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "slow.bin", 24*1024*1024)}, "/slow.bin", gui.UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestTransfersRetryRerunsAFailedUpload(t *testing.T) {
 	svc.SetTransferEmitter(rec.emit)
 	ctx := context.Background()
 
-	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "flake.bin", 12*1024*1024)}, "/flake.bin")
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "flake.bin", 12*1024*1024)}, "/flake.bin", gui.UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestTransfersRetryRejectsAnActiveTransfer(t *testing.T) {
 	svc := openGUI(t)
 	ctx := context.Background()
 
-	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "slow.bin", 24*1024*1024)}, "/slow.bin")
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "slow.bin", 24*1024*1024)}, "/slow.bin", gui.UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func TestTransfersClearFinishedRemovesHistory(t *testing.T) {
 	svc.SetTransferEmitter(rec.emit)
 	ctx := context.Background()
 
-	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "a.txt", 10)}, "/a.txt")
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "a.txt", 10)}, "/a.txt", gui.UploadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

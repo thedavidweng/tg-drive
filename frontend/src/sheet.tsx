@@ -110,12 +110,15 @@ export function SheetButtons({
   confirmLabel,
   destructive,
   busy,
+  disabled,
   onConfirm,
   onClose,
 }: {
   confirmLabel: string
   destructive?: boolean
   busy: boolean
+  /** Extra gating beyond busy (a confirmation the sheet waits on). */
+  disabled?: boolean
   onConfirm: () => void
   onClose: () => void
 }) {
@@ -125,7 +128,12 @@ export function SheetButtons({
       <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
         {t("sheet.cancel")}
       </Button>
-      <Button variant={destructive ? "destructive" : "default"} size="sm" onClick={onConfirm} disabled={busy}>
+      <Button
+        variant={destructive ? "destructive" : "default"}
+        size="sm"
+        onClick={onConfirm}
+        disabled={busy || disabled}
+      >
         {confirmLabel}
       </Button>
     </div>

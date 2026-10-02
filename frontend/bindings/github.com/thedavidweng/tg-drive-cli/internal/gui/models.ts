@@ -329,6 +329,17 @@ export interface DoctorReport {
 }
 
 /**
+ * DownloadOptions are the download sheet's choices.
+ */
+export interface DownloadOptions {
+    /**
+     * Policy is the local conflict policy: "skip", "replace", or "fail"
+     * (the zero value, matching get without flags).
+     */
+    "policy": string;
+}
+
+/**
  * Entry is one row of a directory listing.
  */
 export interface Entry {
@@ -724,6 +735,105 @@ export interface TreeNode {
     "path": string;
     "type": string;
     "children"?: TreeNode[] | null;
+}
+
+/**
+ * UploadOptions are the upload sheet's choices. They map one-to-one onto
+ * the service's upload options: the conflict policy and the replace
+ * confirmation (service.UploadOptions.Validate), the presentation kind and
+ * caption (service.Presentation, UploadOptions.Caption), and the recursive
+ * switches of td cp --recursive.
+ */
+export interface UploadOptions {
+    /**
+     * Policy is the remote conflict policy: "skip", "replace", or "fail"
+     * (the zero value, matching cp without flags). The CLI-only rename
+     * policy is not offered.
+     */
+    "policy": string;
+
+    /**
+     * ConfirmReplace is the ADR 0003 confirmation Policy "replace"
+     * requires.
+     */
+    "confirm_replace"?: boolean;
+
+    /**
+     * Kind is the Telegram presentation: "document", "photo", or "video"
+     * ("" is the document default). Folder uploads take no presentation.
+     */
+    "kind"?: string;
+
+    /**
+     * Caption is human text rendered above the caption block: on the file's
+     * own message for one file, on the first member of an album. Folder
+     * uploads take no caption.
+     */
+    "caption"?: string;
+
+    /**
+     * NoHash skips content hashing (cp --no-hash).
+     */
+    "no_hash"?: boolean;
+
+    /**
+     * ContinueOnError lets a folder upload continue past failed files
+     * (cp --continue-on-error).
+     */
+    "continue_on_error"?: boolean;
+
+    /**
+     * IncludeEmptyDirs asks a folder upload to create empty directories (cp
+     * --include-empty-dirs); the service answers with its typed V1 error.
+     */
+    "include_empty_dirs"?: boolean;
+}
+
+/**
+ * UploadPlan is the dry-run preview the upload sheet shows before the
+ * upload starts. Local, Remote, Policy, and WouldReplace are the service's
+ * dry-run plan for the same input, exactly as td cp --dry-run reports it;
+ * the rest lets the sheet show what the bare plan cannot.
+ */
+export interface UploadPlan {
+    "local": string[] | null;
+    "remote": string;
+    "policy": string;
+    "would_replace"?: string;
+
+    /**
+     * UploadLimitBytes is the account's per-file upload limit (2 GB, or
+     * 4 GB with Premium), from the same capability surface as td status.
+     */
+    "upload_limit_bytes": number;
+
+    /**
+     * Files carries one entry per path, in the order given.
+     */
+    "files": UploadPlanFile[] | null;
+}
+
+/**
+ * UploadPlanFile is one local path in the upload plan preview.
+ */
+export interface UploadPlanFile {
+    "local": string;
+
+    /**
+     * Size is the file's size; 0 for folders and paths that do not stat.
+     */
+    "size": number;
+
+    /**
+     * Dir marks a folder (a recursive upload).
+     */
+    "dir"?: boolean;
+
+    /**
+     * OverLimit marks a file larger than the account's upload limit; the
+     * upload itself would fail with ERR_FILE_TOO_LARGE.
+     */
+    "over_limit"?: boolean;
 }
 
 /**

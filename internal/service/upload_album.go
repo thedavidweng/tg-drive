@@ -95,7 +95,9 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 				fmt.Sprintf("two source files map to %q; album members need distinct basenames", dest))
 		}
 		seen[dest] = true
-		members = append(members, uploadMember{localPath: lp, dest: dest, pres: pres})
+		// The one human caption renders on the first member only
+		// (sendUnit); setting it on every member is harmless.
+		members = append(members, uploadMember{localPath: lp, dest: dest, pres: pres, humanCaption: opts.Caption})
 	}
 
 	out, err := a.runUpload(ctx, uploadRun{members: members, policy: policy, noHash: noHash, album: true, opts: opts})

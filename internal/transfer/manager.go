@@ -93,6 +93,7 @@ type uploadOptions struct {
 	Threads           int                    `json:"threads,omitempty"`
 	PartSizeKB        int                    `json:"part_size_kb,omitempty"`
 	ConfirmReplace    bool                   `json:"confirm_replace,omitempty"`
+	Caption           string                 `json:"caption,omitempty"`
 	// Sources are an album upload's local files; a single-file upload keeps
 	// its one source in the Transfer's Source.
 	Sources []string `json:"sources,omitempty"`
@@ -108,6 +109,7 @@ func marshalUploadOptions(policy service.ConflictPolicy, noHash bool, pres servi
 		Kind: pres.Kind, DurationSeconds: pres.DurationSeconds, Width: pres.Width, Height: pres.Height,
 		SupportsStreaming: pres.SupportsStreaming, ThumbPath: pres.ThumbPath,
 		Threads: opts.Threads, PartSizeKB: opts.PartSizeKB, ConfirmReplace: opts.ConfirmReplace,
+		Caption: opts.Caption,
 	}
 }
 
@@ -121,7 +123,7 @@ func (o uploadOptions) presentation() service.Presentation {
 
 // upload is the stored upload's call settings.
 func (o uploadOptions) upload() service.UploadOptions {
-	return service.UploadOptions{Threads: o.Threads, PartSizeKB: o.PartSizeKB, ConfirmReplace: o.ConfirmReplace}
+	return service.UploadOptions{Threads: o.Threads, PartSizeKB: o.PartSizeKB, ConfirmReplace: o.ConfirmReplace, Caption: o.Caption}
 }
 
 // parseOptions reads a Transfer's stored options JSON.
