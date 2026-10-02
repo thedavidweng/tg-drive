@@ -7,13 +7,11 @@ import (
 	"os"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
 	"github.com/thedavidweng/tg-drive-cli/internal/output"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
 	"github.com/thedavidweng/tg-drive-cli/internal/version"
@@ -24,35 +22,30 @@ type Runtime interface {
 	JSON() bool
 	Channel() string
 	Renderer() *output.Renderer
-	LoadConfig() (config.Config, string, error)
+	// Options are the service options the global flags select.
+	Options() service.Options
 	OpenApp(cmd *cobra.Command) (*service.App, func(), error)
 	// OpenOfflineApp opens config and the database without a Telegram client.
 	OpenOfflineApp(cmd *cobra.Command) (*service.App, func(), error)
 }
 
-func EnsureTelegramConfig(cfg *config.Config, configPath string, requirePhone bool) error {
+// promptTelegram asks for a missing Telegram credential on stderr and reads
+// the answer from stdin.
+func promptTelegram() service.TelegramAsk {
 	reader := bufio.NewReader(os.Stdin)
-	if cfg.Telegram.APIID == 0 {
-		fmt.Fprintln(os.Stderr, "Create a Telegram app at https://my.telegram.org/apps")
-		fmt.Fprint(os.Stderr, "api_id: ")
-		s, _ := reader.ReadString('\n')
-		id, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-		if err != nil {
-			return apperr.New(apperr.ErrConfigInvalid, "invalid api_id")
+	return func(f service.TelegramField) (string, error) {
+		switch f {
+		case service.TelegramAPIID:
+			fmt.Fprintln(os.Stderr, "Create a Telegram app at https://my.telegram.org/apps")
+			fmt.Fprint(os.Stderr, "api_id: ")
+		case service.TelegramAPIHash:
+			fmt.Fprint(os.Stderr, "api_hash: ")
+		case service.TelegramPhone:
+			fmt.Fprint(os.Stderr, "phone (international, e.g. +1234567890): ")
 		}
-		cfg.Telegram.APIID = id
-	}
-	if cfg.Telegram.APIHash == "" {
-		fmt.Fprint(os.Stderr, "api_hash: ")
 		s, _ := reader.ReadString('\n')
-		cfg.Telegram.APIHash = strings.TrimSpace(s)
+		return s, nil
 	}
-	if requirePhone && cfg.Telegram.Phone == "" {
-		fmt.Fprint(os.Stderr, "phone (international, e.g. +1234567890): ")
-		s, _ := reader.ReadString('\n')
-		cfg.Telegram.Phone = strings.TrimSpace(s)
-	}
-	return config.Save(configPath, *cfg)
 }
 
 // groupUsage makes a command group reject unknown subcommands as usage

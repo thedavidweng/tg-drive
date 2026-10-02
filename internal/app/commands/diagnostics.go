@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
+	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
 
 // Doctor, doctor path-codec, and config commands.
@@ -101,7 +102,7 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 		Short: "Get config value(s)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, configPath, err := rt.LoadConfig()
+			cfg, configPath, err := service.LoadConfig(rt.Options())
 			if err != nil {
 				return r.Error(err)
 			}
@@ -148,7 +149,7 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
-			cfg, configPath, err := rt.LoadConfig()
+			cfg, configPath, err := service.LoadConfig(rt.Options())
 			if err != nil {
 				return r.Error(err)
 			}
