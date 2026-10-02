@@ -13,12 +13,16 @@ import type {
   DirectoryChanged,
   DiscussionLink,
   Entry,
+  FilesDropped,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
   ScanOutcome,
   ScanProgress,
   ShareLink,
+  Transfer,
+  TransferList,
+  TransferRemoved,
   TreeNode,
   Versions,
 } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui/models"
@@ -38,12 +42,16 @@ export type {
   DirectoryChanged,
   DiscussionLink,
   Entry,
+  FilesDropped,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
   ScanOutcome,
   ScanProgress,
   ShareLink,
+  Transfer,
+  TransferList,
+  TransferRemoved,
   TreeNode,
   Versions,
 }
@@ -64,6 +72,11 @@ export interface BackendError {
  * Everything the screens need from Go. The app uses the generated Wails
  * bindings (wails-backend.ts); tests pass an in-memory backend.
  */
+/** The stages a Transfer does not leave, mirroring Stage.Terminal in Go. */
+export function isTerminalStage(stage: string): boolean {
+  return stage === "completed" || stage === "failed" || stage === "cancelled" || stage === "interrupted"
+}
+
 export interface Backend {
   drive: {
     list(path: string): Promise<Entry[]>
@@ -77,6 +90,36 @@ export interface Backend {
   events: {
     onDirectoryChanged(cb: (e: DirectoryChanged) => void): () => void
     onScanProgress(cb: (e: ScanProgress) => void): () => void
+    /** A Transfer is new or entered a stage (any front end's Transfer). */
+    onTransferStage(cb: (t: Transfer) => void): () => void
+    /** A Transfer moved within its stage (bytes, items, cancel flag). */
+    onTransferProgress(cb: (t: Transfer) => void): () => void
+    /** A Transfer left the index (cleared or pruned). */
+    onTransferRemoved(cb: (e: TransferRemoved) => void): () => void
+    /** Files were dropped onto a drop-target element of the window. */
+    onFilesDropped(cb: (e: FilesDropped) => void): () => void
+  }
+  transfers: {
+    /** Every Transfer in the index: active above the 30-day history. */
+    list(): Promise<TransferList>
+    /**
+     * Upload local files and directories into the remote directory dest.
+     * Several files together are one album Transfer; each directory its
+     * own recursive Transfer. Resolves to the new Transfers' IDs.
+     */
+    upload(paths: string[], dest: string): Promise<string[]>
+    /** Download a remote file or directory into a local directory. */
+    download(remotePath: string, destDir: string): Promise<string>
+    /** Request a running Transfer's cancellation, any front end's. */
+    cancel(id: string): Promise<Transfer>
+    /** Re-run a failed, cancelled, or interrupted Transfer. */
+    retry(id: string): Promise<Transfer>
+    /** Remove every terminal Transfer; resolves to how many cleared. */
+    clearFinished(): Promise<number>
+    /** Native multi-file dialog; an empty answer is the dialog cancelled. */
+    pickFiles(): Promise<string[]>
+    /** Native directory dialog; an empty answer is the dialog cancelled. */
+    pickDirectory(): Promise<string>
   }
   channels: {
     /** The channels bound in the shared index; one is marked active. */

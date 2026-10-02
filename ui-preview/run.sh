@@ -86,10 +86,37 @@ printf 'nightly backup archive\n' > "$WORK/files/backup.txt"
 "$WORK/td" cp "$WORK/files/backup.txt" /backup.txt --channel=Backups > /dev/null
 TD_DB="$WORK/scratch.db" "$WORK/td" init "$WORK/scratch-root" --create-channel="Photos Archive" > /dev/null
 
+# The Transfers scenes need a drive with history. A 12 MiB file crosses
+# the fake's resumable threshold, so uploads of it span multiple parts.
+head -c 12582912 /dev/zero > "$WORK/files/big.bin"
+# One failed Transfer in the history: the fake fails the first resumable
+# upload after two confirmed parts, and the row keeps the error code.
+TD_FAKE_FAIL_UPLOAD_AFTER_PARTS=2 \
+  "$WORK/td" cp "$WORK/files/big.bin" /broken.bin --upload-part-size-kb 1024 --upload-threads 1 > /dev/null 2>&1 || true
+# The owner's cancel poll is a third of locks.ttl_seconds; shorten it so
+# the GUI's cancel of a CLI upload turns around in seconds, not minutes.
+"$WORK/td" config set locks.ttl_seconds 3
+
+# The scripted picker answers: native dialogs are no-ops in server mode,
+# so td-gui falls back to these. Two 22 MiB photos keep the live-upload
+# scene's album in the uploading stage for several seconds.
+mkdir -p "$WORK/pick" "$WORK/downloads"
+head -c 23068672 /dev/zero > "$WORK/pick/picnic.jpg"
+head -c 23068672 /dev/zero > "$WORK/pick/sunset.jpg"
+PICK_FILES="$WORK/pick/picnic.jpg:$WORK/pick/sunset.jpg"
+# The CLI uploads the Transfers scenes start mid-recording, against the
+# same fake Telegram; one thread and a slow part keep them cancellable.
+# (The fake serializes Telegram calls, so these run only while no scene is
+# loading a page.)
+export TD_PREVIEW_CLI_CP="TD_FAKE_TRANSFER_DELAY=1s '$WORK/td' cp '$WORK/files/big.bin' /big.bin --upload-part-size-kb 1024 --upload-threads 1"
+export TD_PREVIEW_CLI_CP2="TD_FAKE_TRANSFER_DELAY=1s '$WORK/td' cp '$WORK/files/big.bin' /cli-slow.bin --upload-part-size-kb 1024 --upload-threads 1"
+
 # Serve the GUI. WAILS_SERVER_PORT=0 would need log parsing, so find a free
 # port first; the race is acceptable for a CI job and a local run.
 PORT=${TD_PREVIEW_PORT:-$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')}
-WAILS_SERVER_HOST=127.0.0.1 WAILS_SERVER_PORT=$PORT "$WORK/td-gui" > "$SERVER_LOG" 2>&1 &
+TD_FAKE_TRANSFER_DELAY=800ms TD_FAKE_PART_SIZE=1048576 \
+  TD_GUI_PICK_FILES="$PICK_FILES" TD_GUI_PICK_DIR="$WORK/downloads" \
+  WAILS_SERVER_HOST=127.0.0.1 WAILS_SERVER_PORT=$PORT "$WORK/td-gui" > "$SERVER_LOG" 2>&1 &
 PID=$!
 BASE=http://127.0.0.1:$PORT
 for _ in $(seq 100); do

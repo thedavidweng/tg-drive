@@ -1,20 +1,24 @@
 import { useEffect, useState, type ReactNode } from "react"
 import {
   ChevronRight,
+  Download,
   File,
   Folder,
   FolderPlus,
+  FolderUp,
   List,
   ListTree,
   Pencil,
   RefreshCw,
   Share2,
   Trash2,
+  Upload,
 } from "lucide-react"
 
 import type { Backend, BackendError, Entry, ScanOutcome, ShareLink, TreeNode } from "@/backend"
 import { Button } from "@/components/ui/button"
-import { useI18n, type Locale, type Translate } from "@/i18n"
+import { formatDate, formatSize } from "@/format"
+import { useI18n, type Translate } from "@/i18n"
 
 type Listing = { state: "loading" } | { state: "ready"; entries: Entry[] } | { state: "failed"; error: BackendError }
 
@@ -39,6 +43,13 @@ type ScanState =
   | { state: "done"; outcome: ScanOutcome }
   | { state: "failed"; error: BackendError }
 
+// A transfer submission's one-line feedback; the Transfers tab carries the
+// live progress.
+type TransferNote =
+  | { state: "idle" }
+  | { state: "started"; kind: "upload" | "download" }
+  | { state: "failed"; error: BackendError }
+
 export function DriveScreen({ backend }: { backend: Backend }) {
   const { t } = useI18n()
   const [path, setPath] = useState("/")
@@ -47,6 +58,7 @@ export function DriveScreen({ backend }: { backend: Backend }) {
   const [reloadNonce, setReloadNonce] = useState(0)
   const [sheet, setSheet] = useState<SheetState>(null)
   const [scan, setScan] = useState<ScanState>({ state: "idle" })
+  const [transferNote, setTransferNote] = useState<TransferNote>({ state: "idle" })
 
   const reload = () => setReloadNonce((n) => n + 1)
 
@@ -99,11 +111,71 @@ export function DriveScreen({ backend }: { backend: Backend }) {
     }
   }
 
+  // Every upload — picker-chosen or dropped — lands in the directory being
+  // shown and runs as a Transfer the Transfers tab watches.
+  const uploadPaths = async (paths: string[]) => {
+    const clean = paths.filter((p) => p !== "")
+    if (clean.length === 0) return
+    try {
+      await backend.transfers.upload(clean, path)
+      setTransferNote({ state: "started", kind: "upload" })
+    } catch (error) {
+      setTransferNote({ state: "failed", error: error as BackendError })
+    }
+  }
+
+  // The picker itself can fail (a server-mode build without a connected
+  // dialog answers ERR_USAGE); that failure wears the same note as a
+  // submission's.
+  const pickAndUpload = async (pick: () => Promise<string[]>) => {
+    try {
+      await uploadPaths(await pick())
+    } catch (error) {
+      setTransferNote({ state: "failed", error: error as BackendError })
+    }
+  }
+
+  const downloadEntry = async (entry: Entry) => {
+    try {
+      const dir = await backend.transfers.pickDirectory()
+      if (!dir) return
+      await backend.transfers.download(entry.path, dir)
+      setTransferNote({ state: "started", kind: "download" })
+    } catch (error) {
+      setTransferNote({ state: "failed", error: error as BackendError })
+    }
+  }
+
+  // Files dropped from the OS arrive as the files-dropped event; the drop
+  // target is the whole Drive screen (data-file-drop-target below).
+  useEffect(() => {
+    return backend.events.onFilesDropped((e) => {
+      const paths = e.paths ?? []
+      if (paths.length === 0) return
+      backend.transfers.upload(paths, path).then(
+        () => setTransferNote({ state: "started", kind: "upload" }),
+        (error: BackendError) => setTransferNote({ state: "failed", error }),
+      )
+    })
+  }, [backend, path])
+
   return (
-    <div>
+    <div data-file-drop-target="">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <Breadcrumbs path={path} onNavigate={setPath} />
         <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => pickAndUpload(() => backend.transfers.pickFiles())}>
+            <Upload data-icon="inline-start" />
+            {t("drive.uploadFiles")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => pickAndUpload(async () => [await backend.transfers.pickDirectory()])}
+          >
+            <FolderUp data-icon="inline-start" />
+            {t("drive.uploadFolder")}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setSheet({ kind: "newFolder" })}>
             <FolderPlus data-icon="inline-start" />
             {t("drive.newFolder")}
@@ -149,12 +221,21 @@ export function DriveScreen({ backend }: { backend: Backend }) {
         </p>
       )}
 
+      {transferNote.state !== "idle" && (
+        <p role="status" className="mb-2 text-[12px] text-muted-foreground">
+          {transferNote.state === "started" &&
+            (transferNote.kind === "upload" ? t("drive.uploadStarted") : t("drive.downloadStarted"))}
+          {transferNote.state === "failed" && t("drive.transferFailed", { message: transferNote.error.message })}
+        </p>
+      )}
+
       {view === "list" ? (
         <ListingCard
           listing={listing}
           path={path}
           onNavigate={setPath}
           onAction={(kind, entry) => setSheet({ kind, entry } as SheetState)}
+          onDownload={downloadEntry}
         />
       ) : (
         <TreeCard backend={backend} path={path} reloadNonce={reloadNonce} />
@@ -237,11 +318,13 @@ function ListingCard({
   path,
   onNavigate,
   onAction,
+  onDownload,
 }: {
   listing: Listing
   path: string
   onNavigate: (path: string) => void
   onAction: (kind: "move" | "share" | "delete", entry: Entry) => void
+  onDownload: (entry: Entry) => void
 }) {
   const { t, locale } = useI18n()
   if (listing.state === "loading") {
@@ -292,9 +375,15 @@ function ListingCard({
           </span>
           {e.type === "file" && (
             <span className="flex shrink-0 items-center gap-0.5">
+              <RowAction label={t("drive.download")} onClick={() => onDownload(e)} icon={Download} />
               <RowAction label={t("drive.rename")} onClick={() => onAction("move", e)} icon={Pencil} />
               <RowAction label={t("drive.share")} onClick={() => onAction("share", e)} icon={Share2} />
               <RowAction label={t("drive.delete")} onClick={() => onAction("delete", e)} icon={Trash2} />
+            </span>
+          )}
+          {e.type === "dir" && (
+            <span className="flex shrink-0 items-center gap-0.5">
+              <RowAction label={t("drive.download")} onClick={() => onDownload(e)} icon={Download} />
             </span>
           )}
         </li>
@@ -650,22 +739,4 @@ function fileType(name: string, t: Translate): string {
   const i = name.lastIndexOf(".")
   if (i <= 0 || i === name.length - 1) return t("drive.file")
   return name.slice(i + 1).toUpperCase()
-}
-
-export function formatDate(iso: string, locale: Locale): string {
-  const d = new Date(iso)
-  if (!iso || Number.isNaN(d.getTime())) return "—"
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(d)
-}
-
-export function formatSize(bytes: number, t: Translate): string {
-  if (bytes < 1024) return t("size.b", { n: bytes })
-  const units = ["size.kb", "size.mb", "size.gb"] as const
-  let n = bytes / 1024
-  let i = 0
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024
-    i++
-  }
-  return t(units[i], { n: n >= 10 ? Math.round(n) : Math.round(n * 10) / 10 })
 }

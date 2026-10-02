@@ -14,8 +14,12 @@ declare module "@wailsio/runtime" {
         interface CustomEvents {
             "auth.prompt": gui$0.AuthPrompt;
             "directory-changed": gui$0.DirectoryChanged;
+            "files-dropped": gui$0.FilesDropped;
             "omarchy:theme-changed": gui$0.OmarchyTheme;
             "scan-progress": gui$0.ScanProgress;
+            "transfer-progress": gui$0.Transfer;
+            "transfer-removed": gui$0.TransferRemoved;
+            "transfer-stage": gui$0.Transfer;
         }
     }
 }

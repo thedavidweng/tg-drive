@@ -15,7 +15,34 @@ const (
 	EventDirectoryChanged = "directory-changed"
 	// EventScanProgress carries ScanProgress while a scan runs.
 	EventScanProgress = "scan-progress"
+	// EventTransferStage carries Transfer: a Transfer is new or entered a
+	// stage, terminal stages included. Both the GUI's own Transfers (via
+	// the Manager's Observer) and other processes' (via index sync) feed
+	// it.
+	EventTransferStage = "transfer-stage"
+	// EventTransferProgress carries Transfer: a Transfer moved within its
+	// stage (bytes, items, or its cancel flag), at most as often as the
+	// Manager writes progress to the index.
+	EventTransferProgress = "transfer-progress"
+	// EventTransferRemoved carries TransferRemoved: a Transfer left the
+	// index (cleared or pruned).
+	EventTransferRemoved = "transfer-removed"
+	// EventFilesDropped carries FilesDropped: files were dropped onto a
+	// drop-target element of the window.
+	EventFilesDropped = "files-dropped"
 )
+
+// TransferRemoved is the payload of EventTransferRemoved.
+type TransferRemoved struct {
+	ID string `json:"id"`
+}
+
+// FilesDropped is the payload of EventFilesDropped: the absolute local
+// paths the OS reported for the drop. cmd/td-gui translates the window's
+// native drop event into it; the facade itself never sees the window.
+type FilesDropped struct {
+	Paths []string `json:"paths"`
+}
 
 // DirectoryChanged is the payload of EventDirectoryChanged: the refreshed
 // listing of the directory the frontend is showing.

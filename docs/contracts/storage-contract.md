@@ -261,7 +261,7 @@ them.
 - `error_code` / `error_message` are set when it ends `failed`: the same
   code and message the creating command reported. A `cancelled` or
   `interrupted` Transfer leaves them empty.
-- `front_end` is the creating front end: `cli`.
+- `front_end` is the creating front end: `cli` or `gui`.
 - `owner_token` identifies the owning process's Transfer Manager. The owner
   leases the Transfer from submission: it writes `lease_expires_at` and
   renews it on the Operation-lock heartbeat (the `locks.ttl_seconds` TTL,

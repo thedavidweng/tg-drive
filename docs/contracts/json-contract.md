@@ -349,11 +349,11 @@ events only.
 - `error_code` / `error_message` appear only on a `failed` Transfer and match
   the error envelope its command reported. A `cancelled` or `interrupted`
   Transfer carries no error.
-- `front_end` is the front end that created it (`cli`).
-- `cancel_requested` is set by `td transfers cancel`; the owning process
-  polls it on its lease heartbeat and ends the Transfer `cancelled`. A
-  retry clears it when it takes the Transfer over, so the recorded request
-  never cancels the new owner.
+- `front_end` is the front end that created it (`cli` or `gui`).
+- `cancel_requested` is set by `td transfers cancel` or the GUI's Transfers
+  tab; the owning process polls it on its lease heartbeat and ends the
+  Transfer `cancelled`. A retry clears it when it takes the Transfer over,
+  so the recorded request never cancels the new owner.
 - Timestamps are RFC 3339 UTC; `finished_at` appears once the Transfer ended.
 
 ## Channel list

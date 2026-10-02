@@ -1,6 +1,6 @@
 import { Events } from "@wailsio/runtime"
 
-import { Auth, Channels, Drive, Settings } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
+import { Auth, Channels, Drive, Settings, Transfers } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
 import type { Backend, BackendError } from "@/backend"
 
 /**
@@ -41,6 +41,28 @@ export const wailsBackend: Backend = {
   events: {
     onDirectoryChanged: (cb) => Events.On("directory-changed", (ev) => cb(ev.data)),
     onScanProgress: (cb) => Events.On("scan-progress", (ev) => cb(ev.data)),
+    onTransferStage: (cb) => Events.On("transfer-stage", (ev) => cb(ev.data)),
+    onTransferProgress: (cb) => Events.On("transfer-progress", (ev) => cb(ev.data)),
+    onTransferRemoved: (cb) => Events.On("transfer-removed", (ev) => cb(ev.data)),
+    onFilesDropped: (cb) => Events.On("files-dropped", (ev) => cb(ev.data)),
+  },
+  transfers: {
+    list: async () => (await call(Transfers.List())) ?? { active: [], history: [] },
+    upload: async (paths, dest) => (await call(Transfers.Upload(paths, dest))) ?? [],
+    download: (remotePath, destDir) => call(Transfers.Download(remotePath, destDir)),
+    cancel: async (id) => {
+      const t = await call(Transfers.Cancel(id))
+      if (!t) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty transfer" } satisfies BackendError
+      return t
+    },
+    retry: async (id) => {
+      const t = await call(Transfers.Retry(id))
+      if (!t) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty transfer" } satisfies BackendError
+      return t
+    },
+    clearFinished: async () => (await call(Transfers.ClearFinished())) ?? 0,
+    pickFiles: async () => (await call(Transfers.PickFiles())) ?? [],
+    pickDirectory: async () => (await call(Transfers.PickDirectory())) ?? "",
   },
   channels: {
     list: async () => (await call(Channels.List())) ?? [],

@@ -89,8 +89,13 @@ func ParseStage(name string) (Stage, error) {
 // FrontEnd is the program that created a Transfer.
 type FrontEnd string
 
-// FrontEndCLI is the td command line.
-const FrontEndCLI FrontEnd = "cli"
+// FrontEnd values: the creating program.
+const (
+	// FrontEndCLI is the td command line.
+	FrontEndCLI FrontEnd = "cli"
+	// FrontEndGUI is the td-gui desktop app.
+	FrontEndGUI FrontEnd = "gui"
+)
 
 // Transfer is one user-requested upload or download as the index records
 // it.

@@ -125,8 +125,16 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   round-trip with secrets redacted until a confirmed reveal (the service's
   `ERR_CONFIRMATION_REQUIRED` reaches the frontend) and by Omarchy
   detection against a seeded theme and `hyprland.conf`, with a theme
-  change emitting on the watch channel. The facade never imports Wails, so
-  these tests run headless with no webview or display.
+  change emitting on the watch channel. The Transfers facade is covered by
+  the typed event sequences of its upload and download submissions (single
+  file, album, recursive), cancel with a shortened `locks.ttl_seconds`,
+  retry after a failed resumable upload resuming from saved parts, the
+  `ERR_USAGE` rejection of retrying an active or completed Transfer, the
+  index-sync pick-up of a transfer a real CLI process started — cancelled
+  from the facade — and clear-finished removals; its file dialogs are an
+  injected `FilePicker`, scripted in tests and in server mode through
+  `TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR`. The facade never imports Wails,
+  so these tests run headless with no webview or display.
 - **Frontend behaviour tests** live beside the screens in `frontend/src`
   and run with `bun test` (Bun's test runner under happy-dom, via
   `@testing-library/react`; Bun is already the package manager, so no
@@ -144,7 +152,14 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   unconfigured machine, login otherwise), the login flow states (code,
   wrong-code attempts, 2FA password, reused and resent codes, rate-limit
   wait, cancel), logout, and i18n fallback to English for an unknown
-  system language; and the Settings tab — config keys listed with secrets
+  system language; the Drive tab's upload entry points (file and folder
+  pickers, files dropped onto the window) starting transfers into the
+  shown directory and its download row actions going through the folder
+  picker; and the Transfers tab — stage pills and progress bars updating
+  from the typed events, item counts for multi-item transfers, cancel and
+  retry calling the backend, failures showing their plain-language reason
+  and error code, CLI transfers badged, and clear finished emptying the
+  history; and the Settings tab — config keys listed with secrets
   masked until revealed, edits saved through the backend with rejection
   errors shown, the theme and language overrides, and the Omarchy switch
   applying and clearing the flat theme. The in-memory backend's auth fake

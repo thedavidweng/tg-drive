@@ -5,11 +5,13 @@ import * as Auth from "./auth.js";
 import * as Channels from "./channels.js";
 import * as Drive from "./drive.js";
 import * as Settings from "./settings.js";
+import * as Transfers from "./transfers.js";
 export {
     Auth,
     Channels,
     Drive,
-    Settings
+    Settings,
+    Transfers
 };
 
 export type {
@@ -28,6 +30,7 @@ export type {
     DirectoryChanged,
     DiscussionLink,
     Entry,
+    FilesDropped,
     LoginResult,
     MoveOptions,
     OmarchyState,
@@ -35,6 +38,9 @@ export type {
     ScanOutcome,
     ScanProgress,
     ShareLink,
+    Transfer,
+    TransferList,
+    TransferRemoved,
     TreeNode,
     Versions
 } from "./models.js";

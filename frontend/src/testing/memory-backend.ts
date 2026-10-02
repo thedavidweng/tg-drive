@@ -10,13 +10,17 @@ import type {
   ConfigEntry,
   DirectoryChanged,
   Entry,
+  FilesDropped,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
   ScanProgress,
+  Transfer,
+  TransferRemoved,
   TreeNode,
   Versions,
 } from "@/backend"
+import { isTerminalStage } from "@/backend"
 
 /** A tiny synchronous event source for tests that push backend events. */
 export function eventEmitter<T>() {
@@ -49,6 +53,14 @@ function parentOf(path: string): string {
 
 function baseName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1)
+}
+
+function joinRemote(dir: string, name: string): string {
+  return (dir === "" || dir === "/" ? "" : dir) + "/" + name
+}
+
+function joinLocal(dir: string, name: string): string {
+  return dir.replace(/\/+$/, "") + "/" + name
 }
 
 /** How the in-memory Settings service answers. */
@@ -264,8 +276,19 @@ export interface MemoryChannel {
   discussion?: string
 }
 
+/** How the in-memory Transfers service answers. */
+export interface MemoryTransfers {
+  /** The answers of the native dialogs; empty is the dialog cancelled. */
+  picks?: { files?: string[]; dir?: string }
+  /** When set, the dialogs reject with it (no dialog connected). */
+  pickError?: BackendError
+  /** When set, upload and download reject with it. */
+  submitError?: BackendError
+}
+
 export interface MemoryBackendOptions extends MemorySettings {
   auth?: AuthFakeOptions
+  transfers?: MemoryTransfers
   /** When set, every drive listing fails with this error. */
   driveError?: BackendError
   /**
@@ -302,6 +325,19 @@ export class MemoryBackend implements Backend {
   private scanProgressCbs = new Set<(e: ScanProgress) => void>()
   private scanHeld = false
   private scanResolve: (() => void) | null = null
+  private transferSeq = 0
+  private transferOrder: string[] = []
+  private transfersById = new Map<string, Transfer>()
+  private transferStageCbs = new Set<(t: Transfer) => void>()
+  private transferProgressCbs = new Set<(t: Transfer) => void>()
+  private transferRemovedCbs = new Set<(e: TransferRemoved) => void>()
+  private filesDroppedCbs = new Set<(e: FilesDropped) => void>()
+
+  /** Test-visible record of the transfers calls the screens made. */
+  readonly uploads: { paths: string[]; dest: string }[] = []
+  readonly downloads: { remotePath: string; destDir: string }[] = []
+  readonly cancelled: string[] = []
+  readonly retried: string[] = []
 
   private readonly authFake: AuthFake
   private readonly opts: MemoryBackendOptions
@@ -533,6 +569,145 @@ export class MemoryBackend implements Backend {
       this.scanProgressCbs.add(cb)
       return () => this.scanProgressCbs.delete(cb)
     },
+    onTransferStage: (cb) => {
+      this.transferStageCbs.add(cb)
+      return () => this.transferStageCbs.delete(cb)
+    },
+    onTransferProgress: (cb) => {
+      this.transferProgressCbs.add(cb)
+      return () => this.transferProgressCbs.delete(cb)
+    },
+    onTransferRemoved: (cb) => {
+      this.transferRemovedCbs.add(cb)
+      return () => this.transferRemovedCbs.delete(cb)
+    },
+    onFilesDropped: (cb) => {
+      this.filesDroppedCbs.add(cb)
+      return () => this.filesDroppedCbs.delete(cb)
+    },
+  }
+
+  readonly transfers: Backend["transfers"] = {
+    list: async () => {
+      const all = [...this.transferOrder]
+        .reverse()
+        .map((id) => this.transfersById.get(id)!)
+      return {
+        active: all.filter((t) => !isTerminalStage(t.stage)),
+        history: all.filter((t) => isTerminalStage(t.stage)),
+      }
+    },
+    upload: async (paths, dest) => {
+      if (this.opts.transfers?.submitError) throw this.opts.transfers.submitError
+      this.uploads.push({ paths, dest })
+      const kind = paths.length > 1 ? "album_upload" : "upload"
+      const destPath = paths.length === 1 ? joinRemote(dest, baseName(paths[0])) : dest
+      const t = this.makeTransfer(kind, paths.join("\n"), destPath, paths.length)
+      queueMicrotask(() => this.completeTransfer(t.id))
+      return [t.id]
+    },
+    download: async (remotePath, destDir) => {
+      if (this.opts.transfers?.submitError) throw this.opts.transfers.submitError
+      const tree = this.tree()
+      if (!tree.files.has(remotePath) && !tree.dirs.has(remotePath)) {
+        throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${remotePath}" not found`)
+      }
+      this.downloads.push({ remotePath, destDir })
+      const kind = tree.files.has(remotePath) ? "download" : "recursive_download"
+      const t = this.makeTransfer(kind, remotePath, joinLocal(destDir, baseName(remotePath)), 1)
+      queueMicrotask(() => this.completeTransfer(t.id))
+      return t.id
+    },
+    cancel: async (id) => {
+      const t = this.transfersById.get(id)
+      if (!t) throw backendError("ERR_TRANSFER_NOT_FOUND", `no transfer with id ${id}`)
+      if (isTerminalStage(t.stage)) throw backendError("ERR_USAGE", `transfer already ended (${t.stage}): ${id}`)
+      this.cancelled.push(id)
+      const next = { ...t, cancel_requested: true }
+      this.transfersById.set(id, next)
+      this.emitTransferProgress(next)
+      queueMicrotask(() => this.setStage(id, "cancelled"))
+      return next
+    },
+    retry: async (id) => {
+      const t = this.transfersById.get(id)
+      if (!t) throw backendError("ERR_TRANSFER_NOT_FOUND", `no transfer with id ${id}`)
+      if (!isTerminalStage(t.stage)) throw backendError("ERR_USAGE", `transfer is still ${t.stage}: ${id}`)
+      if (t.stage === "completed") throw backendError("ERR_USAGE", `transfer already completed: ${id}`)
+      this.retried.push(id)
+      const next: Transfer = {
+        ...t,
+        stage: "queued",
+        cancel_requested: false,
+        bytes_done: 0,
+        items_done: 0,
+        items_failed: 0,
+        error_code: undefined,
+        error_message: undefined,
+        finished_at: undefined,
+      }
+      this.transfersById.set(id, next)
+      this.emitTransferStage(next)
+      queueMicrotask(() => this.completeTransfer(id))
+      return next
+    },
+    clearFinished: async () => {
+      const cleared = [...this.transfersById.values()].filter((t) => isTerminalStage(t.stage))
+      for (const t of cleared) {
+        this.transfersById.delete(t.id)
+        this.transferOrder = this.transferOrder.filter((id) => id !== t.id)
+        this.emitTransferRemoved({ id: t.id })
+      }
+      return cleared.length
+    },
+    pickFiles: async () => {
+      if (this.opts.transfers?.pickError) throw this.opts.transfers.pickError
+      return this.opts.transfers?.picks?.files ?? []
+    },
+    pickDirectory: async () => {
+      if (this.opts.transfers?.pickError) throw this.opts.transfers.pickError
+      return this.opts.transfers?.picks?.dir ?? ""
+    },
+  }
+
+  private makeTransfer(kind: string, source: string, dest: string, itemsTotal: number): Transfer {
+    const now = new Date().toISOString()
+    const t: Transfer = {
+      id: `transfer-${++this.transferSeq}`,
+      kind,
+      stage: "queued",
+      channel: "1001",
+      source,
+      dest,
+      bytes_done: 0,
+      bytes_total: 0,
+      items_done: 0,
+      items_total: itemsTotal,
+      front_end: "gui",
+      cancel_requested: false,
+      created_at: now,
+      updated_at: now,
+    }
+    this.transfersById.set(t.id, t)
+    this.transferOrder.push(t.id)
+    queueMicrotask(() => this.emitTransferStage(t))
+    return t
+  }
+
+  private setStage(id: string, stage: string): void {
+    const t = this.transfersById.get(id)
+    if (!t) return
+    const next: Transfer = { ...t, stage, updated_at: new Date().toISOString() }
+    if (isTerminalStage(stage)) next.finished_at = next.updated_at
+    this.transfersById.set(id, next)
+    this.emitTransferStage(next)
+  }
+
+  private completeTransfer(id: string): void {
+    const t = this.transfersById.get(id)
+    if (!t || isTerminalStage(t.stage)) return
+    this.transfersById.set(id, { ...t, items_done: t.items_total })
+    this.setStage(id, "completed")
   }
 
   readonly auth: Backend["auth"] = {
@@ -586,6 +761,52 @@ export class MemoryBackend implements Backend {
   /** Test helper: emits a scan-progress event as a running scan would. */
   emitScanProgress(e: ScanProgress): void {
     for (const cb of this.scanProgressCbs) cb(e)
+  }
+
+  /** Test helper: emits a transfer-stage event as the facade would. */
+  emitTransferStage(t: Transfer): void {
+    for (const cb of this.transferStageCbs) cb(t)
+  }
+
+  /** Test helper: emits a transfer-progress event as the facade would. */
+  emitTransferProgress(t: Transfer): void {
+    for (const cb of this.transferProgressCbs) cb(t)
+  }
+
+  /** Test helper: emits a transfer-removed event as the facade would. */
+  emitTransferRemoved(e: TransferRemoved): void {
+    for (const cb of this.transferRemovedCbs) cb(e)
+  }
+
+  /** Test helper: emits a files-dropped event as a native drop would. */
+  emitFilesDropped(paths: string[]): void {
+    const e: FilesDropped = { paths }
+    for (const cb of this.filesDroppedCbs) cb(e)
+  }
+
+  /** Test helper: registers a Transfer the way another front end's would
+   * appear in the index (e.g. a CLI upload, front_end "cli"). */
+  putTransferForTest(t: Partial<Transfer> & { id: string }): Transfer {
+    const now = new Date().toISOString()
+    const full: Transfer = {
+      kind: "upload",
+      stage: "queued",
+      channel: "1001",
+      source: "",
+      dest: "",
+      bytes_done: 0,
+      bytes_total: 0,
+      items_done: 0,
+      items_total: 1,
+      front_end: "cli",
+      cancel_requested: false,
+      created_at: now,
+      updated_at: now,
+      ...t,
+    }
+    this.transfersById.set(full.id, full)
+    if (!this.transferOrder.includes(full.id)) this.transferOrder.push(full.id)
+    return full
   }
 
   /** Test helper: adds a file without going through the facade surface. */
@@ -659,6 +880,20 @@ export function failingBackend(err: BackendError): Backend {
     events: {
       onDirectoryChanged: () => () => {},
       onScanProgress: () => () => {},
+      onTransferStage: () => () => {},
+      onTransferProgress: () => () => {},
+      onTransferRemoved: () => () => {},
+      onFilesDropped: () => () => {},
+    },
+    transfers: {
+      list: fail,
+      upload: fail,
+      download: fail,
+      cancel: fail,
+      retry: fail,
+      clearFinished: fail,
+      pickFiles: fail,
+      pickDirectory: fail,
     },
     channels: {
       list: fail,

@@ -21,4 +21,8 @@ func init() {
 	application.RegisterEvent[gui.AuthPrompt](EventAuthPrompt)
 	application.RegisterEvent[gui.DirectoryChanged](gui.EventDirectoryChanged)
 	application.RegisterEvent[gui.ScanProgress](gui.EventScanProgress)
+	application.RegisterEvent[gui.Transfer](gui.EventTransferStage)
+	application.RegisterEvent[gui.Transfer](gui.EventTransferProgress)
+	application.RegisterEvent[gui.TransferRemoved](gui.EventTransferRemoved)
+	application.RegisterEvent[gui.FilesDropped](gui.EventFilesDropped)
 }
