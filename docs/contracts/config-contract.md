@@ -68,7 +68,11 @@ file before failing with `ERR_SESSION_LOCKED`.
 
 The desktop GUI does not use `storage.session_path` itself: its session is
 `gui-session.json` beside the resolved CLI session path (see the storage
-contract), and it has no config key.
+contract), and it has no config key. Its display preferences — the theme
+override (`td-theme`), the language override (`td-locale`), and the Omarchy
+switch (`td-omarchy`) — live in the webview's local storage, not here: they
+are per-window presentation settings that must apply before the first
+paint, before the GUI can call into Go.
 
 Config, session, and database files are kept readable by the current user
 only (0600 on POSIX, an owner-only DACL on Windows).

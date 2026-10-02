@@ -378,8 +378,6 @@ func (c omarchyColor) over(bg omarchyColor, a float64) omarchyColor {
 	return omarchyColor{bg.r + (c.r-bg.r)*a, bg.g + (c.g-bg.g)*a, bg.b + (c.b-bg.b)*a, 1}
 }
 
-func (c omarchyColor) alpha(a float64) omarchyColor { c.a = a; return c }
-
 // luminance is c's relative luminance, to tell a light theme from a dark
 // one that doesn't say.
 func (c omarchyColor) luminance() float64 { return 0.2126*c.r + 0.7152*c.g + 0.0722*c.b }

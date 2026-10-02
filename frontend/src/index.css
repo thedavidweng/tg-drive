@@ -198,3 +198,29 @@
     outline-offset: 1px;
   }
 }
+
+/* Omarchy mode: flat, after magpie's omarchy.css. src/omarchy.ts puts the
+   class on <html> and the theme's tokens in #omarchy-theme on :root.omarchy
+   (so they win over the light/dark palettes); everything here is scoped
+   under html.omarchy, so no other system sees any of it. Omarchy draws
+   flat: no shadows, no blur, corners rounded only as far as Hyprland rounds
+   its windows. */
+.om-only {
+  display: none !important;
+}
+html.omarchy .om-hide {
+  display: none !important;
+}
+html.omarchy .om-only {
+  display: revert !important;
+}
+html.omarchy *,
+html.omarchy *::before,
+html.omarchy *::after {
+  border-radius: var(--om-radius, 0px) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+html.omarchy body {
+  border: var(--om-border, 1px) solid var(--om-edge, var(--line));
+}

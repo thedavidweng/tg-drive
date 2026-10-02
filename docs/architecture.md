@@ -33,6 +33,16 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   (uncategorized errors become `ERR_UNKNOWN`, as the CLI's JSON output maps
   them). It opens the service through `service.Open` with the GUI's own
   session (`gui-session.json` beside the CLI session, ADR 0034).
+- The Settings facade covers config get/set (secrets stay redacted unless a
+  call explicitly confirms revealing) and Omarchy mode: on a detected
+  Omarchy desktop it maps the current theme's `colors.toml` and
+  `shell.toml`, plus Hyprland's `decoration:rounding` and
+  `general:border_size` parsed from `hyprland.conf` and its `source`d
+  files, onto the frontend's design tokens, watches those files, and
+  announces changes as the typed `omarchy:theme-changed` event.
+- GUI display preferences (theme, language, the Omarchy switch) are stored
+  in the webview's local storage, not in td's config file (see the config
+  contract).
 - The frontend lives in `frontend/` (React, TypeScript, Vite, Tailwind CSS,
   shadcn/ui; Bun as package manager, Node LTS running Vite, pinned in
   `mise.toml`). It calls Go only through the generated bindings in

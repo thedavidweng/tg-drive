@@ -20,4 +20,22 @@ export const zhCN: Record<MessageKey, string> = {
   "size.kb": "{n} KB",
   "size.mb": "{n} MB",
   "size.gb": "{n} GB",
+
+  // Settings tab
+  "settings.appearance": "外观",
+  "settings.theme": "主题",
+  "settings.language": "语言",
+  "settings.configuration": "配置",
+  "settings.about": "关于",
+  "settings.reveal": "显示 {key}",
+  "settings.hide": "隐藏 {key}",
+  "settings.save": "保存 {key}",
+  "settings.saveShort": "保存",
+  "settings.loading": "正在加载…",
+  "language.system": "跟随系统",
+  "language.en": "English",
+  "language.zh-CN": "简体中文",
+  "omarchy.mode": "Omarchy",
+  "omarchy.toggle": "Omarchy 模式",
+  "omarchy.themeManaged": "跟随 Omarchy 主题 {name}。",
 }
