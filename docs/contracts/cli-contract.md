@@ -77,12 +77,16 @@ Two argument forms:
 `--recursive` uploads each source directory's direct children as one album
 (split at 10); nested directories recurse.
 
-A single-file `td cp` runs as a Transfer (ADR 0033): it is recorded in the
-index, visible to `td transfers` in any process while it runs and after it
-ends, and the command waits for it in the foreground. Its result output is
-unchanged. With `--events` it also emits one `transfer.stage` event per
-stage the Transfer enters, alongside the `cp.progress` events. Ctrl-C ends
-the Transfer `failed` with `ERR_CANCELLED`.
+Every `td cp` and `td get` form runs as a Transfer (ADR 0033): the Transfer
+is recorded in the index, visible to `td transfers` in any process while it
+runs and after it ends, and the command waits for it in the foreground.
+Result output is unchanged. The Transfer kinds are `upload` (single-file
+cp), `download` (single-file get), `album_upload` (multi-file cp, one
+Transfer for the whole album call), `recursive_upload`, and
+`recursive_download`. A single-file `td cp --events` also emits one
+`transfer.stage` event per stage the Transfer enters, alongside the
+`cp.progress` events. Ctrl-C ends the command's Transfers `failed` with
+`ERR_CANCELLED`.
 
 `--as photo` sends a native photo message: Telegram recompresses the bytes,
 downloads fetch the largest representation, and strict size/hash verification

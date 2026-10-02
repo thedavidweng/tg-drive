@@ -33,6 +33,7 @@ lossless for managed content. Version numbering restarts at each squash;
 versioned migrations resume when the schema freezes for release.
 
 Version 2 adds the `transfers` table to databases already at version 1.
+Version 3 adds `items_failed` to it.
 
 ## Schema
 
@@ -197,6 +198,7 @@ create table transfers (
   bytes_total integer not null default 0,
   items_done integer not null default 0,
   items_total integer not null default 0,
+  items_failed integer not null default 0,
   error_code text not null default '',
   error_message text not null default '',
   front_end text not null,
@@ -221,25 +223,38 @@ reconstructed from Telegram, and `td scan --full` neither reads nor clears
 them.
 
 - `id` is a random (version 4) UUID, the Transfer ID.
-- `kind` is `upload` (one local file).
+- `kind` is `upload` (one local file), `download` (one remote file),
+  `album_upload` (several local files as Telegram albums, one Transfer for
+  the call), `recursive_upload` (one local directory tree), or
+  `recursive_download` (one remote directory tree).
 - `channel_tg_id` is the Telegram ID of the drive channel, resolved when the
   Transfer is submitted; empty when none resolves, and the Transfer then
-  fails with the upload's own error.
-- `source` is the absolute local path; `dest` is the requested remote path,
-  replaced by the canonical path written once the Transfer completes.
+  fails with the call's own error.
+- `source` / `dest` are the two ends of the Transfer: for uploads `source`
+  is the absolute local path and `dest` the requested remote path; for
+  downloads the reverse, with `dest` the absolute local path. An album
+  upload's `source` is empty (`options.sources` lists its files). Once a
+  single-file Transfer completes, `dest` is the path actually written.
 - `options` is a JSON object with what a retry needs besides the paths:
-  `policy` (`fail`, `replace`, `skip`, `rename`), `no_hash`, the
-  presentation (`kind`, `duration_seconds`, `width`, `height`,
-  `supports_streaming`, `thumb_path`), `threads`, `part_size_kb`, and
-  `confirm_replace`. Unset and zero values are omitted.
-- `stage` moves forward only: `queued`, `hashing`, `uploading`,
-  `publishing`, then one terminal stage, `completed` or `failed`. A Transfer
-  cancelled by its owner (Ctrl-C) ends `failed` with `ERR_CANCELLED`.
-- `bytes_done` / `bytes_total` are byte progress; `bytes_total` starts as
-  the source file's size. Stage changes are written at once; byte progress
-  is written at most four times a second per Transfer.
-- `items_done` / `items_total` count the files a Transfer moves (1 for an
-  upload); `items_done` is set when it completes.
+  `policy` (`fail`, `replace`, `skip`, `rename`), and for uploads
+  `no_hash`, the presentation (`kind`, `duration_seconds`, `width`,
+  `height`, `supports_streaming`, `thumb_path`), `threads`, `part_size_kb`,
+  and `confirm_replace`; an album upload adds `sources`; recursive
+  Transfers add `continue_on_error`, and a recursive upload
+  `include_empty_dirs`. Unset and zero values are omitted.
+- `stage` moves forward only: `queued`, `hashing`, `uploading` /
+  `downloading`, `publishing`, then one terminal stage, `completed` or
+  `failed`. A Transfer visits the stages its kind has. A Transfer cancelled
+  by its owner (Ctrl-C) ends `failed` with `ERR_CANCELLED`.
+- `bytes_done` / `bytes_total` are byte progress of a single-file Transfer;
+  `bytes_total` starts as the source file's size, and multi-item Transfers
+  count items instead and leave both at 0. Stage changes are written at
+  once; byte progress is written at most four times a second per Transfer.
+- `items_done` / `items_failed` / `items_total` count the files a Transfer
+  moves: done counts completed and skipped items. A single-file Transfer is
+  1 item; an album upload knows its `items_total` when submitted; a
+  recursive Transfer's `items_total` grows as items report. A completed
+  Transfer has `items_done` = `items_total` − `items_failed`.
 - `error_code` / `error_message` are set when it ends `failed`: the same
   code and message the creating command reported.
 - `front_end` is the creating front end: `cli`.
