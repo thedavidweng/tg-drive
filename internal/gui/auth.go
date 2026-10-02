@@ -217,7 +217,12 @@ func (a *Auth) resolve(id string, answer promptAnswer) error {
 	if !ok {
 		return toError(apperr.New(apperr.ErrUsage, "no pending prompt with that id"))
 	}
-	ch <- answer
+	// The buffer holds one answer; a duplicate drops instead of parking this
+	// binding call on a channel nobody reads any more.
+	select {
+	case ch <- answer:
+	default:
+	}
 	return nil
 }
 

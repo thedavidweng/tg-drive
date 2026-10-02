@@ -151,7 +151,9 @@ function Shell(props: ShellProps) {
             <AccountChip
               user={gate.status.user}
               onLogout={() => {
-                void backend.auth.logout().then(refresh)
+                // A failed logout leaves the session as it was; refresh
+                // either way so the chip reflects the truth.
+                void backend.auth.logout().then(refresh, refresh)
               }}
             />
           )}
