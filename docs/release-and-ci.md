@@ -10,6 +10,16 @@
 - syft SBOM generation
 - Homebrew cask published to `thedavidweng/homebrew-tap`
 
+For the td-gui artifacts (all driven by the pinned `wails3` CLI, see
+"Desktop GUI"):
+
+- nfpm through `wails3 tool package` for the Linux .deb
+- linuxdeploy with the GTK plugin through `wails3 generate appimage` for the
+  AppImage (downloads linuxdeploy and AppRun from their upstream
+  "continuous" releases at package time)
+- hdiutil through `wails3 tool package -format dmg` for the macOS .dmg
+- NSIS (`makensis`) for the Windows installer
+
 ## Repository secrets
 
 None are required. The pipeline runs end to end on the built-in
@@ -32,13 +42,22 @@ needed for private repos.
 
 - `.github/workflows/ci.yml` runs three jobs:
   - `test` (25m): tidy, fmt, vet, lint, unit tests, race, `make build`, coverage
-  - `gui` (30m, matrix of ubuntu/macos/windows): `make check-gui` and
-    `make gui-build` (see "Desktop GUI" below)
+  - `gui` (45m, matrix of ubuntu/macos/windows): `make check-gui`,
+    `make gui-build`, and a packaging dry run — `make gui-package-<os>` with
+    the placeholder version 0.0.0, uploaded as a workflow artifact. This is
+    what verifies the release packaging scripts on pull requests (see
+    "Desktop GUI" below).
   - `snapshot` (30m): `goreleaser build --snapshot --clean` on its own runner
 - `.github/workflows/release-please.yml` manages release PRs, tags, and
   releases, then dispatches packaging.
-- `.github/workflows/release.yml` runs GoReleaser on `v*` tags or when
-  dispatched with a tag name.
+- `.github/workflows/release.yml` runs on `v*` tags or when dispatched with
+  a tag name:
+  - `release`: GoReleaser builds and publishes the CLI artifacts (CGO-free;
+    unchanged by the GUI jobs).
+  - `gui-linux` (ubuntu-latest and ubuntu-24.04-arm), `gui-darwin`
+    (macos-latest), `gui-windows` (windows-latest): build td-gui natively
+    and upload the packages to the same release. All three `need` the
+    `release` job so the GitHub Release exists before they upload.
 - `.github/workflows/ui-preview.yml` records screenshots and a video of
   the real GUI on UI pull requests (see "UI preview" below).
 
@@ -53,7 +72,10 @@ needed for private repos.
    token do not fire the tag trigger.
 6. GoReleaser uploads archives, packages, checksums, signatures, and
    SBOMs to the release.
-7. The tap repository's Sync Releases workflow updates the Homebrew
+7. The `gui-linux`, `gui-darwin`, and `gui-windows` jobs build td-gui
+   natively per OS and upload the dmg, NSIS installer, AppImage, and deb
+   (plus `.sha256` sidecars) to the same release.
+8. The tap repository's Sync Releases workflow updates the Homebrew
    cask from the published assets (daily cron; may lag by up to a day,
    or run it manually after a release).
 
@@ -95,9 +117,48 @@ mise run check-gui     # or: make check-gui
 
 The CI `gui` job runs the same targets natively on Ubuntu, macOS, and
 Windows. On Ubuntu it first installs `libgtk-4-dev` and `libwebkitgtk-6.0-dev`;
-on Windows it installs `make` via Chocolatey (the runners ship Git Bash but
-no make). Tools come from `mise-action` at the pinned versions. The job is
-informational, not a required check.
+on Windows it installs `make` and `nsis` via Chocolatey (the runners ship
+Git Bash but no make). Tools come from `mise-action` at the pinned versions.
+The job is informational, not a required check.
+
+### GUI packaging
+
+`make gui-package-<linux|darwin|windows>` builds td-gui and wraps it in the
+platform package, writing versioned artifacts and `.sha256` sidecars to
+`dist/gui/`. The targets depend on `gui-frontend-build` and `gui-tools`, and
+each is a thin wrapper over a script under `build/<os>/package.sh`, so what
+CI runs is exactly what runs locally:
+
+```sh
+make gui-package-linux GUI_VERSION=1.2.3    # .deb + AppImage (host arch)
+make gui-package-darwin GUI_VERSION=1.2.3   # universal .dmg
+make gui-package-windows GUI_VERSION=1.2.3  # NSIS installer (x64)
+```
+
+`GUI_VERSION` is the release version without the leading `v`; it defaults to
+`0.0.0` for local and pull-request dry runs. The scripts use the pinned
+`wails3` CLI for the heavy lifting — nfpm for the .deb, linuxdeploy with its
+GTK plugin for the AppImage, hdiutil for the DMG, plus icon (.ico/.icns),
+.syso, and WebView2-bootstrapper generation — while the packaging inputs
+(desktop file, nfpm config, Info.plist, NSIS script) are plain files under
+`build/`, not the Wails Taskfile layout (which assumes `main.go` beside
+`frontend/`).
+
+The macOS bundle is ad-hoc signed (`codesign --sign -` — arm64 Mach-O
+requires a signature to run) and everything is otherwise unsigned: Windows
+SmartScreen and macOS Gatekeeper warnings on first launch are expected, and
+the README documents how to open the app anyway. The NSIS installer is
+per-user (no UAC prompt) and installs the WebView2 runtime when the system
+lacks it.
+
+The CI `gui` job runs the matching target on every pull request as a dry run
+and uploads `dist/gui/` as a workflow artifact, so packaging breakage shows
+up before a tag does. The AppImage step downloads linuxdeploy from its
+unversioned "continuous" release; that is the one unpinned input in the
+pipeline (upstream has no stable tags to pin).
+
+Windows is packaged for x64 only and macOS as a single universal binary;
+Linux is packaged natively on both x64 and arm64 runners.
 
 ## UI preview
 
@@ -186,3 +247,18 @@ checksums.txt
 checksums.txt.sig
 *.spdx.json
 ```
+
+The td-gui artifacts (unsigned; each with a `.sha256` sidecar), for tag
+`v1.2.3`:
+
+```text
+td-gui_1.2.3_darwin_universal.dmg
+td-gui_1.2.3_windows_x86_64-installer.exe
+td-gui_1.2.3_linux_x86_64.AppImage
+td-gui_1.2.3_linux_aarch64.AppImage
+td-gui_1.2.3_linux_amd64.deb
+td-gui_1.2.3_linux_arm64.deb
+```
+
+The arch names follow each ecosystem's convention: `amd64`/`arm64` for deb,
+`x86_64`/`aarch64` for AppImage.
