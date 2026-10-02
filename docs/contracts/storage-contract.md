@@ -324,7 +324,8 @@ The desktop GUI's session is `gui-session.json` in the directory of the
 resolved CLI session path (so with the defaults,
 `~/.config/tg-drive-cli/gui-session.json`). It is not configurable. The GUI
 logs in on it independently and appears as its own device in Telegram (ADR
-0034).
+0034): its device model is `td-gui`, while the CLI keeps the gotd default
+identity.
 
 ## Directory GC
 

@@ -93,24 +93,35 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
 - **GUI Go tests** live in `internal/gui` behind the `gui` tag. They open
   the facade the way `td-gui` does — `gui.Open` against
   `TD_FAKE_TELEGRAM_STATE` — after seeding a drive through the CLI's own
-  service calls, and assert the facade's public methods: the Drive listing
-  and the mapping of a service error to `{code, category, message}`; the
-  Settings config round-trip with secrets redacted until a confirmed reveal
-  (the service's `ERR_CONFIRMATION_REQUIRED` reaches the frontend); and
-  Omarchy detection against a seeded theme and `hyprland.conf`, with a
-  theme change emitting on the watch channel. The facade never imports
-  Wails, so these tests run headless with no webview or display.
+  service calls, and assert the facade's public methods: the Drive listing,
+  the mapping of a service error to `{code, category, message}` plus
+  details, and the auth flow — setup on a credential-less machine, login
+  with the code and 2FA prompts answered through the prompt-event seam, a
+  rate limit mapping to its wait details, logout, and the GUI and CLI
+  holding separate session locks side by side. Two fake knobs cover auth
+  paths: `TD_FAKE_AUTH_PASSWORD` gives the account two-step verification,
+  and `TD_FAKE_LOGIN_FLOOD_WAIT=<seconds>` fails login with a flood wait
+  before any code is sent. The Settings facade is covered by a config
+  round-trip with secrets redacted until a confirmed reveal (the service's
+  `ERR_CONFIRMATION_REQUIRED` reaches the frontend) and by Omarchy
+  detection against a seeded theme and `hyprland.conf`, with a theme
+  change emitting on the watch channel. The facade never imports Wails, so
+  these tests run headless with no webview or display.
 - **Frontend behaviour tests** live beside the screens in `frontend/src`
   and run with `bun test` (Bun's test runner under happy-dom, via
   `@testing-library/react`; Bun is already the package manager, so no
   second test runtime is installed). They render screens with the generated
   bindings replaced by an in-memory backend (`src/testing/memory-backend.ts`)
   and assert user-visible behaviour: the Drive list rendering, an error
-  alert, and i18n fallback to English for an unknown system language; and
-  the Settings tab — config keys listed with secrets masked until revealed,
-  edits saved through the backend with rejection errors shown, the theme
-  and language overrides, and the Omarchy switch applying and clearing the
-  flat theme.
+  alert, the auth gate (setup on an unconfigured machine, login otherwise),
+  the login flow states (code, wrong-code attempts, 2FA password, reused
+  and resent codes, rate-limit wait, cancel), logout, and i18n fallback to
+  English for an unknown system language; and the Settings tab — config
+  keys listed with secrets masked until revealed, edits saved through the
+  backend with rejection errors shown, the theme and language overrides,
+  and the Omarchy switch applying and clearing the flat theme. The
+  in-memory backend's auth fake mirrors the facade's prompt contract,
+  including the pending-code reuse a restarted login shows.
 - Frontend type-check (`tsc -b`) and lint (`eslint --max-warnings 0`) are
   gates, run by `make gui-frontend-check`. The bindings in
   `frontend/bindings` are generated and committed; `make

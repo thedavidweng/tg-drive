@@ -14,8 +14,9 @@ afterEach(() => {
   document.getElementById("omarchy-theme")?.remove()
 })
 
-function openSettings() {
-  const tab = screen.getByRole("tab", { name: "Settings" })
+async function openSettings() {
+  // The auth gate resolves before the shell renders its tabs.
+  const tab = await screen.findByRole("tab", { name: "Settings" })
   fireEvent.mouseDown(tab)
   fireEvent.click(tab)
 }
@@ -40,7 +41,7 @@ test("Settings lists every config key with secrets masked until revealed", async
     { config: baseConfig, secrets: ["telegram.api_hash", "telegram.phone"] },
   )
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   expect(await screen.findByText("telegram.api_hash")).toBeTruthy()
   expect(screen.getByText("transfers.concurrency")).toBeTruthy()
@@ -62,7 +63,7 @@ test("Settings lists every config key with secrets masked until revealed", async
 test("editing a key saves it through the backend and shows the saved value", async () => {
   const backend = memoryBackend({ "/": [] }, { config: baseConfig, secrets: ["telegram.api_hash"] })
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   const input = (await screen.findByLabelText("transfers.concurrency")) as HTMLInputElement
   expect(input.value).toBe("2")
@@ -89,7 +90,7 @@ test("a rejected edit shows the service error", async () => {
     },
   )
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   const input = (await screen.findByLabelText("transfers.concurrency")) as HTMLInputElement
   fireEvent.change(input, { target: { value: "0" } })
@@ -102,7 +103,7 @@ test("a rejected edit shows the service error", async () => {
 test("the theme override applies the attribute and persists", async () => {
   const backend = memoryBackend({ "/": [] }, { config: baseConfig })
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   fireEvent.click(await screen.findByRole("button", { name: "Dark" }))
 
@@ -113,7 +114,7 @@ test("the theme override applies the attribute and persists", async () => {
 test("the language override re-renders in Simplified Chinese", async () => {
   const backend = memoryBackend({ "/": [] }, { config: baseConfig })
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   fireEvent.click(await screen.findByRole("button", { name: "简体中文" }))
 
@@ -133,7 +134,7 @@ test("Omarchy mode applies the theme, follows changes, and can be switched off",
     },
   )
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   // detected and on: the theme's vars land on the root
   await screen.findByText("test-night")
@@ -155,7 +156,7 @@ test("Omarchy mode applies the theme, follows changes, and can be switched off",
 test("no Omarchy row when Omarchy is not detected", async () => {
   const backend = memoryBackend({ "/": [] }, { config: baseConfig })
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   await screen.findByText("telegram.api_hash")
   expect(screen.queryByRole("switch", { name: "Omarchy mode" })).toBeNull()
@@ -167,7 +168,7 @@ test("About shows the versions of td-gui and td", async () => {
     { config: baseConfig, versions: { gui: "1.4.0", cli: "1.4.0" } },
   )
   render(<App backend={backend} languages={["en"]} />)
-  openSettings()
+  await openSettings()
 
   const about = await screen.findByRole("region", { name: "About" })
   const rows = within(about).getAllByRole("listitem").map((r) => r.textContent)
