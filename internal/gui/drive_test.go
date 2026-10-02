@@ -310,6 +310,24 @@ func TestDriveListEntriesCarryADate(t *testing.T) {
 	}
 }
 
+// Listing a file path itself (Unix-ls style) goes through a different query
+// than listing a directory; it carries a date too.
+func TestDriveListingAFilePathCarriesADate(t *testing.T) {
+	seedDrive(t, map[string]string{"/notes.txt": "hello"})
+	svc := openGUI(t)
+
+	entries, err := svc.Drive.List(context.Background(), "/notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name != "notes.txt" || entries[0].Type != "file" {
+		t.Fatalf("List(/notes.txt) = %+v, want the file itself", entries)
+	}
+	if _, perr := time.Parse(time.RFC3339, entries[0].Date); perr != nil {
+		t.Fatalf("List(/notes.txt) date is not RFC3339: %q (%v)", entries[0].Date, perr)
+	}
+}
+
 // eventRecorder is the test Emitter: it records every typed event the
 // facade emits.
 type eventRecorder struct {

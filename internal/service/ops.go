@@ -140,9 +140,7 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 		case err != nil:
 			return nil, apperr.Wrap(apperr.ErrDB, "ls", err)
 		case found:
-			var updatedAt string
-			_ = a.DB.Raw().QueryRowContext(ctx, `select updated_at from files where id=?`, row.ID).Scan(&updatedAt)
-			return []LSEntry{{Name: row.DisplayName, Path: p, Type: "file", Size: row.Size.Int64, Hash: row.ContentHash.String, Status: row.Status, UpdatedAt: updatedAt}}, nil
+			return []LSEntry{{Name: row.DisplayName, Path: p, Type: "file", Size: row.Size.Int64, Hash: row.ContentHash.String, Status: row.Status, UpdatedAt: row.UpdatedAt}}, nil
 		default:
 			var one int
 			dirErr := a.DB.Raw().QueryRowContext(ctx, `select 1 from nodes where channel_id=? and canonical_path=? and type='dir'`, channelID, p).Scan(&one)
