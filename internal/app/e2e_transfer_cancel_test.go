@@ -3,9 +3,7 @@
 package app
 
 import (
-	"bufio"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -85,7 +83,9 @@ func TestE2ECrossProcessCancel(t *testing.T) {
 		"cp", big, "/big2.bin", "--upload-part-size-kb", "1024", "--upload-threads", "1")
 	defer func() {
 		_ = cmd2.Process.Kill()
-		_, _ = drainWait(cmd2, sc2)
+		for sc2.Scan() {
+		}
+		_ = cmd2.Wait()
 	}()
 	var id2 string
 	for deadline := time.Now().Add(10 * time.Second); ; {
@@ -170,13 +170,4 @@ func TestE2EInterruptAfterKill(t *testing.T) {
 	if active := listTransfers(t, bin, cfgPath, dbPath, statePath); len(active) != 0 {
 		t.Fatalf("active transfers = %v, want none", active)
 	}
-}
-
-// drainWait consumes a running td's remaining stdout and waits for it.
-func drainWait(cmd *exec.Cmd, sc *bufio.Scanner) ([]string, error) {
-	var lines []string
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-	return lines, cmd.Wait()
 }

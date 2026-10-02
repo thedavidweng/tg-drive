@@ -10,15 +10,6 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 )
 
-// withLocks runs fn while holding the given operation-lock keys; use cases
-// take locks through operate (operation.go), not directly. Keys are
-// acquired in sorted order (so multi-lock flows cannot deadlock against each
-// other) and renewed by a heartbeat at one third of the TTL, so an operation
-// legitimately longer than the TTL still excludes concurrent mutators. When
-// renewal fails — the lock was taken over after expiry — the operation context
-// is cancelled so fn aborts instead of continuing unprotected. Locks are
-// released on a background context afterwards, so cancelling the caller (e.g.
-// Ctrl-C) cannot strand a path for the remaining TTL.
 // defaultLockTTL applies when locks.ttl_seconds is unset.
 const defaultLockTTL = 900 * time.Second
 
@@ -32,6 +23,15 @@ func (a *App) LockTTL() time.Duration {
 	return ttl
 }
 
+// withLocks runs fn while holding the given operation-lock keys; use cases
+// take locks through operate (operation.go), not directly. Keys are
+// acquired in sorted order (so multi-lock flows cannot deadlock against each
+// other) and renewed by a heartbeat at one third of the TTL, so an operation
+// legitimately longer than the TTL still excludes concurrent mutators. When
+// renewal fails — the lock was taken over after expiry — the operation context
+// is cancelled so fn aborts instead of continuing unprotected. Locks are
+// released on a background context afterwards, so cancelling the caller (e.g.
+// Ctrl-C) cannot strand a path for the remaining TTL.
 func (a *App) withLocks(ctx context.Context, keys []string, fn func(ctx context.Context) error) error {
 	ttl := a.LockTTL()
 	sorted := append([]string(nil), keys...)
