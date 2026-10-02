@@ -22,6 +22,13 @@ import (
 // context; the command stops at its next cancellation point and exits with
 // ERR_CANCELLED.
 func Execute() error {
+	if code := run(); code != 0 {
+		os.Exit(code)
+	}
+	return nil
+}
+
+func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -31,20 +38,21 @@ func Execute() error {
 		stop()
 	}()
 	cmd := NewRootCommand()
-	if err := cmd.ExecuteContext(ctx); err != nil {
-		code := apperr.ExitCode(err)
-		if _, ok := apperr.As(err); !ok {
-			// Cobra usage errors (unknown command/flag, wrong arg count) are
-			// not rendered by command handlers; render as a usage error so
-			// --json consumers still get an envelope.
-			_ = output.New(argvWantsJSON()).Error(apperr.New(apperr.ErrUsage, err.Error()))
-			code = 2
-		} else if code == 0 {
-			code = 1
-		}
-		os.Exit(code)
+	err := cmd.ExecuteContext(ctx)
+	if err == nil {
+		return 0
 	}
-	return nil
+	if _, ok := apperr.As(err); !ok {
+		// Cobra usage errors (unknown command/flag, wrong arg count) are
+		// not rendered by command handlers; render as a usage error so
+		// --json consumers still get an envelope.
+		_ = output.New(argvWantsJSON()).Error(apperr.New(apperr.ErrUsage, err.Error()))
+		return 2
+	}
+	if code := apperr.ExitCode(err); code != 0 {
+		return code
+	}
+	return 1
 }
 
 // argvWantsJSON detects --json for errors that occur before flag parsing
