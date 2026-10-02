@@ -5,10 +5,13 @@ import type {
   Backend,
   BackendError,
   ConfigEntry,
+  DirectoryChanged,
   Entry,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
+  ScanProgress,
+  TreeNode,
   Versions,
 } from "@/backend"
 
@@ -24,6 +27,25 @@ export function eventEmitter<T>() {
       for (const cb of subs) cb(v)
     },
   }
+}
+
+function backendError(code: string, message: string): BackendError {
+  return { code, category: "validation", message }
+}
+
+const confirmationRequired: BackendError = {
+  code: "ERR_CONFIRMATION_REQUIRED",
+  category: "safety",
+  message: "requires confirmation",
+}
+
+function parentOf(path: string): string {
+  const i = path.lastIndexOf("/")
+  return i <= 0 ? "/" : path.slice(0, i)
+}
+
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1)
 }
 
 /** How the in-memory Settings service answers. */
@@ -238,79 +260,253 @@ export interface MemoryBackendOptions extends MemorySettings {
 }
 
 /**
- * A backend that answers directory listings and config values from fixed
- * maps and runs the auth flow in memory. Auth defaults to a configured,
- * logged-in account so screen tests start from the main shell.
+ * An in-memory backend standing in for the facade: a remote tree (files
+ * and explicitly created directories) with the service's confirmation
+ * gates and not-found errors, the auth flow in memory, and config values
+ * from a fixed map. Auth defaults to a configured, logged-in account so
+ * screen tests start from the main shell. Tests emit typed events through
+ * it.
  */
-export function memoryBackend(dirs: Record<string, Entry[]>, opts: MemoryBackendOptions = {}): Backend {
-  const auth = new AuthFake(opts.auth)
-  const secrets = new Set(opts.secrets ?? [])
-  const store = new Map(Object.entries(opts.config ?? {}))
-  const entryOf = (key: string): ConfigEntry => {
-    const secret = secrets.has(key)
-    const value = store.get(key) ?? ""
+export class MemoryBackend implements Backend {
+  private files = new Map<string, { size: number; date: string }>()
+  private dirs = new Set<string>(["/"])
+  private dirChangedCbs = new Set<(e: DirectoryChanged) => void>()
+  private scanProgressCbs = new Set<(e: ScanProgress) => void>()
+  private scanHeld = false
+  private scanResolve: (() => void) | null = null
+
+  private readonly authFake: AuthFake
+  private readonly opts: MemoryBackendOptions
+  private readonly secrets: Set<string>
+  private readonly store: Map<string, string | number | boolean>
+
+  constructor(opts: MemoryBackendOptions = {}) {
+    this.opts = opts
+    this.authFake = new AuthFake(opts.auth)
+    this.secrets = new Set(opts.secrets ?? [])
+    this.store = new Map(Object.entries(opts.config ?? {}))
+  }
+
+  private entryOf(key: string): ConfigEntry {
+    const secret = this.secrets.has(key)
+    const value = this.store.get(key) ?? ""
     return { key, value: secret ? "redacted" : value, secret }
   }
-  return {
-    drive: {
-      async list(path) {
-        if (opts.driveError) throw opts.driveError
-        const entries = dirs[path]
-        if (!entries) {
-          throw {
-            code: "ERR_REMOTE_NOT_FOUND",
-            category: "validation",
-            message: `remote path "${path}" not found`,
-          } satisfies BackendError
+
+  readonly drive: Backend["drive"] = {
+    list: async (path) => {
+      if (this.opts.driveError) throw this.opts.driveError
+      if (!this.dirs.has(path)) {
+        throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
+      }
+      const entries: Entry[] = []
+      const seen = new Set<string>()
+      for (const dir of this.dirs) {
+        if (dir !== "/" && parentOf(dir) === path) {
+          entries.push({ name: baseName(dir), path: dir, type: "dir", size: 0, date: "2026-01-01T00:00:00Z" })
+          seen.add(dir)
         }
-        return entries
-      },
-    },
-    auth: {
-      status: () => auth.status(),
-      setup: (apiID, apiHash, phone) => auth.setup(apiID, apiHash, phone),
-      login: (phone, forceNewCode) => auth.login(phone, forceNewCode),
-      logout: () => auth.logout(),
-      answerPrompt: (id, value) => auth.answerPrompt(id, value),
-      cancelPrompt: (id) => auth.cancelPrompt(id),
-      onPrompt: (cb) => auth.onPrompt(cb),
-    },
-    settings: {
-      async listConfig() {
-        return [...store.keys()].map(entryOf)
-      },
-      async revealSecret(key, confirmed) {
-        if (!confirmed) {
-          throw {
-            code: "ERR_CONFIRMATION_REQUIRED",
-            category: "safety",
-            message: "revealing a secret requires confirmation",
-          } satisfies BackendError
+      }
+      for (const [file, meta] of this.files) {
+        if (parentOf(file) === path) {
+          entries.push({ name: baseName(file), path: file, type: "file", size: meta.size, date: meta.date })
+        } else if (file.startsWith(path === "/" ? "/" : path + "/")) {
+          const rest = file.slice(path === "/" ? 1 : path.length + 1)
+          const first = rest.split("/")[0]
+          const dirPath = (path === "/" ? "" : path) + "/" + first
+          if (!seen.has(dirPath)) {
+            seen.add(dirPath)
+            entries.push({ name: first, path: dirPath, type: "dir", size: 0, date: "2026-01-01T00:00:00Z" })
+          }
         }
-        const e = entryOf(key)
-        return { ...e, value: store.get(key) ?? "" }
-      },
-      async setConfig(key, value) {
-        if (opts.setError) throw opts.setError
-        store.set(key, value)
-        return entryOf(key)
-      },
-      async versions() {
-        return opts.versions ?? { gui: "dev", cli: "dev" }
-      },
-      async omarchy() {
-        return opts.omarchy ?? { available: false }
-      },
-      onOmarchyTheme: opts.onOmarchyTheme ?? (() => () => {}),
+      }
+      entries.sort((a, b) => (a.type !== b.type ? (a.type === "dir" ? -1 : 1) : a.name.localeCompare(b.name)))
+      return entries
+    },
+    tree: async (path, maxDepth) => {
+      if (!this.dirs.has(path)) {
+        throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
+      }
+      const build = async (dir: string, depth: number): Promise<TreeNode[]> => {
+        const out: TreeNode[] = []
+        for (const e of await this.drive.list(dir)) {
+          const node: TreeNode = { name: e.name, path: e.path, type: e.type }
+          if (e.type === "dir" && (maxDepth === 0 || depth < maxDepth)) {
+            node.children = await build(e.path, depth + 1)
+          }
+          out.push(node)
+        }
+        return out
+      }
+      return build(path, 1)
+    },
+    mkdir: async (path) => {
+      if (this.dirs.has(path) || this.files.has(path)) {
+        throw backendError("ERR_PATH_EXISTS", `path already exists: ${path}`)
+      }
+      if (this.files.has(parentOf(path))) {
+        throw backendError("ERR_PATH_ANCESTOR_IS_FILE", `ancestor path is a file: ${parentOf(path)}`)
+      }
+      let cur = ""
+      for (const seg of path.split("/").filter(Boolean)) {
+        cur += "/" + seg
+        this.dirs.add(cur)
+      }
+    },
+    move: async (from, to, opts) => {
+      if (!opts.confirm) throw confirmationRequired
+      const meta = this.files.get(from)
+      if (!meta) {
+        throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${from}" not found`)
+      }
+      const dest = this.dirs.has(to) ? (to === "/" ? "" : to) + "/" + baseName(from) : to
+      if (this.files.has(dest) || this.dirs.has(dest)) {
+        throw backendError("ERR_PATH_EXISTS", `file exists at destination: ${dest}`)
+      }
+      this.files.delete(from)
+      this.files.set(dest, meta)
+    },
+    delete: async (path, opts) => {
+      if (!opts.confirm) throw confirmationRequired
+      if (!this.files.delete(path)) {
+        throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
+      }
+      return { mode: "delete", path }
+    },
+    share: async (path) => {
+      if (!this.files.has(path) && !this.dirs.has(path)) {
+        throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
+      }
+      return { url: "https://t.me/+fake1001", hashtag: "#td_fake1001", path, channel: "Drive" }
+    },
+    scan: async () => {
+      if (this.scanHeld) {
+        await new Promise<void>((resolve) => {
+          this.scanResolve = resolve
+        })
+        this.scanHeld = false
+        this.scanResolve = null
+      }
+      return { mode: "full", active: this.files.size, deleted: 0, invalid: 0, missing: 0 }
     },
   }
+
+  readonly events: Backend["events"] = {
+    onDirectoryChanged: (cb) => {
+      this.dirChangedCbs.add(cb)
+      return () => this.dirChangedCbs.delete(cb)
+    },
+    onScanProgress: (cb) => {
+      this.scanProgressCbs.add(cb)
+      return () => this.scanProgressCbs.delete(cb)
+    },
+  }
+
+  readonly auth: Backend["auth"] = {
+    status: () => this.authFake.status(),
+    setup: (apiID, apiHash, phone) => this.authFake.setup(apiID, apiHash, phone),
+    login: (phone, forceNewCode) => this.authFake.login(phone, forceNewCode),
+    logout: () => this.authFake.logout(),
+    answerPrompt: (id, value) => this.authFake.answerPrompt(id, value),
+    cancelPrompt: (id) => this.authFake.cancelPrompt(id),
+    onPrompt: (cb) => this.authFake.onPrompt(cb),
+  }
+
+  readonly settings: Backend["settings"] = {
+    listConfig: async () => [...this.store.keys()].map((key) => this.entryOf(key)),
+    revealSecret: async (key, confirmed) => {
+      if (!confirmed) {
+        throw {
+          code: "ERR_CONFIRMATION_REQUIRED",
+          category: "safety",
+          message: "revealing a secret requires confirmation",
+        } satisfies BackendError
+      }
+      const e = this.entryOf(key)
+      return { ...e, value: this.store.get(key) ?? "" }
+    },
+    setConfig: async (key, value) => {
+      if (this.opts.setError) throw this.opts.setError
+      this.store.set(key, value)
+      return this.entryOf(key)
+    },
+    versions: async () => this.opts.versions ?? { gui: "dev", cli: "dev" },
+    omarchy: async () => this.opts.omarchy ?? { available: false },
+    onOmarchyTheme: (cb) => (this.opts.onOmarchyTheme ?? (() => () => {}))(cb),
+  }
+
+  /** Test helper: the next scan() call stays open until finishScan(). */
+  holdScan(): void {
+    this.scanHeld = true
+  }
+
+  /** Test helper: completes a scan started under holdScan(). */
+  finishScan(): void {
+    this.scanResolve?.()
+  }
+
+  /** Test helper: emits a directory-changed event as index sync would. */
+  emitDirectoryChanged(e: DirectoryChanged): void {
+    for (const cb of this.dirChangedCbs) cb(e)
+  }
+
+  /** Test helper: emits a scan-progress event as a running scan would. */
+  emitScanProgress(e: ScanProgress): void {
+    for (const cb of this.scanProgressCbs) cb(e)
+  }
+
+  /** Test helper: adds a file without going through the facade surface. */
+  putFileForTest(path: string, size: number, date: string): void {
+    this.files.set(path, { size, date: date || "2026-01-01T00:00:00Z" })
+    let cur = parentOf(path)
+    while (cur && cur !== "/") {
+      this.dirs.add(cur)
+      cur = parentOf(cur)
+    }
+  }
+
+  /** Test helper: adds a directory without going through the facade surface. */
+  mkdirForTest(path: string): void {
+    let cur = ""
+    for (const seg of path.split("/").filter(Boolean)) {
+      cur += "/" + seg
+      this.dirs.add(cur)
+    }
+  }
+}
+
+/** A backend that answers from fixed directory listings, keyed by path. */
+export function memoryBackend(dirs: Record<string, Entry[]>, opts: MemoryBackendOptions = {}): MemoryBackend {
+  const b = new MemoryBackend(opts)
+  for (const entries of Object.values(dirs)) {
+    for (const e of entries) {
+      if (e.type === "dir") {
+        b.mkdirForTest(e.path)
+      } else {
+        b.putFileForTest(e.path, e.size, e.date)
+      }
+    }
+  }
+  return b
 }
 
 /** A backend whose every call fails with err. */
 export function failingBackend(err: BackendError): Backend {
   const fail = (): Promise<never> => Promise.reject(err)
   return {
-    drive: { list: fail },
+    drive: {
+      list: fail,
+      tree: fail,
+      mkdir: fail,
+      move: fail,
+      delete: fail,
+      share: fail,
+      scan: fail,
+    },
+    events: {
+      onDirectoryChanged: () => () => {},
+      onScanProgress: () => () => {},
+    },
     settings: {
       listConfig: fail,
       revealSecret: fail,

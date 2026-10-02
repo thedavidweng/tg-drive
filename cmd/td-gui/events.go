@@ -13,11 +13,12 @@ import (
 // binding generator discovers events, and types them for the frontend, only
 // from such calls. Event data types belong in internal/gui, which never
 // imports Wails.
-
 // EventAuthPrompt asks the frontend for a login code or the 2FA password.
 const EventAuthPrompt = "auth.prompt"
 
 func init() {
 	application.RegisterEvent[gui.OmarchyTheme](gui.OmarchyThemeChangedEvent)
 	application.RegisterEvent[gui.AuthPrompt](EventAuthPrompt)
+	application.RegisterEvent[gui.DirectoryChanged](gui.EventDirectoryChanged)
+	application.RegisterEvent[gui.ScanProgress](gui.EventScanProgress)
 }

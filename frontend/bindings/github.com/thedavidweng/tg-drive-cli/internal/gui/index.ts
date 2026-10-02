@@ -15,9 +15,17 @@ export type {
     AuthStatus,
     AuthUser,
     ConfigEntry,
+    DeleteOptions,
+    DeleteOutcome,
+    DirectoryChanged,
     Entry,
     LoginResult,
+    MoveOptions,
     OmarchyState,
     OmarchyTheme,
+    ScanOutcome,
+    ScanProgress,
+    ShareLink,
+    TreeNode,
     Versions
 } from "./models.js";

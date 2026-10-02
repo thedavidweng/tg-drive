@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -47,6 +48,12 @@ func run() error {
 	svc.SetPromptEmitter(func(p gui.AuthPrompt) {
 		app.Event.Emit(EventAuthPrompt, p)
 	})
+	svc.SetDriveEmitter(func(name string, data any) {
+		app.Event.Emit(name, data)
+	})
+	syncCtx, stopSync := context.WithCancel(context.Background())
+	defer stopSync()
+	svc.StartSync(syncCtx, gui.DefaultSyncInterval)
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "td",
 		Width:     960,

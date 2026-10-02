@@ -15,9 +15,58 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
+ * Delete removes a remote file from Telegram and the index. Directories
+ * cannot be deleted (file-level deletes only).
+ */
+export function Delete(path: string, opts: $models.DeleteOptions): $CancellablePromise<$models.DeleteOutcome | null> {
+    return $Call.ByID(1869824443, path, opts);
+}
+
+/**
  * List lists the children of a remote directory from the local index,
- * directories first. It never contacts Telegram.
+ * directories first. It never contacts Telegram. The listed directory
+ * becomes the one index sync re-reads and emits on EventDirectoryChanged.
  */
 export function List(path: string): $CancellablePromise<$models.Entry[] | null> {
     return $Call.ByID(2300287016, path);
+}
+
+/**
+ * Mkdir creates an empty directory in the virtual tree. Telegram cannot
+ * store empty directories, so it is local-only until a file lands in it.
+ */
+export function Mkdir(path: string): $CancellablePromise<void> {
+    return $Call.ByID(2095739627, path);
+}
+
+/**
+ * Move renames a remote file or moves it into another directory of the
+ * bound channel. Directories cannot move (file-level moves only).
+ */
+export function Move($from: string, to: string, opts: $models.MoveOptions): $CancellablePromise<void> {
+    return $Call.ByID(4061605997, $from, to, opts);
+}
+
+/**
+ * Scan rescans the bound channel from Telegram and rebuilds the local
+ * index. While it runs it emits ScanProgress events; the final event
+ * carries the completed counts.
+ */
+export function Scan(): $CancellablePromise<$models.ScanOutcome | null> {
+    return $Call.ByID(646652633);
+}
+
+/**
+ * Share returns the invite link and legacy hashtag for a remote path.
+ */
+export function Share(path: string): $CancellablePromise<$models.ShareLink | null> {
+    return $Call.ByID(459880203, path);
+}
+
+/**
+ * Tree returns the directory tree below a remote path, up to maxDepth
+ * levels (0 for the service default).
+ */
+export function Tree(path: string, maxDepth: number): $CancellablePromise<$models.TreeNode[] | null> {
+    return $Call.ByID(2765817736, path, maxDepth);
 }

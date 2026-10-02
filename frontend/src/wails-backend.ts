@@ -31,6 +31,16 @@ async function call<T>(promise: Promise<T>): Promise<T> {
 export const wailsBackend: Backend = {
   drive: {
     list: async (path) => (await call(Drive.List(path))) ?? [],
+    tree: async (path, maxDepth) => (await call(Drive.Tree(path, maxDepth))) ?? [],
+    mkdir: (path) => call(Drive.Mkdir(path)),
+    move: (from, to, opts) => call(Drive.Move(from, to, opts)),
+    delete: async (path, opts) => (await call(Drive.Delete(path, opts))) ?? { mode: "", path },
+    share: async (path) => (await call(Drive.Share(path))) ?? { url: "", path, channel: "" },
+    scan: async () => (await call(Drive.Scan())) ?? { mode: "", active: 0, deleted: 0, invalid: 0, missing: 0 },
+  },
+  events: {
+    onDirectoryChanged: (cb) => Events.On("directory-changed", (ev) => cb(ev.data)),
+    onScanProgress: (cb) => Events.On("scan-progress", (ev) => cb(ev.data)),
   },
   auth: {
     status: async () => {

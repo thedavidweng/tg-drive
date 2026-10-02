@@ -102,11 +102,16 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   the facade the way `td-gui` does — `gui.Open` against
   `TD_FAKE_TELEGRAM_STATE` — after seeding a drive through the CLI's own
   service calls, and assert the facade's public methods: the Drive listing,
-  the mapping of a service error to `{code, category, message}` plus
-  details, and the auth flow — setup on a credential-less machine, login
-  with the code and 2FA prompts answered through the prompt-event seam, a
-  rate limit mapping to its wait details, logout, and the GUI and CLI
-  holding separate session locks side by side. Two fake knobs cover auth
+  tree, mkdir, move, delete, and share; the `{code, category, message}`
+  mapping of service errors, including the confirmation-required rejection
+  of unconfirmed moves and deletes; the typed scan-progress events a rescan
+  emits; and index sync — a second front end's writes trigger a
+  `directory-changed` event through the `PRAGMA data_version` poll, which
+  also survives an Auth reopen (setup re-pins the poller's connection).
+  Auth is covered by setup on a credential-less machine, login with the
+  code and 2FA prompts answered through the prompt-event seam, a rate
+  limit mapping to its wait details, logout, and the GUI and CLI holding
+  separate session locks side by side. Two fake knobs cover auth
   paths: `TD_FAKE_AUTH_PASSWORD` gives the account two-step verification,
   and `TD_FAKE_LOGIN_FLOOD_WAIT=<seconds>` fails login with a flood wait
   before any code is sent. The Settings facade is covered by a config
@@ -120,16 +125,22 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   `@testing-library/react`; Bun is already the package manager, so no
   second test runtime is installed). They render screens with the generated
   bindings replaced by an in-memory backend (`src/testing/memory-backend.ts`)
-  and assert user-visible behaviour: the Drive list rendering, an error
-  alert, the auth gate (setup on an unconfigured machine, login otherwise),
-  the login flow states (code, wrong-code attempts, 2FA password, reused
-  and resent codes, rate-limit wait, cancel), logout, and i18n fallback to
-  English for an unknown system language; and the Settings tab — config
-  keys listed with secrets masked until revealed, edits saved through the
-  backend with rejection errors shown, the theme and language overrides,
-  and the Omarchy switch applying and clearing the flat theme. The
-  in-memory backend's auth fake mirrors the facade's prompt contract,
-  including the pending-code reuse a restarted login shows.
+  and assert user-visible behaviour: the Drive list rendering, breadcrumb
+  navigation, the tree view, new-folder and row-action sheets, confirmation
+  sheets blocking destructive actions until confirmed, scan progress
+  updating from typed events, the listing refreshing on a
+  directory-changed event, an error alert, the auth gate (setup on an
+  unconfigured machine, login otherwise), the login flow states (code,
+  wrong-code attempts, 2FA password, reused and resent codes, rate-limit
+  wait, cancel), logout, and i18n fallback to English for an unknown
+  system language; and the Settings tab — config keys listed with secrets
+  masked until revealed, edits saved through the backend with rejection
+  errors shown, the theme and language overrides, and the Omarchy switch
+  applying and clearing the flat theme. The in-memory backend's auth fake
+  mirrors the facade's prompt contract, including the pending-code reuse a
+  restarted login shows. Note: `bun:test`'s `expect` thrown inside a
+  `waitFor` callback is not retried correctly; assert removals with
+  `waitForElementToBeRemoved` instead.
 - Frontend type-check (`tsc -b`) and lint (`eslint --max-warnings 0`) are
   gates, run by `make gui-frontend-check`. The bindings in
   `frontend/bindings` are generated and committed; `make

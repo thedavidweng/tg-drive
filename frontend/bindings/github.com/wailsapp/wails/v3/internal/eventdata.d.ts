@@ -13,7 +13,9 @@ declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
             "auth.prompt": gui$0.AuthPrompt;
+            "directory-changed": gui$0.DirectoryChanged;
             "omarchy:theme-changed": gui$0.OmarchyTheme;
+            "scan-progress": gui$0.ScanProgress;
         }
     }
 }

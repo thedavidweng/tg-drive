@@ -77,6 +77,35 @@ export interface ConfigEntry {
 }
 
 /**
+ * DeleteOptions carries the delete's typed confirmation (ADR 0003). An
+ * unconfirmed delete is rejected with ERR_CONFIRMATION_REQUIRED.
+ */
+export interface DeleteOptions {
+    "confirm": boolean;
+}
+
+/**
+ * DeleteOutcome reports how a file was removed.
+ */
+export interface DeleteOutcome {
+    /**
+     * Mode is the configured delete mode that ran (e.g. "delete" or
+     * "tombstone").
+     */
+    "mode": string;
+    "path": string;
+}
+
+/**
+ * DirectoryChanged is the payload of EventDirectoryChanged: the refreshed
+ * listing of the directory the frontend is showing.
+ */
+export interface DirectoryChanged {
+    "path": string;
+    "entries": Entry[] | null;
+}
+
+/**
  * Entry is one row of a directory listing.
  */
 export interface Entry {
@@ -92,6 +121,11 @@ export interface Entry {
      * Size is in bytes; 0 for directories.
      */
     "size": number;
+
+    /**
+     * Date is the RFC3339 time the file or directory last changed.
+     */
+    "date": string;
 }
 
 /**
@@ -100,6 +134,14 @@ export interface Entry {
 export interface LoginResult {
     "already_authenticated": boolean;
     "user": AuthUser;
+}
+
+/**
+ * MoveOptions carries the move's typed confirmation (ADR 0003). An
+ * unconfirmed move is rejected with ERR_CONFIRMATION_REQUIRED.
+ */
+export interface MoveOptions {
+    "confirm": boolean;
 }
 
 /**
@@ -134,6 +176,64 @@ export interface OmarchyTheme {
      * CSS custom properties
      */
     "vars": { [_ in string]?: string } | null;
+}
+
+/**
+ * ScanOutcome reports a completed rescan.
+ */
+export interface ScanOutcome {
+    "mode": string;
+    "active": number;
+    "deleted": number;
+    "invalid": number;
+    "missing": number;
+}
+
+/**
+ * ScanProgress is the payload of EventScanProgress.
+ */
+export interface ScanProgress {
+    /**
+     * Stage is the scan's current stage: "reading" or "indexing".
+     */
+    "stage": string;
+
+    /**
+     * Indexed is how many files the scan has indexed so far.
+     */
+    "indexed": number;
+
+    /**
+     * Failed is how many scan errors the scan has recorded so far.
+     */
+    "failed": number;
+}
+
+/**
+ * ShareLink is what a person needs to open a path on Telegram.
+ */
+export interface ShareLink {
+    /**
+     * URL is the bound channel's invite link.
+     */
+    "url": string;
+
+    /**
+     * Hashtag locates the file inside the channel; empty when unknown.
+     */
+    "hashtag"?: string;
+    "path": string;
+    "channel": string;
+}
+
+/**
+ * TreeNode is one node of a directory tree.
+ */
+export interface TreeNode {
+    "name": string;
+    "path": string;
+    "type": string;
+    "children"?: TreeNode[] | null;
 }
 
 /**

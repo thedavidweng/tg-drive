@@ -162,7 +162,7 @@ function Shell(props: ShellProps) {
       </header>
       <main className="min-h-0 flex-1 overflow-auto p-3.5">
         <TabsContent value="drive">
-          <DriveScreen backend={backend} path="/" />
+          <DriveScreen backend={backend} />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsScreen
