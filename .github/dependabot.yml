@@ -6,6 +6,25 @@ updates:
       interval: weekly
     cooldown:
       default-days: 5
+    ignore:
+      # Wails v3 betas move in explicit PRs only: go.mod, the pinned wails3
+      # CLI (Makefile WAILS3_VERSION), and the committed bindings must move
+      # together, which Dependabot cannot do.
+      - dependency-name: "github.com/wailsapp/wails/v3"
+  # The GUI frontend (Bun package manager).
+  - package-ecosystem: "bun"
+    directory: "/frontend"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+  # The UI preview harness (plain npm with a lockfile).
+  - package-ecosystem: "npm"
+    directory: "/ui-preview"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

@@ -2,7 +2,8 @@ BINARY_NAME=td
 DIST_DIR=dist
 
 .PHONY: all bootstrap build test test-race clean lint fmt fmt-check vet ci-local mod-tidy mod-tidy-check snapshot goreleaser-check run-doctor \
-	gui-bindings gui-bindings-check gui-frontend-install gui-frontend-build gui-frontend-check gui-go-check check-gui gui-build
+	gui-bindings gui-bindings-check gui-frontend-install gui-frontend-build gui-frontend-check gui-go-check check-gui gui-build \
+	gui-package-linux gui-package-darwin gui-package-windows
 
 all: ci-local build
 
@@ -92,6 +93,21 @@ check-gui: gui-bindings-check gui-frontend-check gui-go-check
 gui-build: gui-frontend-build
 	mkdir -p $(DIST_DIR)
 	go build -tags $(GUI_TAGS) -trimpath -o $(DIST_DIR)/td-gui ./cmd/td-gui
+
+# GUI release packaging. Each target runs natively on its own OS and writes
+# versioned artifacts plus .sha256 sidecars to dist/gui. GUI_VERSION is the
+# release version without the leading v; the release workflow passes it from
+# the tag, and local/CI dry runs fall back to 0.0.0.
+GUI_VERSION ?= 0.0.0
+
+gui-package-linux: gui-frontend-build gui-tools
+	VERSION=$(GUI_VERSION) build/linux/package.sh
+
+gui-package-darwin: gui-frontend-build gui-tools
+	VERSION=$(GUI_VERSION) build/darwin/package.sh
+
+gui-package-windows: gui-frontend-build gui-tools
+	VERSION=$(GUI_VERSION) build/windows/package.sh
 
 # Local snapshot skips cosign signing: keyless signing needs CI OIDC.
 snapshot:
