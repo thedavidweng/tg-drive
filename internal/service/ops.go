@@ -196,8 +196,32 @@ func (a *App) Tree(ctx context.Context, remotePath string, maxDepth int) ([]Tree
 	return nodes, nil
 }
 
+// StatusResult reports auth, binding, and index health. Authenticated is nil
+// when Telegram was unreachable. The index fields are nil until a channel is
+// bound (Initialized false).
+type StatusResult struct {
+	Authenticated        *bool          `json:"authenticated,omitempty"`
+	Channel              *BoundChannel  `json:"channel,omitempty"`
+	ChannelID            string         `json:"channel_id,omitempty"`
+	Channels             []BoundChannel `json:"channels"`
+	DBPath               string         `json:"db_path"`
+	DisplayName          *string        `json:"display_name,omitempty"`
+	Files                map[string]int `json:"files,omitzero"`
+	Initialized          bool           `json:"initialized"`
+	LastFullScanAt       *string        `json:"last_full_scan_at,omitempty"`
+	LastScanAt           *string        `json:"last_scan_at,omitempty"`
+	LastScannedMessageID *int           `json:"last_scanned_message_id,omitempty"`
+	Orphaned             *int           `json:"orphaned,omitempty"`
+	ScanErrorsPending    *int           `json:"scan_errors_pending,omitempty"`
+	StaleLocks           *int           `json:"stale_locks,omitempty"`
+	StalePending         *int           `json:"stale_pending,omitempty"`
+	UploadLimitBytes     *int64         `json:"upload_limit_bytes,omitempty"`
+	UploadStates         *int           `json:"upload_states,omitempty"`
+	UserID               int64          `json:"user_id,omitempty"`
+}
+
 // Status returns index statistics.
-func (a *App) Status(ctx context.Context) (map[string]any, error) {
+func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 	channels, err := a.boundChannels(ctx)
 	if err != nil {
 		return nil, err
@@ -208,10 +232,10 @@ func (a *App) Status(ctx context.Context) (map[string]any, error) {
 		// still worth reporting; an explicit --channel that matches nothing
 		// stays an error.
 		if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrChannelNotFound && a.Channel == "" {
-			out := map[string]any{
-				"initialized": false,
-				"channels":    channels,
-				"db_path":     a.Cfg.Storage.DBPath,
+			out := &StatusResult{
+				Initialized: false,
+				Channels:    channels,
+				DBPath:      a.Cfg.Storage.DBPath,
 			}
 			a.statusAuth(ctx, out)
 			return out, nil
@@ -230,16 +254,16 @@ func (a *App) Status(ctx context.Context) (map[string]any, error) {
 		_ = rows.Scan(&status, &n)
 		counts[status] = n
 	}
-	out := map[string]any{
-		"initialized": true,
-		"channel_id":  tgID,
-		"channels":    channels,
-		"files":       counts,
-		"db_path":     a.Cfg.Storage.DBPath,
+	out := &StatusResult{
+		Initialized: true,
+		ChannelID:   tgID,
+		Channels:    channels,
+		Files:       counts,
+		DBPath:      a.Cfg.Storage.DBPath,
 	}
 	for _, ch := range channels {
 		if ch.ChannelID == tgID {
-			out["channel"] = ch
+			out.Channel = &ch
 		}
 	}
 	a.statusAuth(ctx, out)
@@ -248,27 +272,29 @@ func (a *App) Status(ctx context.Context) (map[string]any, error) {
 	_ = a.DB.Raw().QueryRowContext(ctx, `
 		select coalesce(last_scanned_message_id,0), coalesce(last_full_scan_at,''), coalesce(updated_at,'')
 		from scan_state where channel_id=?`, channelID).Scan(&lastMsgID, &lastFull, &lastScan)
-	out["last_scanned_message_id"] = lastMsgID
-	out["last_full_scan_at"] = lastFull
-	out["last_scan_at"] = lastScan
+	out.LastScannedMessageID = &lastMsgID
+	out.LastFullScanAt = &lastFull
+	out.LastScanAt = &lastScan
 	var scanErrors int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from scan_errors where channel_id=? and status='pending'`, channelID).Scan(&scanErrors)
-	out["scan_errors_pending"] = scanErrors
+	out.ScanErrorsPending = &scanErrors
 	nowT := time.Now().UTC()
 	staleCutoff := nowT.Add(-time.Duration(a.Cfg.Locks.TTLSeconds) * time.Second).Format(time.RFC3339)
 	var stalePending int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from files where channel_id=? and status='pending' and updated_at < ?`, channelID, staleCutoff).Scan(&stalePending)
-	out["stale_pending"] = stalePending
+	out.StalePending = &stalePending
 	// Persisted resumable-upload states: abandoned attempts are collectable
 	// via td repair --pending.
 	if uploadStates, err := a.DB.CountUploadStates(ctx); err == nil {
-		out["upload_states"] = uploadStates
+		out.UploadStates = &uploadStates
 	}
 	var staleLocks int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from operation_locks where expires_at < ?`, nowT.Format(time.RFC3339)).Scan(&staleLocks)
-	out["stale_locks"] = staleLocks
-	out["orphaned"] = counts["orphaned"]
-	out["upload_limit_bytes"] = a.uploadLimit(ctx)
+	orphaned := counts["orphaned"]
+	uploadLimit := a.uploadLimit(ctx)
+	out.StaleLocks = &staleLocks
+	out.Orphaned = &orphaned
+	out.UploadLimitBytes = &uploadLimit
 	return out, nil
 }
 
@@ -296,15 +322,15 @@ func (a *App) boundChannels(ctx context.Context) ([]BoundChannel, error) {
 	return out, rows.Err()
 }
 
-func (a *App) statusAuth(ctx context.Context, out map[string]any) {
+func (a *App) statusAuth(ctx context.Context, out *StatusResult) {
 	user, ok, err := a.TG.Status(ctx)
 	if err != nil {
 		return
 	}
-	out["authenticated"] = ok
+	out.Authenticated = &ok
 	if ok && user != nil {
-		out["user_id"] = user.ID
-		out["display_name"] = user.DisplayName
+		out.UserID = user.ID
+		out.DisplayName = &user.DisplayName
 	}
 }
 
@@ -580,8 +606,16 @@ type DeleteOptions struct {
 	AllowStaleManifest bool
 }
 
+// DeleteResult reports how a file was removed. StaleManifest marks a
+// manifest reply that could not be redacted.
+type DeleteResult struct {
+	Mode          string `json:"mode"`
+	Path          string `json:"path"`
+	StaleManifest bool   `json:"stale_manifest,omitempty"`
+}
+
 // DeleteFile removes a remote file according to the delete policy.
-func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOptions) (map[string]any, error) {
+func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOptions) (*DeleteResult, error) {
 	p, err := fsmodel.NormalizeCanonicalPath(remotePath)
 	if err != nil {
 		return nil, err
@@ -616,7 +650,7 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	// Hold the path lock (with heartbeat renewal) for the whole delete: the
 	// Telegram mutations and the index commit must be exclusive.
 	lockKey := sqlitestore.LockKey(channelID, p)
-	var out map[string]any
+	var out *DeleteResult
 	lockErr := a.withLocks(ctx, []string{lockKey}, func(ctx context.Context) error {
 		res, err := a.deleteFileLocked(ctx, channelID, tgChID, p, fileID, messageID, manifestID, manifestChat, opts)
 		if err != nil {
@@ -631,7 +665,7 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	return out, nil
 }
 
-func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p string, fileID int64, messageID, manifestID sql.NullInt64, manifestChat string, opts DeleteOptions) (map[string]any, error) {
+func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p string, fileID int64, messageID, manifestID sql.NullInt64, manifestChat string, opts DeleteOptions) (*DeleteResult, error) {
 	mode := a.Cfg.Delete.Mode
 	if opts.Tombstone {
 		mode = "tombstone"
@@ -662,9 +696,9 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p s
 		if recordErr != nil {
 			return nil, recordErr
 		}
-		out := map[string]any{"path": p, "mode": "delete"}
+		out := &DeleteResult{Path: p, Mode: "delete"}
 		if manifestErr != nil {
-			out["stale_manifest"] = true
+			out.StaleManifest = true
 			if !opts.AllowStaleManifest {
 				return out, apperr.New(apperr.ErrTelegramRPC,
 					fmt.Sprintf("album inventory %d could not be updated: %v; rerun with --allow-stale-manifest to ignore", manID, manifestErr))
@@ -716,9 +750,9 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p s
 	if err := a.DB.RunDirectoryGC(ctx, channelID); err != nil {
 		return nil, err
 	}
-	out := map[string]any{"path": p, "mode": mode}
+	out := &DeleteResult{Path: p, Mode: mode}
 	if manifestErr != nil {
-		out["stale_manifest"] = true
+		out.StaleManifest = true
 		if !opts.AllowStaleManifest {
 			return out, apperr.New(apperr.ErrTelegramRPC,
 				fmt.Sprintf("manifest reply %d could not be redacted: %v; rerun with --allow-stale-manifest to ignore", manifestID.Int64, manifestErr))
@@ -727,10 +761,22 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p s
 	return out, nil
 }
 
+// RecursiveUploadResult reports a directory upload. ChannelID accompanies
+// InviteLink and is omitted with it.
+type RecursiveUploadResult struct {
+	Albums     []AlbumGroup `json:"albums"`
+	ChannelID  string       `json:"channel_id,omitempty"`
+	Errors     []string     `json:"errors"`
+	Failed     int          `json:"failed"`
+	InviteLink string       `json:"invite_link,omitempty"`
+	Skipped    int          `json:"skipped"`
+	Uploaded   int          `json:"uploaded"`
+}
+
 // UploadRecursive uploads a directory recursively. Files are published as
 // native media groups: each source directory's direct children form one
 // album, split into consecutive groups of MaxMediaGroupMembers (issue #26).
-func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, policy ConflictPolicy, continueOnError, noHash, includeEmptyDirs bool) (map[string]any, error) {
+func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, policy ConflictPolicy, continueOnError, noHash, includeEmptyDirs bool) (*RecursiveUploadResult, error) {
 	if includeEmptyDirs {
 		return nil, apperr.New(apperr.ErrEmptyDirsUnsupported, "empty directories cannot be persisted to Telegram in V1")
 	}
@@ -794,7 +840,9 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	for _, dir := range order {
 		batch, failures, err := a.planAlbumBatch(ctx, groups[dir], policy, noHash, Presentation{}, continueOnError)
 		failed += len(failures)
-		errs = append(errs, failures...)
+		for _, f := range failures {
+			errs = append(errs, f.String())
+		}
 		if err != nil && !continueOnError {
 			return nil, err
 		}
@@ -814,33 +862,41 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 			}
 			continue
 		}
-		uploaded += data["uploaded"].(int)
-		if gs, ok := data["albums"].([]AlbumGroup); ok {
-			albums = append(albums, gs...)
-		}
+		uploaded += data.Uploaded
+		albums = append(albums, data.Albums...)
 	}
 
-	data := map[string]any{"uploaded": uploaded, "skipped": skipped, "failed": failed, "errors": errs, "albums": albums}
+	data := &RecursiveUploadResult{Uploaded: uploaded, Skipped: skipped, Failed: failed, Errors: errs, Albums: albums}
 	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil && link != "" {
-		data["invite_link"] = link
-		data["channel_id"] = fmt.Sprintf("%d", tgChID)
+		data.InviteLink = link
+		data.ChannelID = fmt.Sprintf("%d", tgChID)
 	}
 	return data, nil
 }
 
+// RecursiveDownloadResult reports a directory download.
+type RecursiveDownloadResult struct {
+	Downloaded int      `json:"downloaded"`
+	Errors     []string `json:"errors"`
+	Failed     int      `json:"failed"`
+	Local      string   `json:"local"`
+	Path       string   `json:"path"`
+	Skipped    int      `json:"skipped"`
+}
+
 // DownloadRecursive downloads a directory tree and reports per-file results.
-func (a *App) DownloadRecursive(ctx context.Context, remotePath, localDir string, policy ConflictPolicy, continueOnError bool) (map[string]any, error) {
+func (a *App) DownloadRecursive(ctx context.Context, remotePath, localDir string, policy ConflictPolicy, continueOnError bool) (*RecursiveDownloadResult, error) {
 	st := &downloadStats{}
 	if err := a.downloadRecursive(ctx, remotePath, localDir, policy, continueOnError, st); err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"path":       remotePath,
-		"local":      localDir,
-		"downloaded": st.downloaded,
-		"skipped":    st.skipped,
-		"failed":     st.failed,
-		"errors":     st.errors,
+	return &RecursiveDownloadResult{
+		Downloaded: st.downloaded,
+		Errors:     st.errors,
+		Failed:     st.failed,
+		Local:      localDir,
+		Path:       remotePath,
+		Skipped:    st.skipped,
 	}, nil
 }
 

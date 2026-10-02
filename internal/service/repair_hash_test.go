@@ -58,8 +58,8 @@ func TestRepairHashBackfillsSingleAndAlbum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["backfilled"].(int) != 4 || res["failed"].(int) != 0 {
-		t.Fatalf("res = backfilled %v failed %v", res["backfilled"], res["failed"])
+	if res.Backfilled != 4 || res.Failed != 0 {
+		t.Fatalf("res = backfilled %v failed %v", res.Backfilled, res.Failed)
 	}
 
 	// Index: hashes present and byte-exact.
@@ -115,8 +115,8 @@ func TestRepairHashBackfillsSingleAndAlbum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res2["backfilled"].(int) != 0 {
-		t.Fatalf("second backfill = %v, want 0", res2["backfilled"])
+	if res2.Backfilled != 0 {
+		t.Fatalf("second backfill = %v, want 0", res2.Backfilled)
 	}
 }
 
@@ -141,7 +141,7 @@ func TestRepairHashPathScopeAndSkip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["backfilled"].(int) != 1 || res["total"].(int) != 1 {
+	if res.Backfilled != 1 || res.Total != 1 {
 		t.Fatalf("res = %v, want one scoped backfill", res)
 	}
 	var outHash string

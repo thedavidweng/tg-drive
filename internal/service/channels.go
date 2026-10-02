@@ -12,10 +12,17 @@ func (a *App) ListChannels(ctx context.Context, onlyDrive bool) ([]telegram.Chan
 	return a.TG.ListChannels(ctx, telegram.ListChannelsOptions{OnlyDrive: onlyDrive})
 }
 
+// LinkDiscussionResult identifies the discussion group linked to the bound
+// channel.
+type LinkDiscussionResult struct {
+	DiscussionChannelID int64  `json:"discussion_channel_id"`
+	DiscussionTitle     string `json:"discussion_title"`
+}
+
 // LinkDiscussionGroup ensures the bound channel has a linked discussion
 // group (creating one when needed) and records it on the channel row
 // (ADR 0018).
-func (a *App) LinkDiscussionGroup(ctx context.Context) (map[string]any, error) {
+func (a *App) LinkDiscussionGroup(ctx context.Context) (*LinkDiscussionResult, error) {
 	channelRowID, _, err := a.channelID(ctx)
 	if err != nil {
 		return nil, err
@@ -31,8 +38,5 @@ func (a *App) LinkDiscussionGroup(ctx context.Context) (map[string]any, error) {
 	if err := a.DB.SetDiscussionGroup(ctx, channelRowID, fmt.Sprintf("%d", group.ID), fmt.Sprintf("%d", group.AccessHash), group.Title); err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"discussion_channel_id": group.ID,
-		"discussion_title":      group.Title,
-	}, nil
+	return &LinkDiscussionResult{DiscussionChannelID: group.ID, DiscussionTitle: group.Title}, nil
 }

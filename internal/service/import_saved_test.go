@@ -414,13 +414,13 @@ func TestImportSavedMergeCaptions(t *testing.T) {
 	if res.CaptionsMerged != 1 {
 		t.Fatalf("result = %+v", res)
 	}
-	existing := driveMessageByID(t, app, ctx, up["message_id"].(int))
+	existing := driveMessageByID(t, app, ctx, up.MessageID)
 	if !strings.Contains(existing.Caption, manifest.MergeCaptionSeparator) || !strings.HasSuffix(existing.Caption, "richer text") {
 		t.Fatalf("merged caption = %q", existing.Caption)
 	}
 
 	// A non-editable carrier must not fail the batch, and must keep a record.
-	tg.SetNotEditable(mustTGChannel(t, app, ctx), up["message_id"].(int), true)
+	tg.SetNotEditable(mustTGChannel(t, app, ctx), up.MessageID, true)
 	tg.AddSavedMessage(telegram.Message{
 		ID: 602, Kind: telegram.KindDocument, FileName: "shared.bin",
 		MIME: "application/octet-stream", FileSize: 20, Data: []byte("content of shared.bin"),

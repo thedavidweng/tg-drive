@@ -696,19 +696,18 @@ func (a *App) publishImported(ctx context.Context, channelID, tgChID int64, mani
 			}
 			continue
 		}
-		if skipped, _ := data["skipped"].(bool); skipped {
+		if data.Skipped {
 			st.item.Action = "skip"
 			st.item.Reason = "destination exists"
 			a.emitImportItem(opts, st.item)
 			a.removeStaged(ctx, st.local)
 			continue
 		}
-		msgID, _ := data["message_id"].(int)
-		st.item.NewMessageID = msgID
-		if hash, ok := data["hash"].(string); ok && hash != "" {
-			st.item.Hash = hash
+		st.item.NewMessageID = data.MessageID
+		if data.Hash != "" {
+			st.item.Hash = data.Hash
 		}
-		a.afterImported(ctx, tgChID, manifestChat, opts, []*stagedItem{st}, msgID, 0, targets)
+		a.afterImported(ctx, tgChID, manifestChat, opts, []*stagedItem{st}, data.MessageID, 0, targets)
 		a.removeStaged(ctx, st.local)
 	}
 	return firstErr
@@ -736,17 +735,15 @@ func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64,
 		}
 		return err
 	}
-	if len(failures) > 0 {
-		// planAlbumBatch reports lenient failures by source path; map them
-		// back onto their items so the JSON stays per-item.
-		for _, st := range publish {
-			for _, f := range failures {
-				if strings.HasPrefix(f, st.local+":") {
-					st.item.Action = "fail"
-					st.item.Error = strings.TrimSpace(strings.TrimPrefix(f, st.local+":"))
-					a.emitImportItem(opts, st.item)
-					a.removeStagedIfNoPending(ctx, channelID, st)
-				}
+	// planAlbumBatch reports lenient failures by source path; map them back
+	// onto their items so the JSON stays per-item.
+	for _, st := range publish {
+		for _, f := range failures {
+			if f.localPath == st.local {
+				st.item.Action = "fail"
+				st.item.Error = f.err.Error()
+				a.emitImportItem(opts, st.item)
+				a.removeStagedIfNoPending(ctx, channelID, st)
 			}
 		}
 	}
@@ -773,8 +770,7 @@ func (a *App) publishImportedAlbum(ctx context.Context, channelID, tgChID int64,
 		return err
 	}
 	byPath := map[string]int{}
-	groups, _ := data["albums"].([]AlbumGroup)
-	for _, g := range groups {
+	for _, g := range data.Albums {
 		for i, p := range g.Paths {
 			if i < len(g.MessageIDs) {
 				byPath[p] = g.MessageIDs[i]

@@ -1,9 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -202,26 +204,66 @@ func (a *App) uploadLimit(ctx context.Context) int64 {
 	return limit
 }
 
+// UploadResult reports one single-file upload. A skipped upload (the
+// destination exists under --skip-existing) carries only Path and Skipped.
+type UploadResult struct {
+	ChannelID         string `json:"channel_id"`
+	Hash              string `json:"hash"`
+	InviteLink        string `json:"invite_link,omitempty"`
+	ManifestMessageID *int   `json:"manifest_message_id"`
+	MessageID         int    `json:"message_id"`
+	Path              string `json:"path"`
+	Resumed           bool   `json:"resumed,omitempty"`
+	Size              int64  `json:"size"`
+	Skipped           bool   `json:"skipped,omitempty"`
+}
+
+// MarshalJSON renders a skipped upload as just its path: nothing was sent, so
+// the message fields would be meaningless zeros.
+func (r UploadResult) MarshalJSON() ([]byte, error) {
+	if r.Skipped {
+		return marshalNoEscape(struct {
+			Path    string `json:"path"`
+			Skipped bool   `json:"skipped"`
+		}{r.Path, true})
+	}
+	type uploaded UploadResult // drops the method, avoiding recursion
+	return marshalNoEscape(uploaded(r))
+}
+
+// marshalNoEscape matches the output renderer, which disables HTML escaping;
+// json.Marshal would escape '&', '<' and '>' in paths, and the outer encoder
+// does not undo that for Marshaler output.
+func marshalNoEscape(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
 // UploadFile uploads a single local file as a plain document.
-func (a *App) UploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool) (map[string]any, error) {
+func (a *App) UploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool) (*UploadResult, error) {
 	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, Presentation{}, "")
 }
 
 // uploadFileWithCaption uploads one file keeping humanCaption above the
 // rendered caption block. Imports (td import saved) use it to carry the
 // source message's own text onto the republished message.
-func (a *App) uploadFileWithCaption(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string) (map[string]any, error) {
+func (a *App) uploadFileWithCaption(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string) (*UploadResult, error) {
 	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, humanCaption)
 }
 
 // UploadFileAs uploads a single local file with presentation metadata that
 // selects how native Telegram clients render the message. The zero
 // Presentation behaves exactly like UploadFile.
-func (a *App) UploadFileAs(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation) (map[string]any, error) {
+func (a *App) UploadFileAs(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation) (*UploadResult, error) {
 	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, "")
 }
 
-func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string) (map[string]any, error) {
+func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string) (*UploadResult, error) {
 	if err := pres.Validate(); err != nil {
 		return nil, err
 	}
@@ -285,7 +327,7 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 		return nil, err
 	}
 	if !keep {
-		return map[string]any{"path": dest, "skipped": true}, nil
+		return &UploadResult{Path: dest, Skipped: true}, nil
 	}
 	dest = resolvedDest
 
@@ -309,7 +351,7 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 		}
 	}
 
-	var data map[string]any
+	var data *UploadResult
 	lockErr := a.withLocks(ctx, []string{sqlitestore.LockKey(channelID, dest)}, func(ctx context.Context) error {
 		var err error
 		data, err = a.uploadLocked(ctx, uploadLockedArgs{
@@ -355,7 +397,7 @@ type uploadLockedArgs struct {
 	humanCaption string
 }
 
-func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (map[string]any, error) {
+func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (*UploadResult, error) {
 	dest, localPath, channelID, tgChID, tgIDStr := args.dest, args.localPath, args.channelID, args.tgChID, args.tgIDStr
 	now := time.Now().UTC().Format(time.RFC3339)
 	// Machine records live in the discussion group's comment threads
@@ -511,19 +553,17 @@ func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (map[stri
 		a.retireReplacedFile(ctx, channelID, tgChID, dest, displayName, args)
 	}
 
-	data := map[string]any{
-		"path":                dest,
-		"channel_id":          tgIDStr,
-		"message_id":          up.MessageID,
-		"manifest_message_id": manifestMsgID,
-		"size":                size,
-		"hash":                contentHash,
+	data := &UploadResult{
+		Path:              dest,
+		ChannelID:         tgIDStr,
+		MessageID:         up.MessageID,
+		ManifestMessageID: manifestMsgID,
+		Size:              size,
+		Hash:              contentHash,
+		Resumed:           resumed,
 	}
-	if resumed {
-		data["resumed"] = true
-	}
-	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil && link != "" {
-		data["invite_link"] = link
+	if link, err := a.TG.GetInviteLink(ctx, tgChID); err == nil {
+		data.InviteLink = link
 	}
 	return data, nil
 }

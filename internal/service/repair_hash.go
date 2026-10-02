@@ -46,6 +46,14 @@ func (w *countingHasher) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// RepairHashResult reports the hash backfill per file.
+type RepairHashResult struct {
+	Backfilled int                `json:"backfilled"`
+	Failed     int                `json:"failed"`
+	Items      []hashBackfillItem `json:"items"`
+	Total      int                `json:"total"`
+}
+
 // RepairHash backfills the BLAKE3 content hash of every active file under
 // remotePath ("" = the whole channel) that was adopted without one. Each
 // file is downloaded once: the digest lands in the index AND in the machine
@@ -54,7 +62,7 @@ func (w *countingHasher) Write(p []byte) (int, error) {
 // their entry updated inside the group's one td-album:v1 inventory. A
 // download also repairs a zero/missing size, which native photo imports
 // never recorded.
-func (a *App) RepairHash(ctx context.Context, remotePath string) (map[string]any, error) {
+func (a *App) RepairHash(ctx context.Context, remotePath string) (*RepairHashResult, error) {
 	channelID, _, err := a.channelID(ctx)
 	if err != nil {
 		return nil, err
@@ -121,12 +129,7 @@ func (a *App) RepairHash(ctx context.Context, remotePath string) (map[string]any
 		}
 		items = append(items, item)
 	}
-	return map[string]any{
-		"backfilled": backfilled,
-		"failed":     failed,
-		"total":      len(targets),
-		"items":      items,
-	}, nil
+	return &RepairHashResult{Backfilled: backfilled, Failed: failed, Items: items, Total: len(targets)}, nil
 }
 
 // repairHashTarget backfills one file's hash: download and hash the media,

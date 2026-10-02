@@ -123,7 +123,7 @@ func NewRepairCmd(rt Runtime) *cobra.Command {
 			}
 			defer cleanup()
 			ctx := context.Background()
-			var data map[string]any
+			var data any
 			pathArg := ""
 			if len(args) == 1 {
 				pathArg = args[0]

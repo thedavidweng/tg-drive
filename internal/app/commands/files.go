@@ -136,9 +136,9 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 					return r.Event("cp", data)
 				}
 				if !rt.JSON() {
-					_ = r.SuccessLine("uploaded %v files in %v album(s)", data["uploaded"], len(data["albums"].([]service.AlbumGroup)))
-					if link, ok := data["invite_link"].(string); ok && link != "" {
-						return r.SuccessLine("invite: %s", link)
+					_ = r.SuccessLine("uploaded %v files in %v album(s)", data.Uploaded, len(data.Albums))
+					if data.InviteLink != "" {
+						return r.SuccessLine("invite: %s", data.InviteLink)
 					}
 					return nil
 				}
@@ -156,9 +156,9 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 					return r.Event("cp", data)
 				}
 				if !rt.JSON() {
-					_ = r.SuccessLine("uploaded %v files (%v skipped, %v failed)", data["uploaded"], data["skipped"], data["failed"])
-					if link, ok := data["invite_link"].(string); ok && link != "" {
-						return r.SuccessLine("invite: %s", link)
+					_ = r.SuccessLine("uploaded %v files (%v skipped, %v failed)", data.Uploaded, data.Skipped, data.Failed)
+					if data.InviteLink != "" {
+						return r.SuccessLine("invite: %s", data.InviteLink)
 					}
 					return nil
 				}
@@ -175,20 +175,16 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				return r.Event("cp", data)
 			}
 			if !rt.JSON() {
-				if data["skipped"] == true {
-					return r.SuccessLine("skipped %s (already exists; use --replace to overwrite)", data["path"])
+				if data.Skipped {
+					return r.SuccessLine("skipped %s (already exists; use --replace to overwrite)", data.Path)
 				}
 				verb := "uploaded"
-				if data["resumed"] == true {
+				if data.Resumed {
 					verb = "resumed upload of"
 				}
-				if size, ok := data["size"].(int64); ok {
-					_ = r.SuccessLine("%s %s (%s)", verb, data["path"], humanSize(size))
-				} else {
-					_ = r.SuccessLine("%s %s", verb, data["path"])
-				}
-				if link, ok := data["invite_link"].(string); ok && link != "" {
-					return r.SuccessLine("invite: %s", link)
+				_ = r.SuccessLine("%s %s (%s)", verb, data.Path, humanSize(data.Size))
+				if data.InviteLink != "" {
+					return r.SuccessLine("invite: %s", data.InviteLink)
 				}
 				return nil
 			}
@@ -239,7 +235,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 					return r.Error(err)
 				}
 				if !rt.JSON() {
-					_ = r.SuccessLine("downloaded %s -> %s (%v files, %v skipped, %v failed)", args[0], args[1], data["downloaded"], data["skipped"], data["failed"])
+					_ = r.SuccessLine("downloaded %s -> %s (%v files, %v skipped, %v failed)", args[0], args[1], data.Downloaded, data.Skipped, data.Failed)
 					return nil
 				}
 				return r.Success(data)
@@ -325,10 +321,10 @@ func NewRmCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			if !rt.JSON() {
-				if data["stale_manifest"] == true {
+				if data.StaleManifest {
 					fmt.Fprintln(os.Stderr, "warning: manifest reply could not be redacted and remains on Telegram")
 				}
-				if data["mode"] == "tombstone" {
+				if data.Mode == "tombstone" {
 					return r.SuccessLine("tombstoned %s (hidden from td ls; the Telegram message is kept with a tombstone caption)", args[0])
 				}
 				return r.SuccessLine("deleted %s", args[0])
@@ -366,12 +362,12 @@ func NewShareCmd(rt Runtime) *cobra.Command {
 				return r.Success(data)
 			}
 			out := cmd.OutOrStdout()
-			if title, ok := data["channel"].(string); ok && title != "" {
-				_, _ = fmt.Fprintf(out, "Channel: %s\n", title)
+			if data.Channel != "" {
+				_, _ = fmt.Fprintf(out, "Channel: %s\n", data.Channel)
 			}
-			_, _ = fmt.Fprintf(out, "Invite: %v\n", data["invite_link"])
-			if tag, ok := data["hashtag"].(string); ok && tag != "" {
-				_, _ = fmt.Fprintf(out, "Legacy filter: %s\n", tag)
+			_, _ = fmt.Fprintf(out, "Invite: %v\n", data.InviteLink)
+			if data.Hashtag != "" {
+				_, _ = fmt.Fprintf(out, "Legacy filter: %s\n", data.Hashtag)
 				_, _ = fmt.Fprintln(out, "\nThis filter only matches legacy posts that still carry path hashtags. New posts use human-only captions; open the channel or use td ls/tree to browse.")
 			} else {
 				_, _ = fmt.Fprintln(out, "\nOpen the channel from the invite link; it contains everything shared here.")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,32 +65,26 @@ func GroupUsage(rt Runtime, c *cobra.Command) {
 	}
 }
 
-// printKV writes a sorted key: value view of a data map for human output,
-// flattening nested count maps into dotted keys.
-func PrintKV(w io.Writer, data map[string]any) {
-	keys := make([]string, 0, len(data))
-	for k := range data {
-		keys = append(keys, k)
+// PrintKV writes a sorted key: value view of a result struct for human
+// output, keyed by each field's JSON name.
+func PrintKV(w io.Writer, result any) {
+	v := reflect.Indirect(reflect.ValueOf(result))
+	t := v.Type()
+	type row struct {
+		key string
+		val any
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		switch v := data[k].(type) {
-		case map[string]int:
-			if len(v) == 0 {
-				_, _ = fmt.Fprintf(w, "%s: none\n", k)
-				continue
-			}
-			subs := make([]string, 0, len(v))
-			for sk := range v {
-				subs = append(subs, sk)
-			}
-			sort.Strings(subs)
-			for _, sk := range subs {
-				_, _ = fmt.Fprintf(w, "%s.%s: %d\n", k, sk, v[sk])
-			}
-		default:
-			_, _ = fmt.Fprintf(w, "%s: %v\n", k, data[k])
+	rows := make([]row, 0, t.NumField())
+	for i := range t.NumField() {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name == "" || name == "-" {
+			continue
 		}
+		rows = append(rows, row{name, v.Field(i).Interface()})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].key < rows[j].key })
+	for _, r := range rows {
+		_, _ = fmt.Fprintf(w, "%s: %v\n", r.key, r.val)
 	}
 }
 

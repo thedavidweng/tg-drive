@@ -64,7 +64,7 @@ func NewChannelsCmd(rt Runtime) *cobra.Command {
 			if rt.JSON() {
 				return r.Success(res)
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "linked discussion group %q (id %d)\n", res["discussion_title"], res["discussion_channel_id"])
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "linked discussion group %q (id %d)\n", res.DiscussionTitle, res.DiscussionChannelID)
 			return nil
 		},
 	}
@@ -96,32 +96,32 @@ func NewStatusCmd(rt Runtime) *cobra.Command {
 	}
 }
 
-func printStatus(w io.Writer, data map[string]any) {
+func printStatus(w io.Writer, data *service.StatusResult) {
 	row := func(label, format string, args ...any) {
 		_, _ = fmt.Fprintf(w, "%-14s "+format+"\n", append([]any{label}, args...)...)
 	}
-	switch data["authenticated"] {
-	case true:
-		row("account", "logged in as %v (user %v)", data["display_name"], data["user_id"])
-	case false:
-		row("account", "not logged in; run: td auth login")
-	default:
+	switch {
+	case data.Authenticated == nil:
 		row("account", "unknown (Telegram unreachable)")
+	case *data.Authenticated:
+		row("account", "logged in as %v (user %v)", deref(data.DisplayName), data.UserID)
+	default:
+		row("account", "not logged in; run: td auth login")
 	}
-	if data["initialized"] != true {
+	if !data.Initialized {
 		row("channel", "none bound; run: td init <local-root> --create-channel (new drive)")
 		row("", "or: td init <local-root> --bind-channel (existing drive)")
-		row("database", "%s", config.DisplayPath(fmt.Sprint(data["db_path"])))
+		row("database", "%s", config.DisplayPath(data.DBPath))
 		return
 	}
-	if ch, ok := data["channel"].(service.BoundChannel); ok {
+	if ch := data.Channel; ch != nil {
 		row("channel", "%s (id %s)", ch.Title, ch.ChannelID)
 		row("local root", "%s", config.DisplayPath(ch.LocalRoot))
 	}
-	if chans, ok := data["channels"].([]service.BoundChannel); ok && len(chans) > 1 {
-		row("other drives", "%d more; select with --channel <title-or-id>", len(chans)-1)
+	if len(data.Channels) > 1 {
+		row("other drives", "%d more; select with --channel <title-or-id>", len(data.Channels)-1)
 	}
-	counts, _ := data["files"].(map[string]int)
+	counts := data.Files
 	files := fmt.Sprintf("%d active", counts["active"])
 	for _, st := range []string{"deleted", "missing", "pending", "orphaned"} {
 		if counts[st] > 0 {
@@ -129,24 +129,27 @@ func printStatus(w io.Writer, data map[string]any) {
 		}
 	}
 	row("files", "%s", files)
-	if last, _ := data["last_scan_at"].(string); last != "" {
-		row("last scan", "%s (last full: %v)", last, orNever(data["last_full_scan_at"]))
+	if last := deref(data.LastScanAt); last != "" {
+		row("last scan", "%s (last full: %v)", last, orNever(deref(data.LastFullScanAt)))
 	} else {
 		row("last scan", "never; run: td scan --full")
 	}
-	if limit, ok := data["upload_limit_bytes"].(int64); ok && limit > 0 {
+	if limit := deref(data.UploadLimitBytes); limit > 0 {
 		row("upload limit", "%s per file", humanSize(limit))
 	}
-	row("database", "%s", config.DisplayPath(fmt.Sprint(data["db_path"])))
+	row("database", "%s", config.DisplayPath(data.DBPath))
 
 	var problems []string
-	for _, p := range []struct{ key, label, fix string }{
-		{"scan_errors_pending", "scan errors", "td repair --scan-errors"},
-		{"orphaned", "orphaned uploads", "td repair --orphaned"},
-		{"stale_pending", "stale pending uploads", "td repair --pending"},
-		{"stale_locks", "stale locks", "td repair --pending"},
+	for _, p := range []struct {
+		n          *int
+		label, fix string
+	}{
+		{data.ScanErrorsPending, "scan errors", "td repair --scan-errors"},
+		{data.Orphaned, "orphaned uploads", "td repair --orphaned"},
+		{data.StalePending, "stale pending uploads", "td repair --pending"},
+		{data.StaleLocks, "stale locks", "td repair --pending"},
 	} {
-		if n, _ := data[p.key].(int); n > 0 {
+		if n := deref(p.n); n > 0 {
 			problems = append(problems, fmt.Sprintf("%d %s (%s)", n, p.label, p.fix))
 		}
 	}
@@ -157,9 +160,17 @@ func printStatus(w io.Writer, data map[string]any) {
 	}
 }
 
-func orNever(v any) any {
-	if s, _ := v.(string); s == "" {
+func orNever(s string) string {
+	if s == "" {
 		return "never"
 	}
-	return v
+	return s
+}
+
+func deref[T any](p *T) T {
+	if p == nil {
+		var zero T
+		return zero
+	}
+	return *p
 }

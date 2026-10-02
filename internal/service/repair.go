@@ -14,10 +14,19 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
+// RepairPendingResult counts how stale pending rows were resolved.
+type RepairPendingResult struct {
+	Invalid      int   `json:"invalid"`
+	LocksCleared int64 `json:"locks_cleared"`
+	Orphaned     int   `json:"orphaned"`
+	Repaired     int   `json:"repaired"`
+	Skipped      int   `json:"skipped"`
+}
+
 // RepairPending resolves stale pending rows and expired operation locks.
 // Only rows older than the lock TTL whose path is not currently locked are
 // touched, so a live in-flight upload is never deleted or duplicated.
-func (a *App) RepairPending(ctx context.Context) (map[string]any, error) {
+func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 	channelID, _, err := a.channelID(ctx)
 	if err != nil {
 		return nil, err
@@ -115,12 +124,19 @@ func (a *App) RepairPending(ctx context.Context) (map[string]any, error) {
 			}
 		}
 	}
-	return map[string]any{"repaired": repaired, "invalid": invalid, "orphaned": orphaned, "skipped": skipped, "locks_cleared": locksCleared}, nil
+	return &RepairPendingResult{Invalid: invalid, LocksCleared: locksCleared, Orphaned: orphaned, Repaired: repaired, Skipped: skipped}, nil
+}
+
+// RepairOrphanedResult counts how orphaned uploads were resolved.
+type RepairOrphanedResult struct {
+	Deleted  int `json:"deleted"`
+	Invalid  int `json:"invalid"`
+	Repaired int `json:"repaired"`
 }
 
 // RepairOrphaned completes or removes uploads whose media message exists on
 // Telegram but whose index promotion failed.
-func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (map[string]any, error) {
+func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOrphanedResult, error) {
 	channelID, _, err := a.channelID(ctx)
 	if err != nil {
 		return nil, err
@@ -216,12 +232,17 @@ func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (map[strin
 			return nil, err
 		}
 	}
-	return map[string]any{"repaired": repaired, "deleted": deleted, "invalid": invalid}, nil
+	return &RepairOrphanedResult{Deleted: deleted, Invalid: invalid, Repaired: repaired}, nil
+}
+
+// RepairPathResult names the repaired file.
+type RepairPathResult struct {
+	Repaired string `json:"repaired"`
 }
 
 // RepairPath re-renders and re-applies caption, manifest, and tags for one
 // active file, repairing caption/manifest drift.
-func (a *App) RepairPath(ctx context.Context, remotePath string) (map[string]any, error) {
+func (a *App) RepairPath(ctx context.Context, remotePath string) (*RepairPathResult, error) {
 	p, err := fsmodel.NormalizeCanonicalPath(remotePath)
 	if err != nil {
 		return nil, err
@@ -288,11 +309,17 @@ func (a *App) RepairPath(ctx context.Context, remotePath string) (map[string]any
 	if lockErr != nil {
 		return nil, lockErr
 	}
-	return map[string]any{"repaired": p}, nil
+	return &RepairPathResult{Repaired: p}, nil
+}
+
+// RepairScanErrorsResult counts resolved and still-pending scan errors.
+type RepairScanErrorsResult struct {
+	Pending  int `json:"pending"`
+	Resolved int `json:"resolved"`
 }
 
 // RepairScanErrors reprocesses the channel and clears resolved scan errors.
-func (a *App) RepairScanErrors(ctx context.Context) (map[string]any, error) {
+func (a *App) RepairScanErrors(ctx context.Context) (*RepairScanErrorsResult, error) {
 	channelID, _, err := a.channelID(ctx)
 	if err != nil {
 		return nil, err
@@ -304,5 +331,5 @@ func (a *App) RepairScanErrors(ctx context.Context) (map[string]any, error) {
 	}
 	var after int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from scan_errors where channel_id=? and status='pending'`, channelID).Scan(&after)
-	return map[string]any{"resolved": before - after, "pending": after}, nil
+	return &RepairScanErrorsResult{Pending: after, Resolved: before - after}, nil
 }

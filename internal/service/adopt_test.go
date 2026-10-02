@@ -323,8 +323,8 @@ func TestScanRebuildsAlbumFromReply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != 2 {
-		t.Fatalf("active=%v items after rebuild", res["active"])
+	if res.Active != 2 {
+		t.Fatalf("active=%v items after rebuild", res.Active)
 	}
 	_ = channelID
 	if got := fileStatus(t, app, "/videos/a.mp4"); got != "active" {

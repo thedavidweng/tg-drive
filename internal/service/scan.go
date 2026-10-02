@@ -28,10 +28,24 @@ type ScanOptions struct {
 	Root           string
 }
 
+// ScanResult reports index counts after a scan.
+type ScanResult struct {
+	Active          int    `json:"active"`
+	Channel         string `json:"channel"`
+	Deleted         int    `json:"deleted"`
+	FullScanWarning string `json:"full_scan_warning,omitempty"`
+	Invalid         int    `json:"invalid"`
+	Missing         int    `json:"missing"`
+	Mode            string `json:"mode"`
+	Resumed         bool   `json:"resumed,omitempty"`
+	// Tombstones is reported only for --include-deleted scans.
+	Tombstones *int `json:"tombstones,omitempty"`
+}
+
 // Scan rebuilds or incrementally updates the index. Existing index state is
 // never modified before Telegram history has been fetched and proven complete,
 // so a failed or aborted scan cannot corrupt the local cache.
-func (a *App) Scan(ctx context.Context, opts ScanOptions) (map[string]any, error) {
+func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 	channelID, tgID, err := a.channelID(ctx)
 	if err != nil {
 		return nil, err
@@ -373,19 +387,17 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (map[string]any, error
 			}
 		}()
 	}
-	out := map[string]any{
-		"mode":    mode,
-		"channel": tgID,
-		"active":  counts["active"],
-		"deleted": counts["deleted"],
-		"invalid": r.invalid + counts["invalid"],
-		"missing": counts["missing"],
-	}
-	if resumed && opts.Full {
-		out["resumed"] = true
+	out := &ScanResult{
+		Mode:    mode,
+		Channel: tgID,
+		Active:  counts["active"],
+		Deleted: counts["deleted"],
+		Invalid: r.invalid + counts["invalid"],
+		Missing: counts["missing"],
+		Resumed: resumed && opts.Full,
 	}
 	if opts.IncludeDeleted {
-		out["tombstones"] = r.tombstones
+		out.Tombstones = &r.tombstones
 	}
 	if !opts.Full {
 		var lastFull string
@@ -396,9 +408,7 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (map[string]any, error
 		} else if t, err := time.Parse(time.RFC3339, lastFull); err == nil && time.Since(t) > 7*24*time.Hour {
 			warn = "last full scan was " + lastFull + "; run td scan --full to detect old-message drift"
 		}
-		if warn != "" {
-			out["full_scan_warning"] = warn
-		}
+		out.FullScanWarning = warn
 	}
 	return out, nil
 }

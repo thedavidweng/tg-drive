@@ -26,11 +26,22 @@ type captionRepairTarget struct {
 	display   string
 }
 
+// RepairCaptionsResult reports the caption cleanup per file.
+type RepairCaptionsResult struct {
+	Cleaned int                 `json:"cleaned"`
+	DryRun  bool                `json:"dry_run"`
+	Failed  int                 `json:"failed"`
+	Items   []captionRepairItem `json:"items"`
+	Planned int                 `json:"planned"`
+	Skipped int                 `json:"skipped"`
+	Total   int                 `json:"total"`
+}
+
 // RepairCaptions removes td's former parent-path and path-hashtag scaffold
 // from modern captions. The exact path, hash, MIME, and tag records remain in
 // the discussion manifest, so this operation only changes the human surface.
 // Legacy rows are excluded because their captions may still carry td:v1.
-func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, continueOnError bool) (map[string]any, error) {
+func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, continueOnError bool) (*RepairCaptionsResult, error) {
 	channelID, _, err := a.channelID(ctx)
 	if err != nil {
 		return nil, err
@@ -172,13 +183,13 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 		}
 		items = append(items, item)
 	}
-	return map[string]any{
-		"dry_run": dryRun,
-		"cleaned": cleaned,
-		"planned": planned,
-		"skipped": skipped,
-		"failed":  failed,
-		"total":   len(targets),
-		"items":   items,
+	return &RepairCaptionsResult{
+		Cleaned: cleaned,
+		DryRun:  dryRun,
+		Failed:  failed,
+		Items:   items,
+		Planned: planned,
+		Skipped: skipped,
+		Total:   len(targets),
 	}, nil
 }

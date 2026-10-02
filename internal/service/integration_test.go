@@ -201,7 +201,7 @@ func TestRepairOrphanedCompletesUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["repaired"] != 1 {
+	if res.Repaired != 1 {
 		t.Fatalf("res = %v", res)
 	}
 	if got := fileStatus(t, app, remote); got != "active" {
@@ -233,7 +233,7 @@ func TestRepairOrphanedDeleteOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["deleted"] != 1 {
+	if res.Deleted != 1 {
 		t.Fatalf("res = %v", res)
 	}
 	tgChID, _ := app.tgChannelID(ctx)
@@ -255,7 +255,7 @@ func TestTombstoneModeRedactsBoth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["mode"] != "tombstone" {
+	if res.Mode != "tombstone" {
 		t.Fatalf("res = %v", res)
 	}
 	// ADR 0018: the media caption stays human-only; the tombstone record
@@ -277,7 +277,7 @@ func TestTombstoneModeRedactsBoth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if scanRes["active"].(int) != 0 || scanRes["invalid"].(int) != 0 {
+	if scanRes.Active != 0 || scanRes.Invalid != 0 {
 		t.Fatalf("scan after tombstone = %v", scanRes)
 	}
 }
@@ -439,8 +439,8 @@ func TestScanRebuildFromEmptyDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != len(paths) {
-		t.Fatalf("active = %v, want %d", res["active"], len(paths))
+	if res.Active != len(paths) {
+		t.Fatalf("active = %v, want %d", res.Active, len(paths))
 	}
 	for _, p := range paths {
 		if got := fileStatus(t, app, p); got != "active" {
@@ -514,8 +514,8 @@ func TestScanIncludeDeletedRecordsTombstone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["tombstones"].(int) != 1 {
-		t.Fatalf("tombstones = %v", res["tombstones"])
+	if *res.Tombstones != 1 {
+		t.Fatalf("tombstones = %v", *res.Tombstones)
 	}
 	if got := fileStatus(t, app, "/tomb.txt"); got != "deleted" {
 		t.Fatalf("status = %q, want deleted", got)
@@ -595,7 +595,7 @@ func TestRepairPendingRetriesUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["repaired"] != 1 {
+	if res.Repaired != 1 {
 		t.Fatalf("res = %v", res)
 	}
 	if got := fileStatus(t, app, "/crashed.txt"); got != "active" {
@@ -624,7 +624,7 @@ func TestRecursiveUploadAndDownload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["uploaded"] != 3 {
+	if res.Uploaded != 3 {
 		t.Fatalf("res = %v", res)
 	}
 	dest := t.TempDir()
@@ -708,8 +708,8 @@ func TestFullScanAfterReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("full scan after replace: %v", err)
 	}
-	if res["active"].(int) != 1 {
-		t.Fatalf("active = %v", res["active"])
+	if res.Active != 1 {
+		t.Fatalf("active = %v", res.Active)
 	}
 }
 
@@ -783,8 +783,8 @@ func TestUploadOntoDirectoryKeepsBasename(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "/repdir/" + filepath.Base(local)
-	if data["path"] != want {
-		t.Fatalf("path = %v, want %v", data["path"], want)
+	if data.Path != want {
+		t.Fatalf("path = %v, want %v", data.Path, want)
 	}
 }
 
@@ -924,7 +924,7 @@ func TestIndexFailureAfterUploadDeletesMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["repaired"] != 0 || res["orphaned"] != 0 {
+	if res.Repaired != 0 || res.Orphaned != 0 {
 		t.Fatalf("repair = %v, want no retry/orphan", res)
 	}
 	if n := len(tg.Messages(tgChID)); n != 0 {
@@ -960,7 +960,7 @@ func TestIndexFailureAfterUploadOrphansWhenDeleteFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["repaired"] != 0 {
+	if res.Repaired != 0 {
 		t.Fatalf("repair re-uploaded: %v", res)
 	}
 	if n := len(tg.Messages(tgChID)); n != before {
@@ -989,10 +989,10 @@ func TestRepairPendingDoesNotDuplicateRecordedMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["orphaned"] != 1 {
+	if res.Orphaned != 1 {
 		t.Fatalf("repair = %v, want orphaned=1", res)
 	}
-	if res["repaired"] != 0 {
+	if res.Repaired != 0 {
 		t.Fatalf("repair re-uploaded: %v", res)
 	}
 	if got := fileStatus(t, app, "/crash.bin"); got != "orphaned" {
@@ -1105,7 +1105,7 @@ func TestShareUsesDeepestTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tag, _ := res["hashtag"].(string)
+	tag := res.Hashtag
 	if !strings.HasPrefix(tag, "#td_") {
 		t.Fatalf("hashtag = %q", tag)
 	}
@@ -1116,7 +1116,7 @@ func TestShareUsesDeepestTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shallowTag, _ := shallow["hashtag"].(string)
+	shallowTag := shallow.Hashtag
 	if tag == shallowTag {
 		t.Fatalf("file share returned shallow tag %q", tag)
 	}
@@ -1152,11 +1152,11 @@ func TestRecursiveGetContinueOnErrorReportsFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	failed, _ := res["failed"].(int)
+	failed := res.Failed
 	if failed < 1 {
 		t.Fatalf("res = %v, want failed >= 1", res)
 	}
-	errs, _ := res["errors"].([]string)
+	errs := res.Errors
 	if len(errs) == 0 {
 		t.Fatalf("res = %v, want error list", res)
 	}

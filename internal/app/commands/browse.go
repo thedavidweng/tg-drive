@@ -39,11 +39,11 @@ func NewScanCmd(rt Runtime) *cobra.Command {
 			if rt.JSON() {
 				return r.Success(data)
 			}
-			if warn, ok := data["full_scan_warning"].(string); ok && warn != "" {
-				fmt.Fprintln(os.Stderr, "warning: "+warn)
+			if data.FullScanWarning != "" {
+				fmt.Fprintln(os.Stderr, "warning: "+data.FullScanWarning)
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "scan complete (%v): %v active, %v deleted, %v invalid, %v missing\n",
-				data["mode"], data["active"], data["deleted"], data["invalid"], data["missing"])
+				data.Mode, data.Active, data.Deleted, data.Invalid, data.Missing)
 			return nil
 		},
 	}

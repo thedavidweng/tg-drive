@@ -166,10 +166,10 @@ func TestAlbumUploadNativeGroup(t *testing.T) {
 			t.Fatalf("%s indexed as size=%d hash=%q, want %d %s", path, size, hash, len(want), blake3Hex(want))
 		}
 	}
-	if data["uploaded"] != 3 || data["skipped"] != 0 {
-		t.Fatalf("result counters = uploaded %v skipped %v", data["uploaded"], data["skipped"])
+	if data.Uploaded != 3 || data.Skipped != 0 {
+		t.Fatalf("result counters = uploaded %v skipped %v", data.Uploaded, data.Skipped)
 	}
-	groups, _ := data["albums"].([]AlbumGroup)
+	groups := data.Albums
 	if len(groups) != 1 || groups[0].GroupedID != gid || groups[0].ReplyMessageID != firstReply.ID || len(groups[0].Paths) != 3 {
 		t.Fatalf("envelope albums = %+v", groups)
 	}
@@ -214,7 +214,7 @@ func TestAlbumUploadSplitsLargeSets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	groups, _ := data["albums"].([]AlbumGroup)
+	groups := data.Albums
 	if len(groups) != 2 {
 		t.Fatalf("groups = %d, want 2 (10+3): %+v", len(groups), data)
 	}
@@ -253,8 +253,8 @@ func TestAlbumUploadSplitsLargeSets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["active"].(int) != 13 {
-		t.Fatalf("scan active = %v, want 13", res["active"])
+	if res.Active != 13 {
+		t.Fatalf("scan active = %v, want 13", res.Active)
 	}
 	dest := filepath.Join(t.TempDir(), "out.bin")
 	dl, err := app.DownloadFile(ctx, "/big/f12.bin", dest, ConflictFail)
@@ -308,8 +308,8 @@ func TestAlbumUploadConflictPolicies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if skipData["skipped"] != 1 || skipData["uploaded"] != 1 {
-		t.Fatalf("skip result = uploaded %v skipped %v, want 1/1", skipData["uploaded"], skipData["skipped"])
+	if skipData.Skipped != 1 || skipData.Uploaded != 1 {
+		t.Fatalf("skip result = uploaded %v skipped %v, want 1/1", skipData.Uploaded, skipData.Skipped)
 	}
 
 	// Rename: collision lands under a candidate name.
@@ -376,7 +376,7 @@ func TestAlbumUploadPendingAdoptionRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data["resumed"] != true {
+	if !data.Resumed {
 		t.Fatalf("retry data = %v, want resumed:true", data)
 	}
 	if fileStatus(t, app, "/media/big.bin") != "active" || fileStatus(t, app, "/media/small.bin") != "active" {
@@ -414,8 +414,8 @@ func TestAlbumUploadPublishFailureAbandonsGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data["uploaded"] != 3 {
-		t.Fatalf("retry uploaded = %v, want 3", data["uploaded"])
+	if data.Uploaded != 3 {
+		t.Fatalf("retry uploaded = %v, want 3", data.Uploaded)
 	}
 	if fileStatus(t, app, "/gal/b.bin") != "active" {
 		t.Fatal("retry member not active")
@@ -439,10 +439,10 @@ func TestSingleMemberBatchUploadsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data["uploaded"] != 1 {
-		t.Fatalf("uploaded = %v, want 1", data["uploaded"])
+	if data.Uploaded != 1 {
+		t.Fatalf("uploaded = %v, want 1", data.Uploaded)
 	}
-	if albums := data["albums"].([]AlbumGroup); len(albums) != 0 {
+	if albums := data.Albums; len(albums) != 0 {
 		t.Fatalf("single survivor must not form an album: %+v", albums)
 	}
 	for _, m := range tg.Messages(mustChannel(t, app)) {
@@ -485,10 +485,10 @@ func TestRecursiveFolderUploadGroupsByDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data["uploaded"].(int) != 3 {
-		t.Fatalf("recursive uploaded = %v, want 3", data["uploaded"])
+	if data.Uploaded != 3 {
+		t.Fatalf("recursive uploaded = %v, want 3", data.Uploaded)
 	}
-	albums, _ := data["albums"].([]AlbumGroup)
+	albums := data.Albums
 	if len(albums) != 1 || len(albums[0].Paths) != 2 {
 		t.Fatalf("albums = %+v, want one two-member group", albums)
 	}
@@ -561,9 +561,9 @@ func TestReplaceAlbumMemberKeepsInventory(t *testing.T) {
 				t.Fatalf("replace album member: %v", err)
 			}
 			tg.SetFailEditText(false)
-			newMsgID, _ := data["message_id"].(int)
+			newMsgID := data.MessageID
 			if newMsgID == 0 || newMsgID == oldMsgID {
-				t.Fatalf("replace message id = %v, old %d", data["message_id"], oldMsgID)
+				t.Fatalf("replace message id = %v, old %d", newMsgID, oldMsgID)
 			}
 
 			want := map[string]string{
@@ -629,8 +629,8 @@ func TestReplaceAlbumMemberKeepsInventory(t *testing.T) {
 			if err != nil {
 				t.Fatalf("full scan after album member replace: %v", err)
 			}
-			if res["active"].(int) != len(want) {
-				t.Fatalf("scan active = %v, want %d (%+v)", res["active"], len(want), res)
+			if res.Active != len(want) {
+				t.Fatalf("scan active = %v, want %d (%+v)", res.Active, len(want), res)
 			}
 			assertContents("after rebuild")
 		})

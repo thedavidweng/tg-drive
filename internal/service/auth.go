@@ -18,8 +18,30 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
 )
 
+// Result structs declare fields in JSON-key alphabetical order: the envelopes
+// were historically marshaled from maps, whose keys encoding/json sorts, and
+// the byte output must not change.
+
+// AuthUser identifies the logged-in Telegram account.
+type AuthUser struct {
+	DisplayName string `json:"display_name"`
+	Phone       string `json:"phone"`
+	UserID      int64  `json:"user_id"`
+}
+
+func newAuthUser(u telegram.User) AuthUser {
+	phone, _ := config.RedactValue("telegram.phone", u.Phone, false).(string)
+	return AuthUser{DisplayName: u.DisplayName, Phone: phone, UserID: u.ID}
+}
+
+// AuthLoginResult reports a completed login.
+type AuthLoginResult struct {
+	AlreadyAuthenticated bool `json:"already_authenticated"`
+	AuthUser
+}
+
 // AuthLogin performs interactive login.
-func (a *App) AuthLogin(ctx context.Context, codeFn telegram.CodeFunc, passwordFn telegram.PasswordFunc, opts telegram.LoginOptions) (map[string]any, error) {
+func (a *App) AuthLogin(ctx context.Context, codeFn telegram.CodeFunc, passwordFn telegram.PasswordFunc, opts telegram.LoginOptions) (*AuthLoginResult, error) {
 	if a.Cfg.Telegram.APIID == 0 || a.Cfg.Telegram.APIHash == "" {
 		return nil, apperr.New(apperr.ErrConfigMissing, "telegram.api_id and telegram.api_hash required")
 	}
@@ -37,29 +59,27 @@ func (a *App) AuthLogin(ctx context.Context, codeFn telegram.CodeFunc, passwordF
 		insert into accounts(tg_user_id,phone,display_name,created_at,updated_at) values(?,?,?,?,?)
 		on conflict(tg_user_id) do update set phone=excluded.phone, display_name=excluded.display_name, updated_at=excluded.updated_at`,
 		fmt.Sprintf("%d", user.ID), user.Phone, user.DisplayName, now, now)
-	return map[string]any{
-		"user_id":               user.ID,
-		"display_name":          user.DisplayName,
-		"phone":                 config.RedactValue("telegram.phone", user.Phone, false),
-		"already_authenticated": res.AlreadyAuthorized,
-	}, nil
+	return &AuthLoginResult{AlreadyAuthenticated: res.AlreadyAuthorized, AuthUser: newAuthUser(user)}, nil
+}
+
+// AuthStatusResult reports whether a session is logged in; the account
+// fields are present only when it is.
+type AuthStatusResult struct {
+	Authenticated bool `json:"authenticated"`
+	*AuthUser
 }
 
 // AuthStatus returns authentication status.
-func (a *App) AuthStatus(ctx context.Context) (map[string]any, error) {
+func (a *App) AuthStatus(ctx context.Context) (*AuthStatusResult, error) {
 	user, ok, err := a.TG.Status(ctx)
 	if err != nil {
 		return nil, telegram.MapError(err)
 	}
 	if !ok {
-		return map[string]any{"authenticated": false}, nil
+		return &AuthStatusResult{Authenticated: false}, nil
 	}
-	return map[string]any{
-		"authenticated": true,
-		"user_id":       user.ID,
-		"display_name":  user.DisplayName,
-		"phone":         config.RedactValue("telegram.phone", user.Phone, false),
-	}, nil
+	u := newAuthUser(*user)
+	return &AuthStatusResult{Authenticated: true, AuthUser: &u}, nil
 }
 
 // AuthLogout logs out.
@@ -67,8 +87,20 @@ func (a *App) AuthLogout(ctx context.Context) error {
 	return a.TG.Logout(ctx)
 }
 
+// InitRootResult reports a channel binding. A re-run on an already-bound root
+// reports AlreadyInitialized and skips the discussion and scan fields.
+type InitRootResult struct {
+	AlreadyInitialized  bool   `json:"already_initialized,omitempty"`
+	ChannelID           int64  `json:"channel_id"`
+	ChannelTitle        string `json:"channel_title"`
+	DiscussionChannelID int64  `json:"discussion_channel_id,omitempty"`
+	IndexedFiles        *int   `json:"indexed_files,omitempty"`
+	LocalRoot           string `json:"local_root"`
+	ScanError           string `json:"scan_error,omitempty"`
+}
+
 // InitRoot initializes a local root and optionally creates/binds a channel.
-func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bind string) (map[string]any, error) {
+func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bind string) (*InitRootResult, error) {
 	user, ok, err := a.TG.Status(ctx)
 	if err != nil {
 		return nil, telegram.MapError(err)
@@ -81,11 +113,11 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 	// from here.
 	if create != "" {
 		if existing := a.findRootBinding(ctx, user.ID, localRoot); existing != nil {
-			return map[string]any{
-				"channel_id":          existing.ID,
-				"channel_title":       existing.Title,
-				"local_root":          localRoot,
-				"already_initialized": true,
+			return &InitRootResult{
+				AlreadyInitialized: true,
+				ChannelID:          existing.ID,
+				ChannelTitle:       existing.Title,
+				LocalRoot:          localRoot,
 			}, nil
 		}
 	}
@@ -139,25 +171,25 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 	if err := a.DB.SetDiscussionGroup(ctx, channelRowID, fmt.Sprintf("%d", group.ID), fmt.Sprintf("%d", group.AccessHash), group.Title); err != nil {
 		return nil, err
 	}
-	out := map[string]any{
-		"channel_id":            ch.ID,
-		"channel_title":         ch.Title,
-		"local_root":            localRoot,
-		"discussion_channel_id": group.ID,
+	out := &InitRootResult{
+		ChannelID:           ch.ID,
+		ChannelTitle:        ch.Title,
+		LocalRoot:           localRoot,
+		DiscussionChannelID: group.ID,
 	}
 	// Binding an existing drive rebuilds its index here. A failed scan
 	// leaves a usable binding, so report it instead of failing init.
 	if scanned, err := a.initScan(ctx, ch.ID); err != nil {
-		out["scan_error"] = err.Error()
+		out.ScanError = err.Error()
 	} else {
-		out["indexed_files"] = scanned["active"]
+		out.IndexedFiles = &scanned.Active
 	}
 	return out, nil
 }
 
 // initScan full-scans the channel just bound; without pinning the selector,
 // Scan would pick the first channel in the DB when several are bound.
-func (a *App) initScan(ctx context.Context, tgChannelID int64) (map[string]any, error) {
+func (a *App) initScan(ctx context.Context, tgChannelID int64) (*ScanResult, error) {
 	prev := a.Channel
 	a.Channel = strconv.FormatInt(tgChannelID, 10)
 	defer func() { a.Channel = prev }()
@@ -197,8 +229,16 @@ func (a *App) findRootBinding(ctx context.Context, tgUserID int64, localRoot str
 	return nil
 }
 
+// ShareResult carries the invite link for a shared path.
+type ShareResult struct {
+	Channel    string `json:"channel"`
+	Hashtag    string `json:"hashtag"`
+	InviteLink string `json:"invite_link"`
+	Path       string `json:"path"`
+}
+
 // Share returns an invite link and an optional legacy hashtag for a path.
-func (a *App) Share(ctx context.Context, remotePath string) (map[string]any, error) {
+func (a *App) Share(ctx context.Context, remotePath string) (*ShareResult, error) {
 	p, err := fsmodel.NormalizeCanonicalPath(remotePath)
 	if err != nil {
 		return nil, err
@@ -237,19 +277,25 @@ func (a *App) Share(ctx context.Context, remotePath string) (map[string]any, err
 	}
 	var title string
 	_ = a.DB.Raw().QueryRowContext(ctx, `select title from channels where id=?`, channelID).Scan(&title)
-	return map[string]any{
-		"path":        p,
-		"channel":     title,
-		"invite_link": link,
-		"hashtag":     tag,
-	}, nil
+	return &ShareResult{Channel: title, Hashtag: tag, InviteLink: link, Path: p}, nil
+}
+
+// DoctorResult maps each capability check to pass/warn/fail/unknown. The
+// capability fields are present only when Telegram answered the probe.
+type DoctorResult struct {
+	Checks         map[string]string `json:"checks"`
+	DiscussionOK   *bool             `json:"discussion_ok,omitempty"`
+	Hints          map[string]string `json:"hints,omitempty"`
+	MaxUploadBytes *int64            `json:"max_upload_bytes,omitempty"`
+	SavedDeleteOK  *bool             `json:"saved_delete_ok,omitempty"`
+	SavedHistoryOK *bool             `json:"saved_history_ok,omitempty"`
 }
 
 // Doctor runs capability checks.
-func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
+func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 	checks := map[string]string{}
 	hints := map[string]string{}
-	out := map[string]any{}
+	out := &DoctorResult{}
 
 	if a.Cfg.Telegram.APIID != 0 && a.Cfg.Telegram.APIHash != "" {
 		checks["config"] = "pass"
@@ -324,8 +370,8 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 		} else {
 			checks["saved_history"] = boolCheck(caps.SavedHistoryOK)
 			checks["saved_delete"] = boolCheck(caps.SavedDeleteOK)
-			out["saved_history_ok"] = caps.SavedHistoryOK
-			out["saved_delete_ok"] = caps.SavedDeleteOK
+			out.SavedHistoryOK = &caps.SavedHistoryOK
+			out.SavedDeleteOK = &caps.SavedDeleteOK
 		}
 	} else {
 		checks["channel"] = "pass"
@@ -360,10 +406,10 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 			if !caps.SavedDeleteOK {
 				hints["saved_delete"] = "--delete-source is unavailable for Saved Messages"
 			}
-			out["max_upload_bytes"] = caps.MaxUploadBytes
-			out["discussion_ok"] = caps.DiscussionOK
-			out["saved_history_ok"] = caps.SavedHistoryOK
-			out["saved_delete_ok"] = caps.SavedDeleteOK
+			out.MaxUploadBytes = &caps.MaxUploadBytes
+			out.DiscussionOK = &caps.DiscussionOK
+			out.SavedHistoryOK = &caps.SavedHistoryOK
+			out.SavedDeleteOK = &caps.SavedDeleteOK
 			switch {
 			case caps.MaxUploadBytes >= a.Cfg.Limits.FreeUploadBytes:
 				checks["file_size_limit"] = "pass"
@@ -374,10 +420,8 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 			_, _ = a.DB.Raw().ExecContext(ctx, `update channels set updated_at=? where id=?`, time.Now().UTC().Format(time.RFC3339), channelID)
 		}
 	}
-	out["checks"] = checks
-	if len(hints) > 0 {
-		out["hints"] = hints
-	}
+	out.Checks = checks
+	out.Hints = hints
 	return out, nil
 }
 
@@ -450,16 +494,21 @@ func pathCodecSelfTest() string {
 	return "pass"
 }
 
+// PathCodecDoctorResult reports the path codec self-test and stored slug
+// verification.
+type PathCodecDoctorResult struct {
+	CorruptRows  int    `json:"corrupt_rows"`
+	DBCheck      string `json:"db_check"`
+	DBRows       int    `json:"db_rows"`
+	FixedVectors string `json:"fixed_vectors"`
+}
+
 // PathCodecDoctor runs the path codec self-test and verifies stored slug
 // mappings against the current database.
-func (a *App) PathCodecDoctor(ctx context.Context) (map[string]any, error) {
-	out := map[string]any{
-		"fixed_vectors": pathCodecSelfTest(),
-	}
+func (a *App) PathCodecDoctor(ctx context.Context) (*PathCodecDoctorResult, error) {
+	out := &PathCodecDoctorResult{FixedVectors: pathCodecSelfTest()}
 	if a.DB == nil {
-		out["db_check"] = "unknown"
-		out["db_rows"] = 0
-		out["corrupt_rows"] = 0
+		out.DBCheck = "unknown"
 		return out, nil
 	}
 
@@ -484,12 +533,12 @@ func (a *App) PathCodecDoctor(ctx context.Context) (map[string]any, error) {
 	}
 	_ = rows.Err()
 
-	out["db_rows"] = total
-	out["corrupt_rows"] = corrupt
+	out.DBRows = total
+	out.CorruptRows = corrupt
 	if corrupt == 0 {
-		out["db_check"] = "pass"
+		out.DBCheck = "pass"
 	} else {
-		out["db_check"] = "fail"
+		out.DBCheck = "fail"
 	}
 	return out, nil
 }
