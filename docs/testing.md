@@ -29,6 +29,7 @@ Binary-level end-to-end tests live in `internal/app`
 `e2e_events_test.go`, `e2e_observed_output_test.go`,
 `e2e_session_lock_test.go`, `e2e_cancel_test.go`, `e2e_transfers_test.go`,
 `e2e_transfer_kinds_test.go`, `e2e_transfer_cancel_test.go`,
+`e2e_transfer_watch_test.go`, `e2e_transfer_retention_test.go`,
 `resume_cli_test.go`,
 `app_test.go`). They build the real `td` binary and drive the full user
 journey — login, init, channels,
@@ -39,6 +40,15 @@ codes, human output, `--verbose` diagnostics, the Session lock, and private
 file modes against the fake. The stdout of get, scan, every repair mode,
 adopt, and import saved is pinned byte for byte, so service observer reports
 never leak into CLI output.
+
+`e2e_transfer_watch_test.go` runs `td transfers watch` in one process
+against a slowed `td cp` in another: the watch's `transfer.stage` stream
+(under `--events` and under `--json`) must advance with the upload and end
+with its terminal stage, and the piped human output must print one line per
+observed stage, no more. Both watch forms must exit 130 on Ctrl-C.
+`e2e_transfer_retention_test.go` seeds old Transfer rows straight into the
+index and asserts a Manager start prunes the terminal ones past 30 days
+while keeping recent and active ones.
 
 Observer reports (stages, byte progress, per-item results) of every
 long-running use case are pinned against the fake in `internal/service`

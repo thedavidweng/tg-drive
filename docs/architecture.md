@@ -109,10 +109,12 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   `lease_expires_at` on the Operation-lock heartbeat and polling the
   cancel-requested flag on the same tick: `td transfers cancel` sets the
   flag from any process, and the owner cancels the Transfer's context,
-  which ends it `cancelled`. Readers (`td transfers list` / `show`) mark a
-  Transfer whose lease expired `interrupted`. Reading and cancelling need
-  only the index, so those commands open an offline App and never take the
-  Session lock.
+  which ends it `cancelled`. Readers mark a Transfer whose lease expired
+  `interrupted`. Reading, watching, and cancelling need only the index, so
+  those commands open an offline App and never take the Session lock.
+  `Watch` follows every process's Transfers by rereading the index on a
+  fixed interval and reporting each change. When a Manager starts it prunes
+  terminal Transfers that ended more than 30 days ago.
   `internal/transfer` depends on `internal/service`, never the reverse, and
   imports no front-end framework.
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
@@ -172,7 +174,7 @@ td cp
 | `core/publisher` | rendering, manifest/inventory records, index commit |
 | `core/telegram` | interfaces and fake adapter |
 | `adapters/native/telegramgotd` | gotd/td adapter |
-| `internal/transfer` | Transfer Manager: submit, run with bounded concurrency, record stages and progress, list and show Transfers |
+| `internal/transfer` | Transfer Manager: submit, run with bounded concurrency, record stages and progress, list, show, and watch Transfers, prune old terminal ones |
 | `internal/service` | composition root (`Open`) and use cases: upload (and its dry-run plan), scan, download, move, delete, repair, Telegram setup, config get/set, init channel choices |
 | `internal/gui` (`gui` tag) | GUI facade services: DTO translation and error mapping, no business rules |
 | `cmd/td-gui` (`gui` tag) | Wails application wiring: service binding, typed event registration, the window |
