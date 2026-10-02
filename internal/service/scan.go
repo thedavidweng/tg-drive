@@ -285,7 +285,7 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (map[string]any, error
 			}
 			_ = rows.Close()
 			for _, sr := range stale {
-				if _, err := tx.ExecContext(ctx, `update files set status='missing', node_id=null, updated_at=? where id=?`, r.now, sr.id); err != nil {
+				if err := a.DB.MarkMissing(ctx, tx, sr.id, r.now); err != nil {
 					return err
 				}
 			}
@@ -616,11 +616,6 @@ func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) er
 		if !ok {
 			continue
 		}
-		if supersedeID > 0 {
-			if _, err := a.DB.Raw().ExecContext(ctx, `update files set status='superseded', node_id=null, updated_at=? where id=?`, r.now, supersedeID); err != nil {
-				return apperr.Wrap(apperr.ErrDB, "supersede duplicate", err)
-			}
-		}
 		req, err := r.buildIndexReq(ctx, op, fileID)
 		if err != nil {
 			return err
@@ -628,6 +623,9 @@ func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) er
 		if req == nil {
 			continue
 		}
+		// The older active claim is superseded inside the batch transaction,
+		// so it only leaves active together with its replacement's commit.
+		req.ReplaceFileID = supersedeID
 		reqs = append(reqs, *req)
 		r.paths.addFile(op.meta.CanonicalPath)
 		if r.pendingErrs[op.messageID] {

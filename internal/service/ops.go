@@ -129,13 +129,13 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 	if len(out) == 0 && p != "/" {
 		// Nothing under p: it is either a file (list it, like Unix ls), an
 		// empty directory (empty listing), or absent (error).
-		var name, status, contentHash string
-		var size int64
-		err := a.DB.Raw().QueryRowContext(ctx, `select display_name, coalesce(size,0), status, coalesce(content_hash,'') from files where channel_id=? and canonical_path=? and status='active'`, channelID, p).Scan(&name, &size, &status, &contentHash)
-		switch err {
-		case nil:
-			return []LSEntry{{Name: name, Path: p, Type: "file", Size: size, Hash: contentHash, Status: status}}, nil
-		case sql.ErrNoRows:
+		row, found, err := a.DB.ActiveByPath(ctx, channelID, p)
+		switch {
+		case err != nil:
+			return nil, apperr.Wrap(apperr.ErrDB, "ls", err)
+		case found:
+			return []LSEntry{{Name: row.DisplayName, Path: p, Type: "file", Size: row.Size.Int64, Hash: row.ContentHash.String, Status: row.Status}}, nil
+		default:
 			var one int
 			dirErr := a.DB.Raw().QueryRowContext(ctx, `select 1 from nodes where channel_id=? and canonical_path=? and type='dir'`, channelID, p).Scan(&one)
 			if dirErr == sql.ErrNoRows {
@@ -144,8 +144,6 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 			if dirErr != nil {
 				return nil, apperr.Wrap(apperr.ErrDB, "ls", dirErr)
 			}
-		default:
-			return nil, apperr.Wrap(apperr.ErrDB, "ls", err)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -333,16 +331,17 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	if err != nil {
 		return nil, err
 	}
-	var messageID int
-	var size int64
-	var hash string
-	err = a.DB.Raw().QueryRowContext(ctx, `select message_id, size, content_hash from files where channel_id=? and canonical_path=? and status='active'`, channelID, p).Scan(&messageID, &size, &hash)
-	if err == sql.ErrNoRows {
-		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
-	}
+	row, found, err := a.DB.ActiveByPath(ctx, channelID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
 	}
+	if !found {
+		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
+	}
+	if !row.MessageID.Valid {
+		return nil, apperr.New(apperr.ErrDB, fmt.Sprintf("lookup file: active row for %q has no message", p))
+	}
+	messageID, size, hash := int(row.MessageID.Int64), row.Size.Int64, row.ContentHash.String
 	// cp convention: a destination that ends with a separator or names an
 	// existing directory keeps the remote file's basename.
 	if strings.HasSuffix(localDest, "/") || strings.HasSuffix(localDest, string(os.PathSeparator)) {
@@ -491,14 +490,11 @@ func (a *App) MoveFile(ctx context.Context, from, to string) error {
 	if err := fsmodel.CheckUploadConflict(dst, remaining); err != nil {
 		return err
 	}
-	var fileID int64
-	var messageID, manifestID sql.NullInt64
-	var manifestChat string
-	var displayName, contentHash, mimeType string
-	var size int64
-	err = a.DB.Raw().QueryRowContext(ctx, `select id, message_id, manifest_message_id, manifest_chat_tg_id, display_name, size, content_hash, mime from files where channel_id=? and canonical_path=? and status='active'`,
-		channelID, src).Scan(&fileID, &messageID, &manifestID, &manifestChat, &displayName, &size, &contentHash, &mimeType)
-	if err == sql.ErrNoRows {
+	srcRow, found, err := a.DB.ActiveByPath(ctx, channelID, src)
+	if err != nil {
+		return apperr.Wrap(apperr.ErrDB, "lookup source", err)
+	}
+	if !found {
 		var otherChannel int64
 		if scanErr := a.DB.Raw().QueryRowContext(ctx, `select channel_id from files where canonical_path=? and status='active' and channel_id != ? limit 1`,
 			src, channelID).Scan(&otherChannel); scanErr == nil {
@@ -506,9 +502,8 @@ func (a *App) MoveFile(ctx context.Context, from, to string) error {
 		}
 		return apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", src))
 	}
-	if err != nil {
-		return apperr.Wrap(apperr.ErrDB, "lookup source", err)
-	}
+	fileID, messageID, manifestID, manifestChat := srcRow.ID, srcRow.MessageID, srcRow.ManifestMsgID, srcRow.ManifestChat
+	displayName, contentHash, mimeType, size := srcRow.DisplayName, srcRow.ContentHash.String, srcRow.MIME, srcRow.Size.Int64
 	// Path locks (sorted) with heartbeat renewal: a move touching two paths
 	// holds both for the whole operation regardless of duration.
 	lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, src, dst), func(ctx context.Context) error {
@@ -610,16 +605,14 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 				WithDetails(map[string]any{"path": p})
 		}
 	}
-	var fileID int64
-	var messageID, manifestID sql.NullInt64
-	var manifestChat string
-	err = a.DB.Raw().QueryRowContext(ctx, `select id, message_id, manifest_message_id, manifest_chat_tg_id from files where channel_id=? and canonical_path=? and status='active'`, channelID, p).Scan(&fileID, &messageID, &manifestID, &manifestChat)
-	if err == sql.ErrNoRows {
-		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
-	}
+	row, found, err := a.DB.ActiveByPath(ctx, channelID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
 	}
+	if !found {
+		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
+	}
+	fileID, messageID, manifestID, manifestChat := row.ID, row.MessageID, row.ManifestMsgID, row.ManifestChat
 	// Hold the path lock (with heartbeat renewal) for the whole delete: the
 	// Telegram mutations and the index commit must be exclusive.
 	lockKey := sqlitestore.LockKey(channelID, p)
@@ -659,26 +652,29 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p s
 			}
 		}
 		remaining := albumWithout(album, int(messageID.Int64))
+		// The inventory edit can reach Telegram while recording it on the
+		// sibling rows fails. The media is already gone, so the row is still
+		// marked deleted first and the record failure surfaces afterwards.
+		var recordErr error
 		if len(remaining.Files) == 0 {
 			manifestErr = carrier.Delete(ctx, tgChID, manID)
 		} else {
 			_, manifestErr = a.writeAlbumManifest(ctx, channelID, tgChID, carrier, manID, albumFirstMediaID(remaining), remaining)
+			if ae, ok := apperr.As(manifestErr); ok && ae.Code == apperr.ErrDB {
+				recordErr, manifestErr = manifestErr, nil
+			}
 		}
 		if isMessageGone(manifestErr) {
 			manifestErr = nil
 		}
-		err = a.DB.WithTx(ctx, func(tx *sql.Tx) error {
-			if err := a.DB.ClearNodeID(ctx, tx, fileID); err != nil {
-				return err
-			}
-			_, err := tx.ExecContext(ctx, `update files set status='deleted', updated_at=? where id=?`, now, fileID)
-			return err
-		})
-		if err != nil {
+		if err := a.DB.MarkDeleted(ctx, fileID, now); err != nil {
 			return nil, apperr.Wrap(apperr.ErrDB, "mark deleted", err)
 		}
 		if err := a.DB.RunDirectoryGC(ctx, channelID); err != nil {
 			return nil, err
+		}
+		if recordErr != nil {
+			return nil, recordErr
 		}
 		out := map[string]any{"path": p, "mode": "delete"}
 		if manifestErr != nil {
@@ -728,14 +724,7 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p s
 	}
 	// Media mutation already succeeded (or the message was already gone).
 	// Commit deleted even if the manifest reply cannot be redacted.
-	err := a.DB.WithTx(ctx, func(tx *sql.Tx) error {
-		if err := a.DB.ClearNodeID(ctx, tx, fileID); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, `update files set status='deleted', updated_at=? where id=?`, now, fileID)
-		return err
-	})
-	if err != nil {
+	if err := a.DB.MarkDeleted(ctx, fileID, now); err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "mark deleted", err)
 	}
 	if err := a.DB.RunDirectoryGC(ctx, channelID); err != nil {

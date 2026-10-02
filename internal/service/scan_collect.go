@@ -20,8 +20,7 @@ func (r *scanRun) tombstoneRow(ctx context.Context, mediaID int, canonicalPath s
 		return
 	}
 	r.tombstones++
-	_, _ = r.app.DB.Raw().ExecContext(ctx, `update files set status='deleted', node_id=null, updated_at=? where channel_id=? and message_id=? and status in ('active','missing')`,
-		r.now, r.channelID, mediaID)
+	_ = r.app.DB.MarkDeletedByMessage(ctx, r.channelID, mediaID, r.now)
 }
 
 // collectAlbumOps indexes members of parsed td-album:v1 inventories.

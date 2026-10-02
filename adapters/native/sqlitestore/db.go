@@ -467,12 +467,6 @@ func (d *DB) LockHeld(ctx context.Context, key string) (bool, error) {
 	return n > 0, nil
 }
 
-// ClearNodeID clears node_id for a file leaving active status.
-func (d *DB) ClearNodeID(ctx context.Context, tx *sql.Tx, fileID int64) error {
-	_, err := tx.ExecContext(ctx, `update files set node_id=null where id=?`, fileID)
-	return err
-}
-
 // ActivePaths returns active and pending paths for conflict checks.
 func (d *DB) ActivePaths(ctx context.Context, channelID int64) ([]struct {
 	Path  string

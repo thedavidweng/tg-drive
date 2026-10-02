@@ -76,8 +76,7 @@ func isMessageGone(err error) bool {
 }
 
 func (a *App) recordPendingMessage(ctx context.Context, fileID int64, messageID int, now string) error {
-	_, err := a.DB.Raw().ExecContext(ctx, `update files set message_id=?, updated_at=? where id=?`, messageID, now, fileID)
-	if err != nil {
+	if err := a.DB.RecordMessage(ctx, fileID, messageID, now); err != nil {
 		return apperr.Wrap(apperr.ErrDB, "record uploaded message", err)
 	}
 	return nil
@@ -89,10 +88,10 @@ func (a *App) recordPendingMessage(ctx context.Context, fileID int64, messageID 
 func (a *App) abandonUploadedMedia(ctx context.Context, tgChID, fileID int64, messageID int, now string) (orphaned bool) {
 	delErr := a.TG.DeleteMessage(ctx, tgChID, messageID)
 	if delErr == nil || isMessageGone(delErr) {
-		_, _ = a.DB.Raw().ExecContext(ctx, `delete from files where id=?`, fileID)
+		_ = a.DB.DiscardUpload(ctx, fileID)
 		return false
 	}
-	_, _ = a.DB.Raw().ExecContext(ctx, `update files set status='orphaned', message_id=?, updated_at=? where id=?`, messageID, now, fileID)
+	_ = a.DB.MarkOrphaned(ctx, fileID, messageID, now)
 	return true
 }
 
@@ -305,15 +304,12 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 	var oldMsgID, oldManifestID sql.NullInt64
 	var oldManifestChat string
 	if policy == ConflictReplace {
-		switch err := a.DB.Raw().QueryRowContext(ctx, `
-			select id, message_id, manifest_message_id, manifest_chat_tg_id from files
-			where channel_id=? and canonical_path=? and status='active'`,
-			channelID, dest).Scan(&replaceFileID, &oldMsgID, &oldManifestID, &oldManifestChat); err {
-		case sql.ErrNoRows:
-			replaceFileID = 0
-		case nil:
-		default:
+		target, found, err := a.DB.ActiveByPath(ctx, channelID, dest)
+		if err != nil {
 			return nil, apperr.Wrap(apperr.ErrDB, "lookup replace target", err)
+		}
+		if found {
+			replaceFileID, oldMsgID, oldManifestID, oldManifestChat = target.ID, target.MessageID, target.ManifestMsgID, target.ManifestChat
 		}
 	}
 
@@ -395,10 +391,7 @@ func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (map[stri
 			if pending.msgID.Valid {
 				_ = a.TG.DeleteMessage(ctx, tgChID, int(pending.msgID.Int64))
 			}
-			if err := a.DB.DeleteUploadStateByFile(ctx, pending.rowID); err != nil {
-				return nil, apperr.Wrap(apperr.ErrDB, "clear superseded upload state", err)
-			}
-			if _, err := a.DB.Raw().ExecContext(ctx, `delete from files where id=?`, pending.rowID); err != nil {
+			if err := a.DB.DiscardUpload(ctx, pending.rowID); err != nil {
 				return nil, apperr.Wrap(apperr.ErrDB, "supersede pending row", err)
 			}
 		case pending.msgID.Valid:
@@ -481,7 +474,7 @@ func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (map[stri
 		// Keep pending state only for resumable big uploads; small files and
 		// permission errors do not benefit from resuming.
 		if !bigFile {
-			_, _ = a.DB.Raw().ExecContext(ctx, `delete from files where id=?`, fileID)
+			_ = a.DB.DiscardUpload(ctx, fileID)
 		}
 		return nil, telegram.MapError(err)
 	}

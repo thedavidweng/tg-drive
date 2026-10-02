@@ -155,7 +155,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, channelID, tgChID int
 						sendErr = err
 						return nil
 					}
-					_, _ = a.DB.Raw().ExecContext(ctx, `update files set manifest_message_id=?, manifest_chat_tg_id='', updated_at=? where channel_id=? and message_id in (`+intJoin(msgIDs(members))+`)`, existing.ID, now, channelID)
+					sendErr = a.recordManifest(ctx, channelID, msgIDs(members), existing.ID, "", now)
 					return nil
 				}
 				rid, rerr := legacy.Send(ctx, tgChID, members[0].ID, body)
@@ -163,7 +163,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, channelID, tgChID int
 					sendErr = rerr
 					return nil
 				}
-				_, _ = a.DB.Raw().ExecContext(ctx, `update files set manifest_message_id=?, manifest_chat_tg_id='', updated_at=? where channel_id=? and message_id in (`+intJoin(msgIDs(members))+`)`, rid, now, channelID)
+				sendErr = a.recordManifest(ctx, channelID, msgIDs(members), rid, "", now)
 				return nil
 			}
 			if has {
@@ -174,7 +174,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, channelID, tgChID int
 					return nil
 				}
 			}
-			_, _ = a.DB.Raw().ExecContext(ctx, `update files set manifest_message_id=?, manifest_chat_tg_id=?, updated_at=? where channel_id=? and message_id in (`+intJoin(msgIDs(members))+`)`, id, comment.ChatID(), now, channelID)
+			sendErr = a.recordManifest(ctx, channelID, msgIDs(members), id, comment.ChatID(), now)
 			return nil
 		})
 		if lockErr != nil {
@@ -246,10 +246,10 @@ func (a *App) ensureTelegramManifests(ctx context.Context, channelID, tgChID int
 					sendErr = rerr
 					return nil
 				}
-				_, _ = a.DB.Raw().ExecContext(ctx, `update files set manifest_message_id=?, manifest_chat_tg_id='', updated_at=? where id=?`, rid, now, r.fileID)
+				sendErr = a.recordManifest(ctx, channelID, []int{msg.ID}, rid, "", now)
 				return nil
 			}
-			_, _ = a.DB.Raw().ExecContext(ctx, `update files set manifest_message_id=?, manifest_chat_tg_id=?, updated_at=? where id=?`, id, comment.ChatID(), now, r.fileID)
+			sendErr = a.recordManifest(ctx, channelID, []int{msg.ID}, id, comment.ChatID(), now)
 			return nil
 		})
 		if lockErr != nil {
@@ -286,17 +286,6 @@ func msgIDs(msgs []telegram.Message) []int {
 	return out
 }
 
-func intJoin(ids []int) string {
-	if len(ids) == 0 {
-		return "0"
-	}
-	parts := make([]string, len(ids))
-	for i, id := range ids {
-		parts[i] = fmt.Sprintf("%d", id)
-	}
-	return strings.Join(parts, ",")
-}
-
 func isPerFileManifestReply(msg telegram.Message) bool {
 	if msg.Kind == telegram.KindDocument || msg.Kind == telegram.KindPhoto {
 		return false
@@ -329,7 +318,9 @@ func (a *App) loadAlbumManifest(ctx context.Context, tgChID int64, carrier teleg
 }
 
 // writeAlbumManifest edits or posts the one td-album:v1 inventory of a
-// group through the given carrier and records it on every member row.
+// group through the given carrier and records it on every member row. When
+// the Telegram write succeeded but the row update failed, the returned id is
+// the written inventory alongside an ERR_DB error.
 func (a *App) writeAlbumManifest(ctx context.Context, channelID, tgChID int64, carrier telegram.ManifestCarrier, manifestID, firstMediaID int, meta manifest.AlbumMeta) (int, error) {
 	body, err := manifest.RenderAlbumReplyFitting(meta, manifest.DefaultTextBudget, a.Cfg.Caption.MarginUTF16Units)
 	if err != nil {
@@ -351,8 +342,19 @@ func (a *App) writeAlbumManifest(ctx context.Context, channelID, tgChID int64, c
 	for i, f := range meta.Files {
 		ids[i] = f.MessageID
 	}
-	_, _ = a.DB.Raw().ExecContext(ctx, `update files set manifest_message_id=?, manifest_chat_tg_id=?, updated_at=? where channel_id=? and message_id in (`+intJoin(ids)+`)`, id, carrier.ChatID(), now, channelID)
+	if err := a.recordManifest(ctx, channelID, ids, id, carrier.ChatID(), now); err != nil {
+		return id, err
+	}
 	return id, nil
+}
+
+// recordManifest points the rows backed by messageIDs at the machine record
+// just written to Telegram.
+func (a *App) recordManifest(ctx context.Context, channelID int64, messageIDs []int, manifestMsgID int, manifestChat, now string) error {
+	if err := a.DB.SetManifest(ctx, channelID, messageIDs, manifestMsgID, manifestChat, now); err != nil {
+		return apperr.Wrap(apperr.ErrDB, "record machine record", err)
+	}
+	return nil
 }
 
 func (a *App) reindexAlbumMember(ctx context.Context, channelID, fileID int64, messageID, manifestID int, dest, hash, mime string, size int64) error {

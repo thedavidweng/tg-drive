@@ -498,7 +498,17 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 			}
 			continue
 		}
-		_, _ = a.DB.Raw().ExecContext(ctx, `update files set manifest_message_id=null, updated_at=? where channel_id=? and manifest_message_id=?`, now, channelID, msg.ID)
+		if err := a.DB.DetachManifest(ctx, channelID, msg.ID, now); err != nil {
+			dbErr := apperr.Wrap(apperr.ErrDB, "detach deleted manifest reply", err)
+			item.Action = "fail"
+			item.Reason = dbErr.Error()
+			out.Failed++
+			out.Items = append(out.Items, item)
+			if !opts.ContinueErr {
+				return out, dbErr
+			}
+			continue
+		}
 		out.Deleted++
 		out.Items = append(out.Items, item)
 	}

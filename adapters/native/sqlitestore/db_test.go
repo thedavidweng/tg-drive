@@ -92,10 +92,7 @@ func TestForeignKeyNodeIDClear(t *testing.T) {
 	nodeID, _ := res.LastInsertId()
 	res, _ = d.Raw().Exec(`insert into files(channel_id,node_id,canonical_path,display_name,status,updated_at) values(1,?,'/a.txt','a','active',?)`, nodeID, now)
 	fileID, _ := res.LastInsertId()
-	err = d.WithTx(ctx, func(tx *sql.Tx) error {
-		return d.ClearNodeID(ctx, tx, fileID)
-	})
-	if err != nil {
+	if err := d.MarkDeleted(ctx, fileID, now); err != nil {
 		t.Fatal(err)
 	}
 	var cleared sql.NullInt64

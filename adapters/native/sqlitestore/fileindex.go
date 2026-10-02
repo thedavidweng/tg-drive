@@ -36,7 +36,7 @@ func (d *DB) IndexBatch(ctx context.Context, reqs []ports.FileIndexRequest) erro
 
 func indexTx(ctx context.Context, tx *sql.Tx, req ports.FileIndexRequest) (int64, error) {
 	if req.ReplaceFileID > 0 {
-		if _, err := tx.ExecContext(ctx, `update files set status='superseded', node_id=null, updated_at=? where id=?`, req.Now, req.ReplaceFileID); err != nil {
+		if err := retireTx(ctx, tx, req.ReplaceFileID, "superseded", req.Now); err != nil {
 			return 0, err
 		}
 	}

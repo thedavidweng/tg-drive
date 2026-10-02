@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
@@ -23,14 +24,15 @@ import (
 // blocks per conflict policy; a message-less pending row is a failed upload
 // that a retry adopts rather than wedging the path.
 func (a *App) destOccupancy(ctx context.Context, channelRowID int64, dest string) (activeExists, pendingAdoptable bool, err error) {
-	err = a.DB.Raw().QueryRowContext(ctx, `
-		select exists(select 1 from files where channel_id=? and canonical_path=? and status='active'),
-		       exists(select 1 from files where channel_id=? and canonical_path=? and status='pending' and message_id is null)`,
-		channelRowID, dest, channelRowID, dest).Scan(&activeExists, &pendingAdoptable)
+	_, activeExists, err = a.DB.ActiveByPath(ctx, channelRowID, dest)
 	if err != nil {
 		return false, false, apperr.Wrap(apperr.ErrDB, "lookup destination state", err)
 	}
-	return activeExists, pendingAdoptable, nil
+	pending, found, err := a.DB.PendingByPath(ctx, channelRowID, dest)
+	if err != nil {
+		return false, false, apperr.Wrap(apperr.ErrDB, "lookup destination state", err)
+	}
+	return activeExists, found && !pending.MessageID.Valid, nil
 }
 
 // applyUploadPolicy resolves the canonical destination against its active
@@ -127,19 +129,14 @@ type pendingResolution struct {
 // lookupPending reads the pending row at dest, if any. The caller holds the
 // lock on dest.
 func (a *App) lookupPending(ctx context.Context, channelRowID int64, dest string) (pendingResolution, error) {
-	var p pendingResolution
-	err := a.DB.Raw().QueryRowContext(ctx, `
-		select id, size, content_hash, message_id from files
-		where channel_id=? and canonical_path=? and status='pending'`,
-		channelRowID, dest).Scan(&p.rowID, &p.size, &p.hash, &p.msgID)
-	switch err {
-	case sql.ErrNoRows:
-		return pendingResolution{}, nil
-	case nil:
-		return p, nil
-	default:
+	row, found, err := a.DB.PendingByPath(ctx, channelRowID, dest)
+	if err != nil {
 		return pendingResolution{}, apperr.Wrap(apperr.ErrDB, "lookup pending destination", err)
 	}
+	if !found {
+		return pendingResolution{}, nil
+	}
+	return pendingResolution{rowID: row.ID, msgID: row.MessageID, size: row.Size, hash: row.ContentHash}, nil
 }
 
 // matches reports whether the pending row describes the same content as this
@@ -164,31 +161,29 @@ func errUnpublishedUpload(dest string, msgID int64) error {
 // whether the adopted row carries confirmed resumable bytes. The caller
 // holds the lock on dest.
 func (a *App) stagePendingRow(ctx context.Context, channelRowID int64, dest, localPath string, size int64, contentHash, mime, now string, adoptFileID int64) (fileID int64, resumed bool, err error) {
-	if adoptFileID > 0 {
-		if _, err := a.DB.Raw().ExecContext(ctx, `
-			update files set display_name=?, original_local_path=?, size=?, content_hash=?, mime=?, message_id=null, updated_at=? where id=?`,
-			fsmodel.BaseName(dest), localPath, size, contentHash, mime, now, adoptFileID); err != nil {
+	// Without an adopted row a fresh pending row is inserted. Under --replace
+	// the old active row stays untouched until the new upload fully
+	// succeeds, so a failed upload can never lose the existing index entry.
+	fileID, err = a.DB.StagePending(ctx, sqlitestore.PendingRow{
+		ChannelRowID:  channelRowID,
+		CanonicalPath: dest,
+		DisplayName:   fsmodel.BaseName(dest),
+		LocalPath:     localPath,
+		Size:          size,
+		ContentHash:   contentHash,
+		MIME:          mime,
+		Now:           now,
+	}, adoptFileID)
+	if err != nil {
+		if adoptFileID > 0 {
 			return 0, false, apperr.Wrap(apperr.ErrDB, "adopt pending row", err)
 		}
-		if st, lerr := a.DB.LoadUploadState(ctx, fmt.Sprintf("file:%d", adoptFileID)); lerr == nil && st != nil && st.ConfirmedBytes > 0 {
-			return adoptFileID, true, nil
-		}
-		return adoptFileID, false, nil
-	}
-	// Always insert a fresh pending row. Under --replace the old active row
-	// stays untouched until the new upload fully succeeds, so a failed
-	// upload can never lose the existing index entry.
-	err = a.DB.WithTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `insert into files(channel_id,canonical_path,display_name,original_local_path,size,content_hash,mime,status,updated_at) values(?,?,?,?,?,?,?,'pending',?)`,
-			channelRowID, dest, fsmodel.BaseName(dest), localPath, size, contentHash, mime, now)
-		if err != nil {
-			return err
-		}
-		fileID, _ = res.LastInsertId()
-		return nil
-	})
-	if err != nil {
 		return 0, false, apperr.Wrap(apperr.ErrDB, "insert pending", err)
+	}
+	if adoptFileID > 0 {
+		if st, lerr := a.DB.LoadUploadState(ctx, fmt.Sprintf("file:%d", adoptFileID)); lerr == nil && st != nil && st.ConfirmedBytes > 0 {
+			return fileID, true, nil
+		}
 	}
 	return fileID, false, nil
 }

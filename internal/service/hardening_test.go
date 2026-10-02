@@ -422,6 +422,68 @@ func TestScanDuplicatePathClaimsNewestWins(t *testing.T) {
 	}
 }
 
+// TestScanSupersedeRollsBackWithIndexBatch covers the rollback scope of a
+// scan supersede: a newer message moving onto a path held by an older active
+// row supersedes that row only in the same transaction that indexes the
+// newer one. Failure modes: (1) the batch fails after the supersede, losing
+// the path's only active row; (2) the batch commits but the old row stays
+// active beside the new one; (3) the rerun cannot reconcile the rolled-back
+// state. E2E cannot fail the batch transaction itself, so a failing index
+// stands in for the crash.
+func TestScanSupersedeRollsBackWithIndexBatch(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+	tgChID, _ := app.tgChannelID(ctx)
+	caption := func(path, name string) string {
+		return name + "\n\ntd:v1 p=" + b64url(path) + " n=" + b64url(name) + " s=1 h=- m=-"
+	}
+	if _, err := tg.UploadMedia(ctx, uploadReq(tgChID, "old.bin", caption("/dup.txt", "old.bin"), strings.NewReader("a"))); err != nil {
+		t.Fatal(err)
+	}
+	newer, err := tg.UploadMedia(ctx, uploadReq(tgChID, "new.bin", caption("/other.txt", "new.bin"), strings.NewReader("b")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.Scan(ctx, ScanOptions{Full: true}); err != nil {
+		t.Fatal(err)
+	}
+	// The newer message now claims the older one's path.
+	if err := tg.EditCaption(ctx, tgChID, newer.MessageID, caption("/dup.txt", "new.bin")); err != nil {
+		t.Fatal(err)
+	}
+	activeName := func(path string) string {
+		var name string
+		_ = app.DB.Raw().QueryRow(`select display_name from files where canonical_path=? and status='active'`, path).Scan(&name)
+		return name
+	}
+
+	app.Index = failIndex{err: errors.New("crash mid batch")}
+	_, err = app.Scan(ctx, ScanOptions{Full: true})
+	if code := appErrCode(t, err); code != "ERR_DB" {
+		t.Fatalf("failed scan code = %s, want ERR_DB", code)
+	}
+	if got := activeName("/dup.txt"); got != "old.bin" {
+		t.Fatalf("active /dup.txt after failed batch = %q, want old.bin (supersede rolled back)", got)
+	}
+	if got := activeName("/other.txt"); got != "new.bin" {
+		t.Fatalf("active /other.txt after failed batch = %q, want new.bin", got)
+	}
+
+	app.Index = nil
+	if _, err := app.Scan(ctx, ScanOptions{Full: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := activeName("/dup.txt"); got != "new.bin" {
+		t.Fatalf("active /dup.txt after rerun = %q, want new.bin (newest message wins)", got)
+	}
+	var superseded int
+	_ = app.DB.Raw().QueryRow(`select count(*) from files where canonical_path='/dup.txt' and status='superseded' and node_id is null`).Scan(&superseded)
+	if superseded != 1 {
+		t.Fatalf("superseded /dup.txt rows = %d, want 1", superseded)
+	}
+}
+
 // TestScanDeterministicSlugRebuild covers hashtag survival across DB loss:
 // colliding sibling segments get the same slug chains after a rebuild.
 func TestScanDeterministicSlugRebuild(t *testing.T) {

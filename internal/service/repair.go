@@ -64,13 +64,13 @@ func (a *App) RepairPending(ctx context.Context) (map[string]any, error) {
 			skipped++
 			continue
 		}
+		markInvalid := func(ctx context.Context) error { return a.DB.MarkInvalid(ctx, r.id, now) }
 		// Status flips hold the row's path lock so they cannot race a
 		// concurrent upload adopting the same row.
-		flip := func(status string) bool {
+		flip := func(retire func(ctx context.Context) error) bool {
 			ok := true
 			err := a.withLocks(ctx, lockKeysForPaths(channelID, r.path), func(ctx context.Context) error {
-				_ = a.DB.DeleteUploadStateByFile(ctx, r.id)
-				_, _ = a.DB.Raw().ExecContext(ctx, `update files set status=?, updated_at=? where id=?`, status, now, r.id)
+				_ = retire(ctx)
 				return nil
 			})
 			if err != nil {
@@ -84,7 +84,7 @@ func (a *App) RepairPending(ctx context.Context) (map[string]any, error) {
 			// Upload reached Telegram but was never promoted; hand off to
 			// orphan repair which can complete or delete it. The upload
 			// finished, so any resumable part state is garbage.
-			if flip("orphaned") {
+			if flip(func(ctx context.Context) error { return a.DB.MarkOrphaned(ctx, r.id, int(r.msgID.Int64), now) }) {
 				orphaned++
 			}
 		case r.local.Valid && r.local.String != "":
@@ -92,8 +92,7 @@ func (a *App) RepairPending(ctx context.Context) (map[string]any, error) {
 				// Drop the stale row (and its state) and retry the upload
 				// fresh; UploadFile takes the path lock itself.
 				err := a.withLocks(ctx, lockKeysForPaths(channelID, r.path), func(ctx context.Context) error {
-					_ = a.DB.DeleteUploadStateByFile(ctx, r.id)
-					_, _ = a.DB.Raw().ExecContext(ctx, `delete from files where id=?`, r.id)
+					_ = a.DB.DiscardUpload(ctx, r.id)
 					return nil
 				})
 				if err != nil {
@@ -107,11 +106,11 @@ func (a *App) RepairPending(ctx context.Context) (map[string]any, error) {
 				invalid++
 				continue
 			}
-			if flip("invalid") {
+			if flip(markInvalid) {
 				invalid++
 			}
 		default:
-			if flip("invalid") {
+			if flip(markInvalid) {
 				invalid++
 			}
 		}
@@ -165,8 +164,7 @@ func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (map[strin
 	repaired, deleted, invalid := 0, 0, 0
 	for _, r := range orphans {
 		if !r.msgID.Valid {
-			_ = a.DB.DeleteUploadStateByFile(ctx, r.id)
-			_, _ = a.DB.Raw().ExecContext(ctx, `update files set status='invalid', updated_at=? where id=?`, now, r.id)
+			_ = a.DB.MarkInvalid(ctx, r.id, now)
 			invalid++
 			continue
 		}
@@ -176,8 +174,11 @@ func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (map[strin
 			if deleteOrphans {
 				err := a.TG.DeleteMessage(ctx, tgChID, int(r.msgID.Int64))
 				if err == nil || isMessageGone(err) {
-					_ = a.DB.DeleteUploadStateByFile(ctx, r.id)
-					_, _ = a.DB.Raw().ExecContext(ctx, `update files set status='deleted', node_id=null, updated_at=? where id=?`, now, r.id)
+					if err := a.DB.MarkDeleted(ctx, r.id, now); err != nil {
+						// Stays orphaned: the next repair finds the message
+						// gone and retires the row then.
+						return nil
+					}
 					deleted++
 					return nil
 				}
@@ -233,22 +234,15 @@ func (a *App) RepairPath(ctx context.Context, remotePath string) (map[string]any
 	if err != nil {
 		return nil, err
 	}
-	var fileID int64
-	var messageID, manifestID sql.NullInt64
-	var manifestChat string
-	var displayName, contentHash, mimeType string
-	var size int64
-	err = a.DB.Raw().QueryRowContext(ctx, `select id, message_id, manifest_message_id, manifest_chat_tg_id, display_name, coalesce(size,0), coalesce(content_hash,''), coalesce(mime,'') from files where channel_id=? and canonical_path=? and status='active'`,
-		channelID, p).Scan(&fileID, &messageID, &manifestID, &manifestChat, &displayName, &size, &contentHash, &mimeType)
-	if err == sql.ErrNoRows {
-		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
-	}
+	row, found, err := a.DB.ActiveByPath(ctx, channelID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
 	}
-	if !messageID.Valid {
+	if !found || !row.MessageID.Valid {
 		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
 	}
+	fileID, messageID, manifestID, manifestChat := row.ID, row.MessageID, row.ManifestMsgID, row.ManifestChat
+	displayName, contentHash, mimeType, size := row.DisplayName, row.ContentHash.String, row.MIME, row.Size.Int64
 	existingSlugs := a.loadSlugMap(ctx, channelID)
 	lockErr := a.withLocks(ctx, lockKeysForPaths(channelID, p), func(ctx context.Context) error {
 		meta := manifest.FileMeta{

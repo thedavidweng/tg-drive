@@ -194,7 +194,7 @@ func (a *App) planAlbumBatch(ctx context.Context, sources []albumSource, policy 
 	var freshRows []int64 // pending rows inserted here, rolled back on fatal
 	fail := func(err error) (*albumBatch, []string, error) {
 		for _, id := range freshRows {
-			_, _ = a.DB.Raw().ExecContext(ctx, `delete from files where id=?`, id)
+			_ = a.DB.DiscardUpload(ctx, id)
 		}
 		return nil, nil, err
 	}
@@ -575,7 +575,9 @@ func (a *App) sendAlbumChunk(ctx context.Context, chunk []*albumMember, channelI
 	}
 	replyID, err := a.writeAlbumManifest(ctx, channelID, tgChID, a.manifestCarrier(manifestChat), 0, results[0].MessageID, meta)
 	if err != nil {
-		a.abandonAlbumChunk(ctx, tgChID, a.manifestCarrier(manifestChat), chunk, results, 0, now)
+		// replyID is nonzero when the inventory was sent but not recorded;
+		// the rollback deletes it with the media.
+		a.abandonAlbumChunk(ctx, tgChID, a.manifestCarrier(manifestChat), chunk, results, replyID, now)
 		return nil, err
 	}
 
@@ -631,7 +633,7 @@ func (a *App) isAbandonWindow(err error) bool {
 func (a *App) cleanupUnsentChunk(ctx context.Context, chunk []*albumMember) {
 	for _, m := range chunk {
 		if !m.bigFile {
-			_, _ = a.DB.Raw().ExecContext(ctx, `delete from files where id=?`, m.fileID)
+			_ = a.DB.DiscardUpload(ctx, m.fileID)
 		}
 	}
 }

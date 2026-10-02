@@ -18,7 +18,11 @@ cmd/td
 - `internal/app` imports command services and output/error packages.
 - `internal/service` owns command behavior and depends on `core` ports, not on `gotd/td`.
 - `adapters/native/telegramgotd` is the only package that imports `github.com/gotd/td`.
-- `adapters/native/sqlitestore` implements the file index, locks, and migrations.
+- `adapters/native/sqlitestore` implements the file index, locks, and
+  migrations, and owns the File row lifecycle: every `files` status
+  transition and path lookup is an intent-named method (`StagePending`,
+  `RecordMessage`, `MarkDeleted`, ...) that runs in its own transaction or the
+  caller's (ADR 0024). Services do not write `files` SQL.
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow
@@ -63,7 +67,7 @@ td cp
 | `core/errors` | typed errors and exit code mapping |
 | `internal/output` | human/JSON rendering |
 | `internal/config` | config/env/path loading and redaction |
-| `adapters/native/sqlitestore` | migrations, repositories, transactions, locks |
+| `adapters/native/sqlitestore` | migrations, repositories, File row lifecycle, transactions, locks |
 | `core/fsmodel` | canonical paths and virtual tree rules |
 | `core/pathcodec` | slug and hashtag generation |
 | `core/manifest` | `td:v1`, `td-manifest:v1`, and `td-album:v1` render/parse |
