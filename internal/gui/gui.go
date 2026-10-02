@@ -127,3 +127,12 @@ func (s *Services) SetPromptEmitter(emit func(AuthPrompt)) {
 	defer s.Auth.mu.Unlock()
 	s.Auth.emitter = emit
 }
+
+// SetDriveEmitter wires how the Drive facade's typed events
+// (directory-changed, scan-progress) reach the frontend. cmd/td-gui
+// connects it to the Wails event manager; tests connect a recorder.
+// Services is not a bound Wails service, so this method is not in the
+// frontend bindings.
+func (s *Services) SetDriveEmitter(em Emitter) {
+	s.Drive.emit = em
+}
