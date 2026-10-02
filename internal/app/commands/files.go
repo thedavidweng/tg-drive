@@ -258,7 +258,14 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				}
 				return r.Success(data)
 			}
-			res, err := app.DownloadFile(cmd.Context(), args[0], args[1], policy, service.DownloadOptions{})
+			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+			handle, err := manager.SubmitDownload(cmd.Context(), transfer.Download{
+				Source: args[0], Dest: args[1], Policy: policy,
+			})
+			if err != nil {
+				return r.Error(err)
+			}
+			res, err := handle.Wait()
 			if err != nil {
 				return r.Error(err)
 			}

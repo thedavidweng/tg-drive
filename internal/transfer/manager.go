@@ -90,20 +90,33 @@ type uploadOptions struct {
 	ConfirmReplace    bool                   `json:"confirm_replace,omitempty"`
 }
 
+// pinChannel resolves the bound drive channel's Telegram ID for the
+// Transfer record and pins it as the call's channel, so record and call
+// agree. A channel that does not resolve is recorded empty and left to the
+// use case to report, so its errors keep their precedence (a missing source
+// over an unbound drive) and the command's output stays the same.
+func (m *Manager) pinChannel(ctx context.Context) (context.Context, string) {
+	channel, _ := m.app.ChannelTelegramID(ctx)
+	return service.WithChannel(ctx, channel), channel
+}
+
+// absPath makes p absolute, keeping p when it cannot be resolved.
+func absPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	return abs
+}
+
 // SubmitUpload records the upload as a queued Transfer and starts it. ctx
 // bounds the Transfer's whole life: cancelling it cancels the Transfer,
 // queued or running, which then ends failed with ERR_CANCELLED. Every
 // failure of the upload itself ends the Transfer failed with the error the
 // upload use case reports.
 func (m *Manager) SubmitUpload(ctx context.Context, req Upload) (*Handle[*service.UploadResult], error) {
-	// A channel that does not resolve is recorded empty and left to the use
-	// case to report, so its errors keep their precedence (a missing source
-	// over an unbound drive) and the command's output stays the same.
-	channel, _ := m.app.ChannelTelegramID(ctx)
-	source, err := filepath.Abs(req.Source)
-	if err != nil {
-		source = req.Source
-	}
+	ctx, channel := m.pinChannel(ctx)
+	source := absPath(req.Source)
 	var size int64
 	if st, err := os.Stat(source); err == nil && st.Mode().IsRegular() {
 		size = st.Size()
@@ -119,13 +132,54 @@ func (m *Manager) SubmitUpload(ctx context.Context, req Upload) (*Handle[*servic
 		Kind: KindUpload, Channel: channel, Source: source, Dest: req.Dest,
 		BytesTotal: size, ItemsTotal: 1,
 	}
-	ctx = service.WithChannel(ctx, channel)
 	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.UploadResult, error) {
 		opts := req.Options
 		opts.Observer = tr.observe(opts.Observer)
 		res, err := m.app.UploadFileAs(ctx, req.Source, req.Dest, req.Policy, req.NoHash, req.Presentation, opts)
 		if err == nil {
 			tr.landed(res.Path, res.Size, !res.Skipped)
+		}
+		return res, err
+	})
+}
+
+// Download asks for one remote file to be downloaded, as
+// service.App.DownloadFile does.
+type Download struct {
+	// Source is the remote path to download.
+	Source string
+	// Dest is the local destination as the command was given it.
+	Dest   string
+	Policy service.ConflictPolicy
+	// Options are the download call's own settings. Its Observer still sees
+	// every report of the call.
+	Options service.DownloadOptions
+}
+
+// downloadOptions is how a download's settings are stored for retrying it.
+type downloadOptions struct {
+	Policy          service.ConflictPolicy `json:"policy"`
+	ContinueOnError bool                   `json:"continue_on_error,omitempty"`
+}
+
+// SubmitDownload records the download as a queued Transfer and starts it,
+// under the same ctx contract as SubmitUpload. The Transfer reports the
+// downloading stage with byte progress; its Source is the remote path and
+// Dest the local file, replaced by the path actually written once it
+// completes.
+func (m *Manager) SubmitDownload(ctx context.Context, req Download) (*Handle[*service.DownloadResult], error) {
+	ctx, channel := m.pinChannel(ctx)
+	options, _ := json.Marshal(downloadOptions{Policy: req.Policy})
+	t := Transfer{
+		Kind: KindDownload, Channel: channel, Source: req.Source, Dest: absPath(req.Dest),
+		ItemsTotal: 1,
+	}
+	return submit(ctx, m, t, string(options), func(ctx context.Context, tr *tracker) (*service.DownloadResult, error) {
+		opts := req.Options
+		opts.Observer = tr.observe(opts.Observer)
+		res, err := m.app.DownloadFile(ctx, req.Source, req.Dest, req.Policy, opts)
+		if err == nil {
+			tr.landed(absPath(res.Dest), res.Size, !res.Skipped)
 		}
 		return res, err
 	})
@@ -264,9 +318,10 @@ func (tr *tracker) observe(next service.Observer) service.Observer {
 }
 
 var stageOf = map[service.Stage]Stage{
-	service.StageHashing:    StageHashing,
-	service.StageUploading:  StageUploading,
-	service.StagePublishing: StagePublishing,
+	service.StageHashing:     StageHashing,
+	service.StageUploading:   StageUploading,
+	service.StageDownloading: StageDownloading,
+	service.StagePublishing:  StagePublishing,
 }
 
 func (tr *tracker) enter(s Stage) {
