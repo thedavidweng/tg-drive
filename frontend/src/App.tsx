@@ -1,11 +1,18 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Monitor, Moon, Sun } from "lucide-react"
 
-import type { Backend } from "@/backend"
+import type { Backend, OmarchyState } from "@/backend"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DriveScreen } from "@/drive"
-import { I18nProvider, useI18n } from "@/i18n"
+import { I18nProvider, storeLanguage, storedLanguage, useI18n, type LanguagePref } from "@/i18n"
 import type { MessageKey } from "@/i18n/en"
+import {
+  applyOmarchyTheme,
+  clearOmarchyTheme,
+  omarchyEnabled,
+  storeOmarchyEnabled,
+} from "@/omarchy"
+import { SettingsScreen } from "@/settings"
 import { applyTheme, storedTheme, type ThemeMode } from "@/theme"
 
 const tabs = [
@@ -17,14 +24,76 @@ const tabs = [
 ] as const satisfies readonly { id: string; label: MessageKey }[]
 
 export function App({ backend, languages }: { backend: Backend; languages: readonly string[] }) {
+  const [theme, setTheme] = useState<ThemeMode>(storedTheme)
+  const [language, setLanguage] = useState<LanguagePref>(storedLanguage)
+  const [omarchy, setOmarchy] = useState<OmarchyState | null>(null)
+  const [omarchyOn, setOmarchyOn] = useState(omarchyEnabled)
+
+  // Adopt the Omarchy look when it is detected and not switched off, and
+  // follow its theme changes from Go.
+  useEffect(() => {
+    let live = true
+    backend.settings.omarchy().then(
+      (state) => {
+        if (!live) return
+        setOmarchy(state)
+        if (state.available && state.theme && omarchyEnabled()) applyOmarchyTheme(state.theme)
+      },
+      () => {},
+    )
+    const off = backend.settings.onOmarchyTheme((theme) => {
+      setOmarchy((s) => (s?.available ? { ...s, theme } : s))
+      if (omarchyEnabled()) applyOmarchyTheme(theme)
+    })
+    return () => {
+      live = false
+      off()
+    }
+  }, [backend])
+
   return (
-    <I18nProvider languages={languages}>
-      <Shell backend={backend} />
+    <I18nProvider languages={languages} language={language}>
+      <Shell
+        backend={backend}
+        theme={theme}
+        onTheme={(mode) => {
+          applyTheme(mode)
+          setTheme(mode)
+        }}
+        language={language}
+        onLanguage={(pref) => {
+          storeLanguage(pref)
+          setLanguage(pref)
+        }}
+        omarchy={omarchy}
+        omarchyOn={omarchyOn}
+        onOmarchyToggle={(on) => {
+          storeOmarchyEnabled(on)
+          setOmarchyOn(on)
+          if (on && omarchy?.theme) {
+            applyOmarchyTheme(omarchy.theme)
+          } else {
+            clearOmarchyTheme()
+          }
+        }}
+      />
     </I18nProvider>
   )
 }
 
-function Shell({ backend }: { backend: Backend }) {
+interface ShellProps {
+  backend: Backend
+  theme: ThemeMode
+  onTheme: (mode: ThemeMode) => void
+  language: LanguagePref
+  onLanguage: (pref: LanguagePref) => void
+  omarchy: OmarchyState | null
+  omarchyOn: boolean
+  onOmarchyToggle: (on: boolean) => void
+}
+
+function Shell(props: ShellProps) {
+  const { backend } = props
   const { t } = useI18n()
   return (
     <Tabs defaultValue="drive" className="h-full gap-0">
@@ -45,14 +114,26 @@ function Shell({ backend }: { backend: Backend }) {
           ))}
         </TabsList>
         <div className="flex justify-end">
-          <ThemeToggle />
+          <ThemeToggle theme={props.theme} onTheme={props.onTheme} />
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-auto p-3.5">
         <TabsContent value="drive">
           <DriveScreen backend={backend} path="/" />
         </TabsContent>
-        {tabs.slice(1).map((tab) => (
+        <TabsContent value="settings">
+          <SettingsScreen
+            backend={backend}
+            theme={props.theme}
+            onTheme={props.onTheme}
+            language={props.language}
+            onLanguage={props.onLanguage}
+            omarchy={props.omarchy}
+            omarchyOn={props.omarchyOn}
+            onOmarchyToggle={props.onOmarchyToggle}
+          />
+        </TabsContent>
+        {tabs.slice(1, 4).map((tab) => (
           <TabsContent key={tab.id} value={tab.id}>
             <p className="px-1 py-6 text-center text-muted-foreground">{t("placeholder.notYet")}</p>
           </TabsContent>
@@ -79,22 +160,18 @@ function Logo() {
 const nextMode: Record<ThemeMode, ThemeMode> = { system: "light", light: "dark", dark: "system" }
 const modeIcon = { system: Monitor, light: Sun, dark: Moon }
 
-function ThemeToggle() {
+function ThemeToggle({ theme, onTheme }: { theme: ThemeMode; onTheme: (mode: ThemeMode) => void }) {
   const { t } = useI18n()
-  const [mode, setMode] = useState(storedTheme)
-  const Icon = modeIcon[mode]
-  const label = t("theme.toggle", { mode: t(`theme.${mode}`) })
+  const Icon = modeIcon[theme]
+  const label = t("theme.toggle", { mode: t(`theme.${theme}`) })
   return (
+    // Omarchy owns the theme while its look applies.
     <button
       type="button"
       aria-label={label}
       title={label}
-      onClick={() => {
-        const next = nextMode[mode]
-        applyTheme(next)
-        setMode(next)
-      }}
-      className="grid size-[26px] place-items-center rounded-[7px] text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+      onClick={() => onTheme(nextMode[theme])}
+      className="om-hide grid size-[26px] place-items-center rounded-[7px] text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
     >
       <Icon aria-hidden className="size-4" />
     </button>

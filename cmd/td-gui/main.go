@@ -52,5 +52,14 @@ func run() error {
 		MinHeight: 420,
 		URL:       "/",
 	})
+	// The facade watches the Omarchy theme; every change reaches the
+	// frontend as the typed event.
+	if svc.Settings.ThemeChanges != nil {
+		go func() {
+			for th := range svc.Settings.ThemeChanges {
+				app.Event.Emit(gui.OmarchyThemeChangedEvent, th)
+			}
+		}()
+	}
 	return app.Run()
 }

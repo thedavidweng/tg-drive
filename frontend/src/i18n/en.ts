@@ -19,6 +19,24 @@ export const en = {
   "size.kb": "{n} KB",
   "size.mb": "{n} MB",
   "size.gb": "{n} GB",
+
+  // Settings tab
+  "settings.appearance": "Appearance",
+  "settings.theme": "Theme",
+  "settings.language": "Language",
+  "settings.configuration": "Configuration",
+  "settings.about": "About",
+  "settings.reveal": "Reveal {key}",
+  "settings.hide": "Hide {key}",
+  "settings.save": "Save {key}",
+  "settings.saveShort": "Save",
+  "settings.loading": "Loading…",
+  "language.system": "System",
+  "language.en": "English",
+  "language.zh-CN": "简体中文",
+  "omarchy.mode": "Omarchy",
+  "omarchy.toggle": "Omarchy mode",
+  "omarchy.themeManaged": "Follows the Omarchy theme {name}.",
 }
 
 export type MessageKey = keyof typeof en

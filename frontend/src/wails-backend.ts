@@ -1,4 +1,6 @@
-import { Drive } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
+import { Events } from "@wailsio/runtime"
+
+import { Drive, Settings } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
 import type { Backend, BackendError } from "@/backend"
 
 /**
@@ -24,5 +26,13 @@ async function call<T>(promise: Promise<T>): Promise<T> {
 export const wailsBackend: Backend = {
   drive: {
     list: async (path) => (await call(Drive.List(path))) ?? [],
+  },
+  settings: {
+    listConfig: async () => (await call(Settings.List())) ?? [],
+    revealSecret: (key, confirmed) => call(Settings.Reveal(key, confirmed)),
+    setConfig: (key, value) => call(Settings.Set(key, value)),
+    versions: () => call(Settings.Versions()),
+    omarchy: async () => (await call(Settings.Omarchy())) ?? { available: false },
+    onOmarchyTheme: (cb) => Events.On("omarchy:theme-changed", (ev) => cb(ev.data)),
   },
 }

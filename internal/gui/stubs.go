@@ -9,7 +9,3 @@ type Auth struct{}
 // Transfers is the facade service over the Transfer Manager. It binds no
 // methods yet.
 type Transfers struct{}
-
-// Settings is the facade service for config and appearance preferences. It
-// binds no methods yet.
-type Settings struct{}
