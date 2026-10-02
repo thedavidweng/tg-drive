@@ -27,9 +27,9 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   generator discovers).
 - `internal/gui` is a thin facade that never imports Wails, so its tests
   need no display or webview. It holds one service per frontend area
-  (Drive, Auth, Channels, Transfers, Settings) and only translates:
-  frontend calls to
-  `internal/service` calls, results to DTOs, and errors to
+  (Drive, Auth, Channels, Transfers, Settings, Import, Maintenance) and
+  only translates: frontend calls to `internal/service` calls, results to
+  DTOs, and errors to
   `{code, category, message}` plus the envelope's details, mirroring the
   JSON contract's error envelope (uncategorized errors become
   `ERR_UNKNOWN`, as the CLI's JSON output maps them). It opens the service
@@ -41,7 +41,10 @@ cmd/td-gui (build tag gui, the only package importing Wails)
 - Interactive prompts (the login code, the 2FA password) are callbacks in
   the service layer; the facade turns each into a typed `auth.prompt` event
   and waits for the frontend's answer (`Auth.AnswerPrompt` /
-  `Auth.CancelPrompt`), which carries the prompt's ID.
+  `Auth.CancelPrompt`), which carries the prompt's ID. The Import facade
+  uses the same pattern for the photo-presentation question Saved Messages
+  import asks mid-run: a typed `import.prompt` event answered by
+  `Import.AnswerPrompt` / `Import.CancelPrompt`.
 - The Channels facade binds and switches drive channels. Binding is the
   init use case against a synthetic per-channel local root under the data
   directory (a label for the binding and a re-bind dedup key, never
@@ -51,6 +54,15 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   `service.Open`; a failed switch restores the previous selector, and an
   Auth reopen re-applies it. The selection persists in the webview's local
   storage, next to the other GUI display preferences.
+- Long per-item service runs report through the Observer seam: the facade
+  adapts it to typed `import.item` (Saved Messages import) and
+  `repair.item` (repair runs) events, each carrying a running tally.
+- The Maintenance facade delegates to the service layer for adopt (with
+  dry-run), every repair mode (the facade maps the mode string onto
+  `RepairOptions` and the untyped result back onto a per-mode outcome
+  DTO), and diagnostics: doctor returns its capability checks sorted for
+  display alongside the max-upload check, and the path-codec doctor runs
+  the codec's fixed vectors and a scoped round trip.
 - The Settings facade covers config get/set (secrets stay redacted unless a
   call explicitly confirms revealing) and Omarchy mode: on a detected
   Omarchy desktop it maps the current theme's `colors.toml` and

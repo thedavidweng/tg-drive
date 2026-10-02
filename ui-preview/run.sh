@@ -111,6 +111,11 @@ PICK_FILES="$WORK/pick/picnic.jpg:$WORK/pick/sunset.jpg"
 export TD_PREVIEW_CLI_CP="TD_FAKE_TRANSFER_DELAY=1s '$WORK/td' cp '$WORK/files/big.bin' /big.bin --upload-part-size-kb 1024 --upload-threads 1"
 export TD_PREVIEW_CLI_CP2="TD_FAKE_TRANSFER_DELAY=1s '$WORK/td' cp '$WORK/files/big.bin' /cli-slow.bin --upload-part-size-kb 1024 --upload-threads 1"
 
+# Saved Messages and one unmanaged channel post for the Import and
+# Maintenance scenes — the CLI has no commands for either, so seed the
+# fake state directly.
+go run ui-preview/seed.go "$STATE/fake.json"
+
 # Serve the GUI. WAILS_SERVER_PORT=0 would need log parsing, so find a free
 # port first; the race is acceptable for a CI job and a local run.
 PORT=${TD_PREVIEW_PORT:-$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')}
