@@ -27,7 +27,8 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   generator discovers).
 - `internal/gui` is a thin facade that never imports Wails, so its tests
   need no display or webview. It holds one service per frontend area
-  (Drive, Auth, Transfers, Settings) and only translates: frontend calls to
+  (Drive, Auth, Channels, Transfers, Settings) and only translates:
+  frontend calls to
   `internal/service` calls, results to DTOs, and errors to
   `{code, category, message}` plus the envelope's details, mirroring the
   JSON contract's error envelope (uncategorized errors become
@@ -41,6 +42,15 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   the service layer; the facade turns each into a typed `auth.prompt` event
   and waits for the frontend's answer (`Auth.AnswerPrompt` /
   `Auth.CancelPrompt`), which carries the prompt's ID.
+- The Channels facade binds and switches drive channels. Binding is the
+  init use case against a synthetic per-channel local root under the data
+  directory (a label for the binding and a re-bind dedup key, never
+  created on disk); creating a channel is the same call with a title,
+  defaulting to the service's default title. Switching reopens the App
+  with the channel selector, because the App fixes its channel at
+  `service.Open`; a failed switch restores the previous selector, and an
+  Auth reopen re-applies it. The selection persists in the webview's local
+  storage, next to the other GUI display preferences.
 - The Settings facade covers config get/set (secrets stay redacted unless a
   call explicitly confirms revealing) and Omarchy mode: on a detected
   Omarchy desktop it maps the current theme's `colors.toml` and

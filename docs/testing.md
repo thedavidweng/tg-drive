@@ -108,6 +108,13 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   emits; and index sync — a second front end's writes trigger a
   `directory-changed` event through the `PRAGMA data_version` poll, which
   also survives an Auth reopen (setup re-pins the poller's connection).
+  The Channels facade is covered by listing bound channels with the active
+  one marked, bind choices with bound channels marked, binding an existing
+  channel and creating one (explicit and default title) with the result
+  activated, rejecting the selection of an unbound channel, the selection
+  surviving an Auth reopen, the channel status (file count, discussion
+  group, upload limit, last scan) with and without a bound channel, and
+  linking a discussion group.
   Auth is covered by setup on a credential-less machine, login with the
   code and 2FA prompts answered through the prompt-event seam, a rate
   limit mapping to its wait details, logout, and the GUI and CLI holding
@@ -129,7 +136,11 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   navigation, the tree view, new-folder and row-action sheets, confirmation
   sheets blocking destructive actions until confirmed, scan progress
   updating from typed events, the listing refreshing on a
-  directory-changed event, an error alert, the auth gate (setup on an
+  directory-changed event, an error alert, the channel switcher changing
+  the Drive view to the selected channel, the switcher sheet's channel
+  status (discussion group, upload limit, last scan, file count) with
+  link-discussion updating it, binding a listed channel and creating one
+  with the default title on a fresh machine, the auth gate (setup on an
   unconfigured machine, login otherwise), the login flow states (code,
   wrong-code attempts, 2FA password, reused and resent codes, rate-limit
   wait, cancel), logout, and i18n fallback to English for an unknown
