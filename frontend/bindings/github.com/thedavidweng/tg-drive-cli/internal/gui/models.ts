@@ -64,6 +64,131 @@ export interface AuthUser {
 }
 
 /**
+ * BindChoices is what the bind dialog offers: the user's Telegram channels,
+ * and the default title for a created one.
+ */
+export interface BindChoices {
+    "channels": ChannelChoice[] | null;
+    "default_title": string;
+}
+
+/**
+ * BindRequest is one bind-or-create decision from the bind dialog. ChannelID
+ * binds that existing Telegram channel; with ChannelID empty a new drive
+ * channel is created, titled Title, or the default title when Title is
+ * empty.
+ */
+export interface BindRequest {
+    "channel_id": string;
+    "title": string;
+}
+
+/**
+ * BindResult reports a finished bind or creation. The bound channel becomes
+ * the active one.
+ */
+export interface BindResult {
+    "channel_id": string;
+    "title": string;
+
+    /**
+     * Created is true when a new Telegram channel was created; false when
+     * an existing one was bound.
+     */
+    "created": boolean;
+
+    /**
+     * AlreadyInitialized is true when this GUI already bound the channel's
+     * local root; nothing was created or changed.
+     */
+    "already_initialized": boolean;
+
+    /**
+     * IndexedFiles is how many existing files binding the channel indexed;
+     * absent when the initial scan did not run or failed.
+     */
+    "indexed_files"?: number | null;
+
+    /**
+     * ScanError carries the initial scan's failure; the binding is usable
+     * and a rescan retries it.
+     */
+    "scan_error"?: string;
+}
+
+/**
+ * ChannelChoice is one Telegram channel the bind dialog offers, marked when
+ * it is already bound as a drive.
+ */
+export interface ChannelChoice {
+    /**
+     * ChannelID is the channel's Telegram ID.
+     */
+    "channel_id": string;
+    "title": string;
+    "bound": boolean;
+}
+
+/**
+ * ChannelInfo is one channel bound in the shared index (td init or a GUI
+ * bind), as the header switcher lists it.
+ */
+export interface ChannelInfo {
+    /**
+     * ChannelID is the channel's Telegram ID, and the selector Select takes.
+     */
+    "channel_id": string;
+    "title": string;
+
+    /**
+     * LocalRoot is the local root the channel is bound to. GUI bindings use
+     * a synthetic root per channel under the data directory; it is a label,
+     * never created on disk.
+     */
+    "local_root": string;
+
+    /**
+     * Active marks the channel every facade call currently works on.
+     */
+    "active": boolean;
+}
+
+/**
+ * ChannelStatus is the active channel's health: its linked discussion group,
+ * its capabilities, and the index's freshness (ADR 0018, `td status`).
+ */
+export interface ChannelStatus {
+    "channel_id": string;
+    "title": string;
+    "local_root": string;
+
+    /**
+     * Files is how many active files the index holds for the channel.
+     */
+    "files": number;
+
+    /**
+     * DiscussionLinked reports whether a discussion group carries the
+     * channel's machine records; DiscussionTitle names it when linked.
+     */
+    "discussion_linked": boolean;
+    "discussion_title"?: string;
+
+    /**
+     * UploadLimitBytes is the account's per-file upload limit on Telegram.
+     */
+    "upload_limit_bytes": number;
+
+    /**
+     * LastScanAt is the RFC3339 time the index last changed from a scan,
+     * empty when the channel was never scanned; LastFullScanAt is the last
+     * completed full scan.
+     */
+    "last_scan_at"?: string;
+    "last_full_scan_at"?: string;
+}
+
+/**
  * ConfigEntry is one config key and its display value.
  */
 export interface ConfigEntry {
@@ -103,6 +228,15 @@ export interface DeleteOutcome {
 export interface DirectoryChanged {
     "path": string;
     "entries": Entry[] | null;
+}
+
+/**
+ * DiscussionLink identifies the discussion group a LinkDiscussion call
+ * linked to the active channel.
+ */
+export interface DiscussionLink {
+    "discussion_channel_id": string;
+    "discussion_title": string;
 }
 
 /**

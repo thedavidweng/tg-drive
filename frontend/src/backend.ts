@@ -2,9 +2,16 @@ import type {
   AuthPrompt,
   AuthStatus,
   AuthUser,
+  BindChoices,
+  BindRequest,
+  BindResult,
+  ChannelChoice,
+  ChannelInfo,
+  ChannelStatus,
   ConfigEntry,
   DeleteOutcome,
   DirectoryChanged,
+  DiscussionLink,
   Entry,
   LoginResult,
   OmarchyState,
@@ -20,9 +27,16 @@ export type {
   AuthPrompt,
   AuthStatus,
   AuthUser,
+  BindChoices,
+  BindRequest,
+  BindResult,
+  ChannelChoice,
+  ChannelInfo,
+  ChannelStatus,
   ConfigEntry,
   DeleteOutcome,
   DirectoryChanged,
+  DiscussionLink,
   Entry,
   LoginResult,
   OmarchyState,
@@ -63,6 +77,20 @@ export interface Backend {
   events: {
     onDirectoryChanged(cb: (e: DirectoryChanged) => void): () => void
     onScanProgress(cb: (e: ScanProgress) => void): () => void
+  }
+  channels: {
+    /** The channels bound in the shared index; one is marked active. */
+    list(): Promise<ChannelInfo[]>
+    /** The active channel's status; rejects ERR_CHANNEL_NOT_FOUND when none is bound. */
+    status(): Promise<ChannelStatus>
+    /** The Telegram channels offered for binding, plus the default title for a created one. */
+    choices(): Promise<BindChoices>
+    /** Binds or creates a channel and makes it the active drive. */
+    bind(req: BindRequest): Promise<BindResult>
+    /** Switches the active drive to a bound channel. */
+    select(channelID: string): Promise<ChannelStatus>
+    /** Links a discussion group to the active channel (ADR 0018). */
+    linkDiscussion(): Promise<DiscussionLink>
   }
   auth: {
     status(): Promise<AuthStatus>

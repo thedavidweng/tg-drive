@@ -72,6 +72,15 @@ func (d *Drive) emitEvent(name string, data any) {
 	}
 }
 
+// resetView forgets the directory the frontend is showing. Channels calls it
+// when switching channels: the path belongs to the old channel's tree, and
+// index sync must not re-read it against the new one.
+func (d *Drive) resetView() {
+	d.mu.Lock()
+	d.current = ""
+	d.mu.Unlock()
+}
+
 // Mkdir creates an empty directory in the virtual tree. Telegram cannot
 // store empty directories, so it is local-only until a file lands in it.
 func (d *Drive) Mkdir(ctx context.Context, path string) error {

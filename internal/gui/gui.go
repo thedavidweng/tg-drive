@@ -29,6 +29,7 @@ const DeviceModel = "td-gui"
 type Services struct {
 	Drive     *Drive
 	Auth      *Auth
+	Channels  *Channels
 	Transfers *Transfers
 	Settings  *Settings
 
@@ -42,6 +43,11 @@ type appState struct {
 	mu       sync.Mutex
 	app      *service.App
 	closeApp func()
+	// channel is the active channel selector (a bound channel's Telegram
+	// ID). The App's selector is fixed at Open (service.Options.Channel),
+	// so Channels switches channels by reopening the App with another one;
+	// "" selects the first bound channel.
+	channel string
 }
 
 func (s *appState) current() *service.App {
@@ -50,10 +56,15 @@ func (s *appState) current() *service.App {
 	return s.app
 }
 
-// reopen replaces the App with a freshly opened one. The old App closes only
-// after the new one opened, so a failed reopen keeps the previous state.
+// reopen replaces the App with a freshly opened one, bound to the selected
+// channel. The old App closes only after the new one opened, so a failed
+// reopen keeps the previous state.
 func (s *appState) reopen() error {
-	app, closeApp, err := service.Open(openOptions())
+	opts := openOptions()
+	s.mu.Lock()
+	opts.Channel = s.channel
+	s.mu.Unlock()
+	app, closeApp, err := service.Open(opts)
 	if err != nil {
 		return toError(err)
 	}
@@ -62,6 +73,22 @@ func (s *appState) reopen() error {
 	s.app, s.closeApp = app, closeApp
 	s.mu.Unlock()
 	old()
+	return nil
+}
+
+// switchChannel reopens the App bound to another channel. A failed reopen
+// keeps the previous App and selection.
+func (s *appState) switchChannel(channel string) error {
+	s.mu.Lock()
+	previous := s.channel
+	s.channel = channel
+	s.mu.Unlock()
+	if err := s.reopen(); err != nil {
+		s.mu.Lock()
+		s.channel = previous
+		s.mu.Unlock()
+		return err
+	}
 	return nil
 }
 
@@ -109,9 +136,11 @@ func Open() (*Services, func(), error) {
 			state.close()
 		}
 	}
+	drive := &Drive{state: state}
 	return &Services{
-		Drive:     &Drive{state: state},
+		Drive:     drive,
 		Auth:      &Auth{state: state, prompts: map[string]chan promptAnswer{}},
+		Channels:  &Channels{state: state, drive: drive},
 		Transfers: &Transfers{},
 		Settings:  settings,
 		state:     state,

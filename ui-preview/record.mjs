@@ -68,6 +68,49 @@ const scenes = [
       await page.getByRole("tree").waitFor()
     },
   },
+  // The channel switcher: the sheet lists the bound drives and the active
+  // channel's status, and the bind sheet offers the account's unbound
+  // channel next to the create form. The third scene completes a switch
+  // and hands the Drive channel back afterwards, because the facade keeps
+  // the selected channel server-side across the per-scene contexts.
+  {
+    name: "drive-channels-sheet",
+    title: "Drive — channel switcher and status",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("button", { name: "Switch drive" }).click()
+      await page.getByRole("dialog", { name: "Drives" }).waitFor()
+      // The seeded CLI drive auto-links its discussion group; waiting for
+      // it proves the status block loaded.
+      await page.getByText("Drive Discussion").waitFor()
+    },
+  },
+  {
+    name: "drive-bind-sheet",
+    title: "Drive — bind or create a drive",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("button", { name: "Switch drive" }).click()
+      await page.getByRole("button", { name: "Bind or create a drive" }).click()
+      await page.getByRole("dialog", { name: "Bind or create a drive" }).waitFor()
+      await page.getByRole("button", { name: "Bind Photos Archive" }).waitFor()
+    },
+  },
+  {
+    name: "drive-switched",
+    title: "Drive — switched to Backups",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("button", { name: "Switch drive" }).click()
+      await page.getByRole("button", { name: "Switch to Backups" }).click()
+      await page.getByText("backup.txt").waitFor()
+    },
+    leave: async (page) => {
+      await page.getByRole("button", { name: "Switch drive" }).click()
+      await page.getByRole("button", { name: "Switch to Drive" }).click()
+      await page.getByText("notes.txt").waitFor()
+    },
+  },
   // First-run setup and login, against the credential-free server. They
   // chain through the facade's real state: auth-login saves credentials,
   // auth-code starts a login (and cancels it after the shot), so each

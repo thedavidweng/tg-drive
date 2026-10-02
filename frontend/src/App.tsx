@@ -3,6 +3,7 @@ import { LogOut, Monitor, Moon, Sun } from "lucide-react"
 
 import { ErrorAlert, LoginScreen, SetupScreen } from "@/auth"
 import type { AuthStatus, AuthUser, Backend, BackendError, OmarchyState } from "@/backend"
+import { ChannelSwitcher } from "@/channels"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DriveScreen } from "@/drive"
 import { I18nProvider, storeLanguage, storedLanguage, useI18n, type LanguagePref } from "@/i18n"
@@ -102,6 +103,9 @@ function Shell(props: ShellProps) {
   const { backend } = props
   const { t } = useI18n()
   const [gate, setGate] = useState<Gate>({ state: "loading" })
+  // The channel the drive is bound to; switching remounts the Drive view,
+  // which then lists the new channel from its root.
+  const [activeChannel, setActiveChannel] = useState("")
   const refresh = useCallback(() => {
     backend.auth.status().then(
       (status) => setGate({ state: "ready", status }),
@@ -131,7 +135,10 @@ function Shell(props: ShellProps) {
   return (
     <Tabs defaultValue="drive" className="h-full gap-0">
       <header className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-3.5">
-        <Logo />
+        <div className="flex min-w-0 items-center gap-2">
+          <Logo />
+          <ChannelSwitcher backend={backend} onActiveChange={setActiveChannel} />
+        </div>
         <TabsList
           aria-label={t("tabs.label")}
           className="h-7 rounded-seg bg-seg-track p-0.5 group-data-horizontal/tabs:h-7"
@@ -162,7 +169,7 @@ function Shell(props: ShellProps) {
       </header>
       <main className="min-h-0 flex-1 overflow-auto p-3.5">
         <TabsContent value="drive">
-          <DriveScreen backend={backend} />
+          <DriveScreen key={activeChannel} backend={backend} />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsScreen

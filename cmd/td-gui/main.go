@@ -35,6 +35,7 @@ func run() error {
 		Services: []application.Service{
 			application.NewService(svc.Drive),
 			application.NewService(svc.Auth),
+			application.NewService(svc.Channels),
 			application.NewService(svc.Transfers),
 			application.NewService(svc.Settings),
 		},
