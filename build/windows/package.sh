@@ -54,12 +54,28 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
 	go build -tags gui -trimpath -ldflags "-s -w -H windowsgui" \
 	-o "$WORK/td-gui.exe" ./cmd/td-gui
 
+# makensis is a native Windows tool: hand it absolute mixed-style paths
+# (C:/... via cygpath -m where available). Relative paths resolve against
+# a working directory the native process may not share with this shell,
+# and backslashes are escape characters in -D defines.
+abspath() {
+	if command -v cygpath >/dev/null 2>&1; then
+		cygpath -m "$1"
+	else
+		echo "$PWD/$1"
+	fi
+}
+NSI_BINARY="$(abspath "$WORK/td-gui.exe")"
+NSI_BOOTSTRAPPER="$(abspath "$WORK/MicrosoftEdgeWebview2Setup.exe")"
+NSI_OUTFILE="$(abspath "$OUT/td-gui_${VERSION}_windows_x86_64-installer.exe")"
+NSI_SCRIPT="$(abspath build/windows/td-gui.nsi)"
+
 makensis -NOCD \
 	-DVERSION="$VERSION" \
-	-DBINARY="$WORK/td-gui.exe" \
-	-DBOOTSTRAPPER="$WORK/MicrosoftEdgeWebview2Setup.exe" \
-	-DOUTFILE="$OUT/td-gui_${VERSION}_windows_x86_64-installer.exe" \
-	build/windows/td-gui.nsi
+	-DBINARY="$NSI_BINARY" \
+	-DBOOTSTRAPPER="$NSI_BOOTSTRAPPER" \
+	-DOUTFILE="$NSI_OUTFILE" \
+	"$NSI_SCRIPT"
 
 cd "$OUT"
 sha256sum "td-gui_${VERSION}_windows_x86_64-installer.exe" \
