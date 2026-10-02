@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"path"
 	"sort"
 	"strings"
@@ -33,6 +35,9 @@ type AdoptOptions struct {
 	// Confirm is the ADR 0003 confirmation an adopt that edits Telegram
 	// and the index requires; DryRun needs none.
 	Confirm bool
+	// Observer receives this call's stages and per-message results. A dry
+	// run changes nothing, so it reports only reading the history.
+	Observer Observer
 }
 
 // Validate rejects an adopt that is neither confirmed nor a dry run. Adopt
@@ -43,6 +48,24 @@ func (o AdoptOptions) Validate() error {
 		return apperr.New(apperr.ErrConfirmationRequired, "adopting existing messages requires --confirm (or --dry-run)")
 	}
 	return nil
+}
+
+// record adds item to the result and reports its outcome: skip and fail
+// actions as skipped and failed, every other action as completed.
+func (out *AdoptResult) record(obs Observer, item AdoptPlanItem, err error) {
+	out.Items = append(out.Items, item)
+	it := Item{Path: item.Path, MessageID: item.MessageID}
+	switch item.Action {
+	case "skip":
+		obs.item(ItemResult{Item: it, Status: ItemSkipped})
+	case "fail":
+		if err == nil {
+			err = errors.New(item.Reason)
+		}
+		obs.item(ItemResult{Item: it, Status: ItemFailed, Err: err})
+	default:
+		obs.item(ItemResult{Item: it, Status: ItemCompleted})
+	}
 }
 
 // AdoptPlanItem is one message that would be adopted or restored.
@@ -106,6 +129,7 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 		}
 		msgs = []telegram.Message{msg}
 	} else {
+		opts.Observer.stage(Item{}, StageReading)
 		all, err := a.TG.History(ctx, tgChID, 0, 0)
 		if err != nil {
 			return nil, telegram.MapError(err)
@@ -123,6 +147,7 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 	}
 
 	out := &AdoptResult{DryRun: opts.DryRun, Items: []AdoptPlanItem{}}
+	obs := opts.Observer.changes(opts.DryRun)
 	used := map[string]bool{}
 	for _, ap := range active {
 		if !ap.IsDir {
@@ -134,14 +159,14 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 		item, skip := classifyAdopt(msg, opts.Dest, into, used)
 		if skip {
 			out.Skipped++
-			out.Items = append(out.Items, item)
+			out.record(obs, item, nil)
 			continue
 		}
 		if indexed[msg.ID] {
 			item.Action = "skip"
 			item.Reason = "already indexed"
 			out.Skipped++
-			out.Items = append(out.Items, item)
+			out.record(obs, item, nil)
 			continue
 		}
 		if used[item.Path] {
@@ -167,7 +192,7 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 				item.Action = "skip"
 				item.Reason = "path collision"
 				out.Skipped++
-				out.Items = append(out.Items, item)
+				out.record(obs, item, nil)
 				continue
 			}
 		}
@@ -175,13 +200,13 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 			item.Action = "skip"
 			item.Reason = err.Error()
 			out.Skipped++
-			out.Items = append(out.Items, item)
+			out.record(obs, item, nil)
 			continue
 		}
 		item.Action = "adopt"
 		if opts.DryRun {
 			out.Adopted++
-			out.Items = append(out.Items, item)
+			out.record(obs, item, nil)
 			used[item.Path] = true
 			active = append(active, fsmodel.ActivePath{Canonical: item.Path, IsDir: false})
 			continue
@@ -190,14 +215,14 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 			item.Action = "fail"
 			item.Reason = err.Error()
 			out.Failed++
-			out.Items = append(out.Items, item)
+			out.record(obs, item, err)
 			if !opts.ContinueErr {
 				return out, err
 			}
 			continue
 		}
 		out.Adopted++
-		out.Items = append(out.Items, item)
+		out.record(obs, item, nil)
 		used[item.Path] = true
 		active = append(active, fsmodel.ActivePath{Canonical: item.Path, IsDir: false})
 		indexed[msg.ID] = true
@@ -206,6 +231,7 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 		previewNewManifests(msgs, out)
 		return out, nil
 	}
+	obs.stage(Item{}, StagePublishing)
 	if err := a.ensureTelegramManifests(ctx, ch, msgs, opts, out); err != nil {
 		return out, err
 	}
@@ -413,18 +439,23 @@ func (a *App) adoptOne(ctx context.Context, ch *channelContext, msg telegram.Mes
 
 	// --hash is opt-in because it downloads every adopted file's media; the
 	// stored hash makes post-rebuild downloads verify content.
+	obs := opts.Observer
+	it := Item{Path: dest, MessageID: msg.ID}
 	contentHash := ""
 	if !opts.NoHash {
 		h := blake3.New(32, nil)
 		if adoptKind(msg) == "text" {
 			_, _ = h.Write([]byte(body))
 		} else {
-			if err := a.TG.DownloadMedia(ctx, tgChID, msg.ID, h); err != nil {
+			obs.stage(it, StageDownloading)
+			progress := &progressWriter{obs: obs, item: it, total: msg.FileSize}
+			if err := a.TG.DownloadMedia(ctx, tgChID, msg.ID, io.MultiWriter(h, progress)); err != nil {
 				return telegram.MapError(err)
 			}
 		}
 		contentHash = "blake3:" + hex.EncodeToString(h.Sum(nil))
 	}
+	obs.stage(it, StagePublishing)
 
 	// The adoption writes the index under the destination's path lock, so it
 	// cannot race a concurrent move or delete of the same path.
@@ -483,12 +514,14 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 	}
 	_ = rows.Close()
 
+	opts.Observer.stage(Item{}, StageReading)
 	history, err := a.TG.History(ctx, tgChID, 0, 0)
 	if err != nil {
 		return nil, telegram.MapError(err)
 	}
 
 	out := &AdoptResult{DryRun: opts.DryRun, Items: []AdoptPlanItem{}}
+	obs := opts.Observer.changes(opts.DryRun)
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	for _, msg := range history {
@@ -501,6 +534,7 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 			out.Items = append(out.Items, item)
 			continue
 		}
+		obs.stage(Item{MessageID: msg.ID}, StagePublishing)
 		// The reply belongs to the file it answers and to every row that
 		// records it as its manifest; the delete holds all their paths.
 		paths := append([]string(nil), pathsByManifest[msg.ID]...)
@@ -527,14 +561,14 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 			item.Action = "fail"
 			item.Reason = reason
 			out.Failed++
-			out.Items = append(out.Items, item)
+			out.record(obs, item, err)
 			if !opts.ContinueErr {
 				return out, err
 			}
 			continue
 		}
 		out.Deleted++
-		out.Items = append(out.Items, item)
+		out.record(obs, item, nil)
 	}
 
 	var media []telegram.Message
@@ -566,6 +600,7 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 			return out, err
 		}
 	}
+	obs.stage(Item{}, StagePublishing)
 	if !opts.DryRun {
 		history, err = a.TG.History(ctx, tgChID, 0, 0)
 		if err != nil {
@@ -598,11 +633,11 @@ func (a *App) restoreAlbumCaptions(ctx context.Context, ch *channelContext, memb
 	if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrOperationLocked {
 		for _, msg := range members {
 			out.Failed++
-			out.Items = append(out.Items, AdoptPlanItem{
+			out.record(opts.Observer.changes(opts.DryRun), AdoptPlanItem{
 				MessageID: msg.ID, Kind: adoptKind(msg), FileName: msg.FileName,
 				GroupedID: msg.GroupedID, Action: "fail", Reason: err.Error(),
 				Path: files[msg.ID].path,
-			})
+			}, err)
 		}
 		if opts.ContinueErr {
 			return nil
@@ -612,6 +647,7 @@ func (a *App) restoreAlbumCaptions(ctx context.Context, ch *channelContext, memb
 }
 
 func (a *App) restoreAlbumCaptionsLocked(ctx context.Context, tgChID int64, members []telegram.Message, files map[int]fileRowLookup, opts AdoptOptions, out *AdoptResult) error {
+	obs := opts.Observer.changes(opts.DryRun)
 	want := pickAlbumCaption(members, files)
 	for i, msg := range members {
 		target := ""
@@ -623,11 +659,11 @@ func (a *App) restoreAlbumCaptionsLocked(ctx context.Context, tgChID int64, memb
 		current := messageBody(msg)
 		if current == target {
 			out.Skipped++
-			out.Items = append(out.Items, AdoptPlanItem{
+			out.record(obs, AdoptPlanItem{
 				MessageID: msg.ID, Kind: adoptKind(msg), FileName: msg.FileName,
 				GroupedID: msg.GroupedID, Action: "skip", Reason: "album caption already correct",
 				Caption: target, Path: files[msg.ID].path,
-			})
+			}, nil)
 			continue
 		}
 		item := AdoptPlanItem{
@@ -640,30 +676,32 @@ func (a *App) restoreAlbumCaptionsLocked(ctx context.Context, tgChID int64, memb
 			out.Items = append(out.Items, item)
 			continue
 		}
+		obs.stage(Item{Path: item.Path, MessageID: msg.ID}, StagePublishing)
 		if err := a.TG.EditCaption(ctx, tgChID, msg.ID, target); err != nil {
 			item.Action = "fail"
 			item.Reason = err.Error()
 			out.Failed++
-			out.Items = append(out.Items, item)
+			out.record(obs, item, telegram.MapError(err))
 			if !opts.ContinueErr {
 				return telegram.MapError(err)
 			}
 			continue
 		}
 		out.Adopted++
-		out.Items = append(out.Items, item)
+		out.record(obs, item, nil)
 	}
 	return nil
 }
 
 func (a *App) restoreSingleCaption(ctx context.Context, ch *channelContext, msg telegram.Message, files map[int]fileRowLookup, opts AdoptOptions, out *AdoptResult) error {
+	obs := opts.Observer.changes(opts.DryRun)
 	body := messageBody(msg)
 	if !manifest.HasMachineMeta(body) {
 		out.Skipped++
-		out.Items = append(out.Items, AdoptPlanItem{
+		out.record(obs, AdoptPlanItem{
 			MessageID: msg.ID, Kind: adoptKind(msg), FileName: msg.FileName,
 			Action: "skip", Reason: "ungrouped caption already human", Path: files[msg.ID].path,
-		})
+		}, nil)
 		return nil
 	}
 	display := msg.FileName
@@ -687,6 +725,7 @@ func (a *App) restoreSingleCaption(ctx context.Context, ch *channelContext, msg 
 	if f, ok := files[msg.ID]; ok {
 		paths = []string{f.path}
 	}
+	obs.stage(Item{Path: item.Path, MessageID: msg.ID}, StagePublishing)
 	reason := ""
 	err := a.operate(ctx, ch, paths, func(ctx context.Context) error {
 		if err := a.TG.EditCaption(ctx, ch.tgID, msg.ID, visible); err != nil {
@@ -702,14 +741,14 @@ func (a *App) restoreSingleCaption(ctx context.Context, ch *channelContext, msg 
 		item.Action = "fail"
 		item.Reason = reason
 		out.Failed++
-		out.Items = append(out.Items, item)
+		out.record(obs, item, err)
 		if !opts.ContinueErr {
 			return err
 		}
 		return nil
 	}
 	out.Adopted++
-	out.Items = append(out.Items, item)
+	out.record(obs, item, nil)
 	return nil
 }
 

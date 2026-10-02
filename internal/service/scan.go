@@ -25,6 +25,9 @@ type ScanOptions struct {
 	Repair         bool
 	IncludeDeleted bool
 	Root           string
+	// Observer receives this call's stages and per-message results: each
+	// file indexed and each scan error recorded.
+	Observer Observer
 }
 
 // ScanResult reports index counts after a scan.
@@ -124,6 +127,7 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 		}
 	}
 
+	r.opts.Observer.stage(Item{}, StageReading)
 	// Stream the channel newest-first. Reply-resolution state stays in memory
 	// (bounded by message count); the raw message slice is never materialized.
 	// Errors noticed while streaming are deferred: if the read turns out to be
@@ -194,6 +198,7 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.opts.Observer.stage(Item{}, StageIndexing)
 	for _, de := range r.deferredErrors {
 		r.recordScanError(ctx, de.messageID, de.code, de.message, de.excerpt)
 	}
@@ -578,6 +583,7 @@ func (r *scanRun) recordScanError(ctx context.Context, messageID int, code, mess
 		values(?,?,?,?,?,'pending',?,?)
 		on conflict(channel_id,message_id,error_code) do update set last_seen_at=excluded.last_seen_at, status='pending'`,
 		r.channelID, messageID, code, message, excerpt, r.now, r.now)
+	r.opts.Observer.item(ItemResult{Item: Item{MessageID: messageID}, Status: ItemFailed, Err: apperr.New(code, message)})
 }
 
 // commitChunk conflict-checks, resolves rows, and commits one chunk of index
@@ -587,6 +593,7 @@ func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) er
 	a := r.app
 	pub := a.publisher()
 	var entries []publisher.Reindexing
+	var indexed []Item
 	var resolveIDs []int
 	// Ops are sorted by (path, messageID), so a second claim on a path inside
 	// one chunk is always the newer message. The DB duplicate-claim guard
@@ -641,6 +648,7 @@ func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) er
 			continue
 		}
 		entries = append(entries, entry)
+		indexed = append(indexed, Item{Path: op.meta.CanonicalPath, MessageID: op.messageID})
 		r.paths.addFile(op.meta.CanonicalPath)
 		if r.pendingErrs[op.messageID] {
 			resolveIDs = append(resolveIDs, op.messageID)
@@ -648,6 +656,9 @@ func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) er
 	}
 	if err := pub.ReindexBatch(ctx, entries); err != nil {
 		return apperr.Wrap(apperr.ErrDB, "index scanned files", err)
+	}
+	for _, it := range indexed {
+		r.opts.Observer.done(it, nil)
 	}
 	for _, id := range resolveIDs {
 		_, _ = a.DB.Raw().ExecContext(ctx, `update scan_errors set status='resolved', resolved_at=? where channel_id=? and message_id=? and status='pending'`, r.now, r.channelID, id)

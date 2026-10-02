@@ -24,20 +24,33 @@ const (
 	StageUploading Stage = "uploading"
 	// StagePublishing writes the item's machine records and index rows.
 	StagePublishing Stage = "publishing"
+	// StageDownloading receives the item's bytes from Telegram.
+	StageDownloading Stage = "downloading"
+	// StageReading reads Telegram history for the call as a whole.
+	StageReading Stage = "reading"
+	// StageIndexing rebuilds the local index from the history read, for the
+	// call as a whole.
+	StageIndexing Stage = "indexing"
 )
 
-// Item names one file a call works on.
+// Item names one file or message a call works on. The zero Item stands for
+// the call as a whole, which some stages describe.
 type Item struct {
-	// Source is the local file, when the item has one.
+	// Source is the local file the item reads from or writes to, when the
+	// item has one.
 	Source string
-	// Path is the item's canonical remote path.
+	// Path is the item's canonical remote path, when it has one.
 	Path string
+	// MessageID is the Telegram message the item is, when the call works on
+	// messages rather than local files.
+	MessageID int
 }
 
 // Progress is an item's byte progress: Done of Total bytes.
 type Progress struct {
-	Item  Item
-	Done  int64
+	Item Item
+	Done int64
+	// Total is 0 when the size is not known in advance.
 	Total int64
 	// Part is the confirmed upload part behind this report; nil when the
 	// progress is not part-based.
@@ -69,6 +82,22 @@ type ItemResult struct {
 	Err    error
 }
 
+// progressWriter reports every byte written through it as item progress. It
+// writes nowhere; tee it after the real destination so only bytes the
+// destination accepted are counted.
+type progressWriter struct {
+	obs   Observer
+	item  Item
+	done  int64
+	total int64
+}
+
+func (w *progressWriter) Write(p []byte) (int, error) {
+	w.done += int64(len(p))
+	w.obs.progress(Progress{Item: w.item, Done: w.done, Total: w.total})
+	return len(p), nil
+}
+
 func (o Observer) stage(it Item, st Stage) {
 	if o.OnStage != nil {
 		o.OnStage(it, st)
@@ -85,4 +114,22 @@ func (o Observer) item(r ItemResult) {
 	if o.OnItem != nil {
 		o.OnItem(r)
 	}
+}
+
+// changes is the observer for reports of the work a call does: o, or none
+// for a dry run, which does no work and reports only what it reads.
+func (o Observer) changes(dryRun bool) Observer {
+	if dryRun {
+		return Observer{}
+	}
+	return o
+}
+
+// done reports it completed when err is nil and failed otherwise.
+func (o Observer) done(it Item, err error) {
+	if err != nil {
+		o.item(ItemResult{Item: it, Status: ItemFailed, Err: err})
+		return
+	}
+	o.item(ItemResult{Item: it, Status: ItemCompleted})
 }

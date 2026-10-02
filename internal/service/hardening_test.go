@@ -279,7 +279,7 @@ func TestUploadResumeAdoptsPendingRow(t *testing.T) {
 	}
 	// Content round-trips.
 	dest := filepath.Join(t.TempDir(), "out.bin")
-	if _, err := app.DownloadFile(ctx, "/resume.bin", dest, ConflictFail); err != nil {
+	if _, err := app.DownloadFile(ctx, "/resume.bin", dest, ConflictFail, DownloadOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(dest)

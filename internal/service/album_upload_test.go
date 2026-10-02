@@ -257,7 +257,7 @@ func TestAlbumUploadSplitsLargeSets(t *testing.T) {
 		t.Fatalf("scan active = %v, want 13", res.Active)
 	}
 	dest := filepath.Join(t.TempDir(), "out.bin")
-	dl, err := app.DownloadFile(ctx, "/big/f12.bin", dest, ConflictFail)
+	dl, err := app.DownloadFile(ctx, "/big/f12.bin", dest, ConflictFail, DownloadOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -578,7 +578,7 @@ func TestReplaceAlbumMemberKeepsInventory(t *testing.T) {
 						t.Fatalf("%s: %s status = %q, want active", stage, p, got)
 					}
 					dest := filepath.Join(t.TempDir(), "out.bin")
-					if _, err := app.DownloadFile(ctx, p, dest, ConflictFail); err != nil {
+					if _, err := app.DownloadFile(ctx, p, dest, ConflictFail, DownloadOptions{}); err != nil {
 						t.Fatalf("%s: download %s: %v", stage, p, err)
 					}
 					got, err := os.ReadFile(dest)

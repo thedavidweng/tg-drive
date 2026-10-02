@@ -240,8 +240,8 @@ func (a *App) UploadFile(ctx context.Context, localPath, remotePath string, poli
 // uploadFileWithCaption uploads one file keeping humanCaption above the
 // rendered caption block. Imports (td import saved) use it to carry the
 // source message's own text onto the republished message.
-func (a *App) uploadFileWithCaption(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string) (*UploadResult, error) {
-	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, humanCaption, UploadOptions{})
+func (a *App) uploadFileWithCaption(ctx context.Context, localPath, remotePath string, policy ConflictPolicy, noHash bool, pres Presentation, humanCaption string, opts UploadOptions) (*UploadResult, error) {
+	return a.uploadFile(ctx, localPath, remotePath, policy, noHash, pres, humanCaption, opts)
 }
 
 // UploadFileAs uploads a single local file with presentation metadata that
