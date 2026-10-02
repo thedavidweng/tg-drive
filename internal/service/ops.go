@@ -646,26 +646,12 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, p s
 	if album, ok, err := a.loadAlbumManifest(ctx, tgChID, carrier, manID); err != nil && !isMessageGone(err) {
 		return nil, telegram.MapError(err)
 	} else if ok {
-		if messageID.Valid {
-			if err := a.TG.DeleteMessage(ctx, tgChID, int(messageID.Int64)); err != nil && !isMessageGone(err) {
-				return nil, telegram.MapError(err)
-			}
-		}
-		remaining := albumWithout(album, int(messageID.Int64))
-		// The inventory edit can reach Telegram while recording it on the
-		// sibling rows fails. The media is already gone, so the row is still
+		// The media is already gone when recordErr is set, so the row is still
 		// marked deleted first and the record failure surfaces afterwards.
 		var recordErr error
-		if len(remaining.Files) == 0 {
-			manifestErr = carrier.Delete(ctx, tgChID, manID)
-		} else {
-			_, manifestErr = a.writeAlbumManifest(ctx, channelID, tgChID, carrier, manID, albumFirstMediaID(remaining), remaining)
-			if ae, ok := apperr.As(manifestErr); ok && ae.Code == apperr.ErrDB {
-				recordErr, manifestErr = manifestErr, nil
-			}
-		}
-		if isMessageGone(manifestErr) {
-			manifestErr = nil
+		manifestErr, recordErr, err = a.retireAlbumMember(ctx, channelID, tgChID, carrier, manID, album, int(messageID.Int64))
+		if err != nil {
+			return nil, err
 		}
 		if err := a.DB.MarkDeleted(ctx, fileID, now); err != nil {
 			return nil, apperr.Wrap(apperr.ErrDB, "mark deleted", err)

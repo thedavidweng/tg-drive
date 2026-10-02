@@ -523,3 +523,116 @@ func mustChannel(t *testing.T, app *App) int64 {
 	}
 	return ch
 }
+
+// TestReplaceAlbumMemberKeepsInventory replaces one member of a three-file
+// album and checks the group's shared td-album:v1 inventory survives: the
+// siblings stay listed, the old member is dropped, and a full scan from an
+// empty index rebuilds the siblings plus the replacement. The failing-edit
+// case covers an inventory rewrite that cannot reach Telegram.
+func TestReplaceAlbumMemberKeepsInventory(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mode     string
+		failEdit bool
+	}{
+		{name: "delete", mode: "delete"},
+		{name: "tombstone", mode: "tombstone"},
+		{name: "tombstone-edit-fails", mode: "tombstone", failEdit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, tg := testApp(t)
+			loginAndInit(t, app, tg)
+			app.Cfg.Delete.Mode = tc.mode
+			ctx := context.Background()
+			tgChID, _ := app.tgChannelID(ctx)
+
+			if _, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/albums/", ConflictFail, false, Presentation{}); err != nil {
+				t.Fatal(err)
+			}
+			var oldMsgID int
+			if err := app.DB.Raw().QueryRow(`select message_id from files where canonical_path='/albums/b.bin' and status='active'`).Scan(&oldMsgID); err != nil {
+				t.Fatal(err)
+			}
+
+			tg.SetFailEditText(tc.failEdit)
+			replacement := writeLocal(t, "replacement b")
+			data, err := app.UploadFile(ctx, replacement, "/albums/b.bin", ConflictReplace, false)
+			if err != nil {
+				t.Fatalf("replace album member: %v", err)
+			}
+			tg.SetFailEditText(false)
+			newMsgID, _ := data["message_id"].(int)
+			if newMsgID == 0 || newMsgID == oldMsgID {
+				t.Fatalf("replace message id = %v, old %d", data["message_id"], oldMsgID)
+			}
+
+			want := map[string]string{
+				"/albums/a.bin": "payload a",
+				"/albums/b.bin": "replacement b",
+				"/albums/c.bin": "payload c",
+			}
+			assertContents := func(stage string) {
+				t.Helper()
+				for p, content := range want {
+					if got := fileStatus(t, app, p); got != "active" {
+						t.Fatalf("%s: %s status = %q, want active", stage, p, got)
+					}
+					dest := filepath.Join(t.TempDir(), "out.bin")
+					if _, err := app.DownloadFile(ctx, p, dest, ConflictFail); err != nil {
+						t.Fatalf("%s: download %s: %v", stage, p, err)
+					}
+					got, err := os.ReadFile(dest)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if string(got) != content {
+						t.Fatalf("%s: %s content = %q, want %q", stage, p, got, content)
+					}
+				}
+			}
+			assertContents("after replace")
+
+			if !tc.failEdit {
+				inventories := albumInventoryComments(t, app, ctx)
+				if len(inventories) != 1 {
+					t.Fatalf("album inventories = %d, want 1 surviving the replace", len(inventories))
+				}
+				for _, inv := range inventories {
+					meta, err := manifest.ParseAlbumReply(inv.Text)
+					if err != nil {
+						t.Fatal(err)
+					}
+					paths := map[string]bool{}
+					for _, f := range meta.Files {
+						if f.MessageID == oldMsgID {
+							t.Fatalf("inventory still lists the replaced member %d: %+v", oldMsgID, meta.Files)
+						}
+						paths[f.CanonicalPath] = true
+					}
+					if len(meta.Files) != 2 || !paths["/albums/a.bin"] || !paths["/albums/c.bin"] {
+						t.Fatalf("inventory = %+v, want the two siblings", meta.Files)
+					}
+				}
+			}
+
+			// The replaced member must not stay claimable on Telegram.
+			if old, err := tg.GetMessage(ctx, tgChID, oldMsgID); err == nil && !strings.Contains(old.Caption, "deleted=true") {
+				t.Fatalf("replaced member %d still live: caption %q", oldMsgID, old.Caption)
+			}
+
+			for _, table := range []string{"path_tags", "path_segment_slugs", "files", "nodes", "scan_state"} {
+				if _, err := app.DB.Raw().Exec(`delete from ` + table); err != nil {
+					t.Fatal(err)
+				}
+			}
+			res, err := app.Scan(ctx, ScanOptions{Full: true})
+			if err != nil {
+				t.Fatalf("full scan after album member replace: %v", err)
+			}
+			if res["active"].(int) != len(want) {
+				t.Fatalf("scan active = %v, want %d (%+v)", res["active"], len(want), res)
+			}
+			assertContents("after rebuild")
+		})
+	}
+}

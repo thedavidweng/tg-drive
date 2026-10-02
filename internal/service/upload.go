@@ -512,22 +512,7 @@ func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (map[stri
 		manifestMsgID = &pubRes.ManifestMsgID
 	}
 	if args.replaceFileID > 0 {
-		oldCarrier := a.manifestCarrier(args.oldManifestChat)
-		if a.Cfg.Delete.Mode == "tombstone" {
-			if args.oldMsgID.Valid {
-				_ = a.TG.EditCaption(ctx, tgChID, int(args.oldMsgID.Int64), manifest.RenderTombstoneCaption(displayName, dest))
-			}
-			if args.oldManifestID.Valid {
-				_ = oldCarrier.Edit(ctx, tgChID, int(args.oldManifestID.Int64), manifest.RenderTombstoneManifest(dest))
-			}
-		} else {
-			if args.oldMsgID.Valid {
-				_ = a.TG.DeleteMessage(ctx, tgChID, int(args.oldMsgID.Int64))
-			}
-			if args.oldManifestID.Valid {
-				_ = oldCarrier.Delete(ctx, tgChID, int(args.oldManifestID.Int64))
-			}
-		}
+		a.retireReplacedFile(ctx, channelID, tgChID, dest, displayName, args)
 	}
 
 	data := map[string]any{
@@ -545,4 +530,55 @@ func (a *App) uploadLocked(ctx context.Context, args uploadLockedArgs) (map[stri
 		data["invite_link"] = link
 	}
 	return data, nil
+}
+
+// retireReplacedFile redacts the Telegram records of the file a --replace
+// superseded. It is best effort: the replacement is already published and
+// indexed, so failures leave stale records for scans rather than failing cp.
+func (a *App) retireReplacedFile(ctx context.Context, channelID, tgChID int64, dest, displayName string, args uploadLockedArgs) {
+	carrier := a.manifestCarrier(args.oldManifestChat)
+	oldMsgID, oldManID := 0, 0
+	if args.oldMsgID.Valid {
+		oldMsgID = int(args.oldMsgID.Int64)
+	}
+	if args.oldManifestID.Valid {
+		oldManID = int(args.oldManifestID.Int64)
+	}
+	album, isAlbum, loadErr := a.loadAlbumManifest(ctx, tgChID, carrier, oldManID)
+	switch {
+	case isAlbum:
+		// Album members share one inventory; redacting it would drop every
+		// sibling's machine record.
+		_, _, _ = a.retireAlbumMember(ctx, channelID, tgChID, carrier, oldManID, album, oldMsgID)
+		return
+	case loadErr != nil && !isMessageGone(loadErr):
+		// The record may be a shared album inventory; leave it untouched and
+		// retire the media alone.
+		oldManID = 0
+	}
+	tombstone := func() {
+		if oldMsgID > 0 {
+			_ = a.TG.EditCaption(ctx, tgChID, oldMsgID, manifest.RenderTombstoneCaption(displayName, dest))
+		}
+		if oldManID > 0 {
+			_ = carrier.Edit(ctx, tgChID, oldManID, manifest.RenderTombstoneManifest(dest))
+		}
+	}
+	if a.Cfg.Delete.Mode == "tombstone" {
+		// The caption tombstone outranks a live comment during scans, so it
+		// also covers a failed comment edit.
+		tombstone()
+		return
+	}
+	if oldMsgID > 0 {
+		if err := a.TG.DeleteMessage(ctx, tgChID, oldMsgID); err != nil && !isMessageGone(err) {
+			// Retirement must stay sticky even when the media cannot be
+			// deleted: tombstone what remains instead.
+			tombstone()
+			return
+		}
+	}
+	if oldManID > 0 {
+		_ = carrier.Delete(ctx, tgChID, oldManID)
+	}
 }
