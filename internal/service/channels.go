@@ -3,13 +3,42 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 
+	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
 // ListChannels returns channels visible to the logged-in user.
 func (a *App) ListChannels(ctx context.Context, onlyDrive bool) ([]telegram.Channel, error) {
 	return a.TG.ListChannels(ctx, telegram.ListChannelsOptions{OnlyDrive: onlyDrive})
+}
+
+// BoundChannels lists the channels bound to local roots in the index, in
+// binding order. It reads only the index, never Telegram.
+func (a *App) BoundChannels(ctx context.Context) ([]BoundChannel, error) {
+	return a.boundChannels(ctx)
+}
+
+// DiscussionGroup returns the discussion group linked to the bound channel,
+// or nil when none is linked (ADR 0018). It reads only the index.
+func (a *App) DiscussionGroup(ctx context.Context) (*LinkDiscussionResult, error) {
+	ch, err := a.channel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tgID, _, title, err := a.DB.DiscussionGroup(ctx, ch.rowID)
+	if err != nil {
+		return nil, err
+	}
+	if tgID == "" {
+		return nil, nil
+	}
+	id, err := strconv.ParseInt(tgID, 10, 64)
+	if err != nil {
+		return nil, apperr.New(apperr.ErrDB, "stored discussion group id is not numeric: "+tgID)
+	}
+	return &LinkDiscussionResult{DiscussionChannelID: id, DiscussionTitle: title}, nil
 }
 
 // LinkDiscussionResult identifies the discussion group linked to the bound
