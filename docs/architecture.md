@@ -109,6 +109,21 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   one refresh to cover commits that landed while unpinned. The Drive
   facade's rescan emits throttled typed `scan-progress` events from its
   per-call Observer.
+- Native desktop behaviour lives in `cmd/td-gui` (stubbed no-ops in the
+  `gui && server` build, which stays headless): a system tray, one window
+  lifecycle, and native title bars. Closing the window hides it to the
+  tray instead of destroying it — Transfers run on because their context
+  is the process's. The tray menu lists the active Transfers, fed from
+  the same typed transfer events the Transfers tab consumes, plus Show and
+  Quit; Quit (and every OS quit path, via Wails' `ShouldQuit` option)
+  asks for confirmation while Transfers are running, with the index as
+  the authority on what counts as running. The app is single-instance: a
+  second launch focuses the running window, because the GUI holds one
+  Telegram session. macOS gets the inset hidden title bar (the frontend's
+  header is the drag region, padded for the traffic lights) and Windows a
+  title bar tinted to the page background. The menu model and the quit
+  decision are pure functions in `internal/gui/lifecycle.go`
+  (`TrayTracker`, `DecideQuit`), unit-tested without a display.
 
 ## Dependency direction
 
@@ -252,5 +267,5 @@ td cp
 | `adapters/native/telegramgotd` | gotd/td adapter |
 | `internal/transfer` | Transfer Manager: submit, run with bounded concurrency, record stages and progress, list, show, and watch Transfers, prune old terminal ones |
 | `internal/service` | composition root (`Open`) and use cases: upload (and its dry-run plan), scan, download, move, delete, repair, Telegram setup, config get/set, init channel choices |
-| `internal/gui` (`gui` tag) | GUI facade services: DTO translation and error mapping, no business rules |
-| `cmd/td-gui` (`gui` tag) | Wails application wiring: service binding, typed event registration, the window |
+| `internal/gui` (`gui` tag) | GUI facade services: DTO translation and error mapping, no business rules; the pure tray-menu and quit-decision model (`lifecycle.go`) |
+| `cmd/td-gui` (`gui` tag) | Wails application wiring: service binding, typed event registration, the window, tray, single instance, quit confirmation, native title bars |

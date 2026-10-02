@@ -113,7 +113,7 @@ function AdoptCard({ backend }: { backend: Backend }) {
             onChange={(e) => setInto(e.target.value)}
             placeholder="/"
             spellCheck={false}
-            className="min-w-0 flex-1 rounded-control border border-line bg-card-2 px-2 py-1 font-mono text-[12px] outline-none focus:border-primary"
+            className="min-w-0 flex-1 rounded-control border border-line bg-card-2 px-2 py-1 font-mono text-[12px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </label>
         <Checkbox label={t("maintenance.noHash")} checked={noHash} onChange={setNoHash} />
@@ -283,7 +283,7 @@ function RepairCard({ backend }: { backend: Backend }) {
               onChange={(e) => setPath(e.target.value)}
               placeholder={t("maintenance.repairPathPlaceholder")}
               spellCheck={false}
-              className="min-w-0 flex-1 rounded-control border border-line bg-card-2 px-2 py-1 font-mono text-[12px] outline-none focus:border-primary"
+              className="min-w-0 flex-1 rounded-control border border-line bg-card-2 px-2 py-1 font-mono text-[12px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             />
           </label>
         )}

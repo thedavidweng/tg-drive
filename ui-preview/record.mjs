@@ -69,7 +69,9 @@ const scenes = [
     colorScheme: "light",
     settle: async (page) => {
       await page.getByRole("button", { name: "Tree" }).click()
-      await page.getByRole("tree").waitFor()
+      // The tree view is a static outline: a named nested list, not the
+      // interactive tree role.
+      await page.getByRole("list", { name: "Tree of /" }).waitFor()
     },
   },
   // The channel switcher: the sheet lists the bound drives and the active

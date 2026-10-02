@@ -383,7 +383,7 @@ function BindSheet({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 h-8 w-full rounded-control border border-line bg-background px-2 text-[13px] text-fg outline-none focus:border-ring"
+            className="mt-1 h-8 w-full rounded-control border border-line bg-background px-2 text-[13px] text-fg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
           />
         </label>
       </div>

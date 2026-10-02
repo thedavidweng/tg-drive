@@ -9,7 +9,9 @@ import { useI18n, type Translate } from "@/i18n"
 /** The centred card the setup and login screens share. */
 export function AuthCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="grid h-full place-items-center">
+    // app-drag: with macOS' hidden title bar the page itself is the
+    // window's drag region; the form controls opt out via index.css.
+    <div className="app-drag grid h-full place-items-center">
       <div className="w-full max-w-sm rounded-card border border-line bg-card p-5 shadow-seg">
         <h1 className="mb-4 text-[15px] font-semibold tracking-[-.01em]">{title}</h1>
         {children}

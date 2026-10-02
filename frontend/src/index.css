@@ -193,10 +193,30 @@
     user-select: none;
     cursor: default;
   }
-  button:focus-visible {
+  /* Every interactive control shows a focus ring. Component-library
+     controls layer their own ring over this (their outline-none utility
+     wins over the base layer); the rule covers the plain elements, and
+     the a11y behaviour tests walk exactly this selector set. */
+  :where(button, a[href], input, select, textarea, [role="tab"], [role="switch"], [role="button"]):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
   }
+}
+
+/* The header and the auth screens are the window's drag regions (macOS
+   uses the inset hidden title bar, so the header doubles as the title
+   bar). Interactive elements inside a drag region opt out, or their
+   clicks would start drags. */
+.app-drag {
+  --wails-draggable: drag;
+}
+.app-drag :is(button, a, input, select, textarea, [role="tab"], [role="switch"], [data-slot="tabs-list"]) {
+  --wails-draggable: no-drag;
+}
+/* The inset hidden title bar floats macOS' traffic lights over the
+   header's left; make room for them. main.tsx sets the platform. */
+html[data-platform="darwin"] .app-header {
+  padding-left: 84px;
 }
 
 /* Omarchy mode: flat, after magpie's omarchy.css. src/omarchy.ts puts the

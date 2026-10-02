@@ -157,11 +157,19 @@ test("the tree view renders the nested structure", async () => {
   await screen.findByRole("list", { name: "Files in /" })
 
   fireEvent.click(screen.getByRole("button", { name: "Tree" }))
-  const tree = await screen.findByRole("tree", { name: "Tree of /" })
-  const photosItem = within(tree).getByRole("treeitem", { name: /photos/ })
-  const subItem = within(photosItem).getByRole("treeitem", { name: /2024/ })
-  expect(within(subItem).getByRole("treeitem", { name: /beach\.jpg/ })).toBeTruthy()
-  expect(within(tree).getByRole("treeitem", { name: /notes\.txt/ })).toBeTruthy()
+  // A static outline: nested lists, not the interactive tree roles.
+  const tree = await screen.findByRole("list", { name: "Tree of /" })
+  const photosItem = within(tree)
+    .getAllByRole("listitem")
+    .find((li) => li.textContent?.includes("photos"))
+  if (!photosItem) throw new Error("no photos item")
+  // The 2024 subdirectory nests inside the photos item, the file inside it.
+  const subItem = within(photosItem)
+    .getAllByRole("listitem")
+    .find((li) => li.textContent?.includes("2024"))
+  if (!subItem) throw new Error("2024 is not nested under photos")
+  expect(within(subItem).getByText("beach.jpg")).toBeTruthy()
+  expect(within(tree).getByText("notes.txt")).toBeTruthy()
 })
 
 test("a directory change from another process refreshes the shown listing", async () => {
