@@ -4,7 +4,8 @@
 
 Accepted. Implements issue #26 on top of the album inventory of ADR 0013 and
 the typed-request model of ADR 0016. Crash-window and lock-scope policy
-refined by ADR 0027.
+refined by ADR 0027. Inventory publication moved into the publisher by
+ADR 0029.
 
 ## Context
 

@@ -9,7 +9,7 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
+	"github.com/thedavidweng/tg-drive-cli/core/publisher"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
@@ -185,31 +185,24 @@ func (a *App) stagePendingRow(ctx context.Context, channelRowID int64, dest, loc
 	return fileID, false, nil
 }
 
-// renderUploadMetaWithCaption builds publication metadata and a human caption
-// with the source message's
-// own caption kept on top of the rendered block. Imports (td import saved)
-// carry the original text into the republished message; ordinary uploads pass
-// an empty prefix and render exactly as before.
-func (a *App) renderUploadMetaWithCaption(dest, localPath string, size int64, contentHash, now string, existingSlugs map[string]string, humanPrefix string) (meta manifest.FileMeta, capRes manifest.CaptionResult, tags []string, slugMaps []pathcodec.SlugMapping, err error) {
-	meta = manifest.FileMeta{
-		CanonicalPath: dest,
-		DisplayName:   fsmodel.BaseName(dest),
-		ParentHuman:   fsmodel.HumanParent(dest),
-		Size:          size,
-		Hash:          contentHash,
-		MIME:          detectMIME(localPath),
-		Created:       now,
-	}
-	tags, slugMaps, err = pathcodec.GenerateChain(dest, existingSlugs)
-	if err != nil {
-		return meta, capRes, nil, nil, err
-	}
-	meta.Tags = tags
-	capRes, err = manifest.RenderCaptionWithPrefix(meta, humanPrefix, a.Cfg.Caption.SafeMediaCaptionUTF16Units, a.Cfg.Caption.MarginUTF16Units)
-	if err != nil {
-		return meta, capRes, nil, nil, err
-	}
-	return meta, capRes, tags, slugMaps, nil
+// renderUpload runs the one rendering pass of an upload. humanPrefix is the
+// source message's own caption kept on top of the rendered block (imports);
+// ordinary uploads pass an empty prefix.
+func (a *App) renderUpload(dest, localPath string, size int64, contentHash, now, manifestChat string, existingSlugs map[string]string, humanPrefix string) (*publisher.Rendition, error) {
+	return a.publisher().Render(publisher.RenderRequest{
+		Meta: manifest.FileMeta{
+			CanonicalPath: dest,
+			DisplayName:   fsmodel.BaseName(dest),
+			ParentHuman:   fsmodel.HumanParent(dest),
+			Size:          size,
+			Hash:          contentHash,
+			MIME:          detectMIME(localPath),
+			Created:       now,
+		},
+		HumanPrefix:    humanPrefix,
+		ManifestChatID: manifestChat,
+		ExistingSlugs:  existingSlugs,
+	})
 }
 
 // resumableKey is the upload-state key of a file row: retries that adopt the

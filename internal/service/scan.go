@@ -11,8 +11,7 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
-	"github.com/thedavidweng/tg-drive-cli/core/ports"
+	"github.com/thedavidweng/tg-drive-cli/core/publisher"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
@@ -589,7 +588,8 @@ func (r *scanRun) recordScanError(ctx context.Context, messageID int, code, mess
 // committed work.
 func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) error {
 	a := r.app
-	var reqs []ports.FileIndexRequest
+	pub := a.publisher()
+	var entries []publisher.Reindexing
 	var resolveIDs []int
 	// Ops are sorted by (path, messageID), so a second claim on a path inside
 	// one chunk is always the newer message. The DB duplicate-claim guard
@@ -626,23 +626,30 @@ func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) er
 		if !ok {
 			continue
 		}
-		req, err := r.buildIndexReq(ctx, op, fileID)
-		if err != nil {
-			return err
-		}
-		if req == nil {
-			continue
-		}
 		// The older active claim is superseded inside the batch transaction,
 		// so it only leaves active together with its replacement's commit.
-		req.ReplaceFileID = supersedeID
-		reqs = append(reqs, *req)
+		entry, err := pub.PrepareReindex(publisher.ReindexRequest{
+			ChannelRowID:   r.channelID,
+			FileID:         fileID,
+			MessageID:      op.messageID,
+			ManifestMsgID:  op.manifestMsgID,
+			ManifestChatID: op.manifestChat,
+			Meta:           op.meta,
+			ExistingSlugs:  r.slugMap,
+			ReplaceFileID:  supersedeID,
+			Now:            r.now,
+		})
+		if err != nil {
+			r.recordScanError(ctx, op.messageID, apperr.ErrSlugCollision, err.Error(), truncate(op.meta.CanonicalPath, 200))
+			continue
+		}
+		entries = append(entries, entry)
 		r.paths.addFile(op.meta.CanonicalPath)
 		if r.pendingErrs[op.messageID] {
 			resolveIDs = append(resolveIDs, op.messageID)
 		}
 	}
-	if err := a.fileIndex().IndexBatch(ctx, reqs); err != nil {
+	if err := pub.ReindexBatch(ctx, entries); err != nil {
 		return apperr.Wrap(apperr.ErrDB, "index scanned files", err)
 	}
 	for _, id := range resolveIDs {
@@ -676,40 +683,6 @@ func (r *scanRun) commitChunk(ctx context.Context, chunk, rest []scanIndexOp) er
 		return apperr.Wrap(apperr.ErrDB, "advance checkpoint", err)
 	}
 	return nil
-}
-
-// buildIndexReq renders one scan op into an index request (slug chain, tags),
-// or returns nil (with a scan error recorded) when the chain cannot be built.
-func (r *scanRun) buildIndexReq(ctx context.Context, op scanIndexOp, fileID int64) (*ports.FileIndexRequest, error) {
-	meta := manifest.FileMeta{
-		CanonicalPath: op.meta.CanonicalPath,
-		DisplayName:   op.meta.DisplayName,
-		Size:          op.meta.Size,
-		Hash:          op.meta.Hash,
-		MIME:          op.meta.MIME,
-		Created:       op.meta.Created,
-	}
-	if meta.DisplayName == "" {
-		meta.DisplayName = fsmodel.BaseName(meta.CanonicalPath)
-	}
-	tags, slugMaps, err := pathcodec.GenerateChain(meta.CanonicalPath, r.slugMap)
-	if err != nil {
-		r.recordScanError(ctx, op.messageID, apperr.ErrSlugCollision, err.Error(), truncate(meta.CanonicalPath, 200))
-		return nil, nil
-	}
-	meta.Tags = tags
-	return &ports.FileIndexRequest{
-		ChannelRowID:   r.channelID,
-		FileID:         fileID,
-		MessageID:      op.messageID,
-		ManifestMsgID:  op.manifestMsgID,
-		ManifestChatID: op.manifestChat,
-		Meta:           meta,
-		SlugMaps:       slugMaps,
-		Tags:           tags,
-		SetUploadedAt:  fileID == 0,
-		Now:            r.now,
-	}, nil
 }
 
 // resolveRow finds the file row a scanned message maps to: first by message_id

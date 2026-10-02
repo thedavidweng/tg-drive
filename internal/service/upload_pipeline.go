@@ -11,7 +11,6 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
 	"github.com/thedavidweng/tg-drive-cli/core/publisher"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
@@ -90,14 +89,14 @@ type stagedUpload struct {
 	size    int64
 	bigFile bool
 
-	hash     string
-	meta     manifest.FileMeta
-	capRes   manifest.CaptionResult
-	tags     []string
-	slugMaps []pathcodec.SlugMapping
-	fileID   int64
-	adopted  bool
-	resumed  bool
+	hash string
+	// rendition is the member's one rendering pass: the caption sent with
+	// the media and the tags its publication indexes.
+	rendition *publisher.Rendition
+	meta      manifest.FileMeta
+	fileID    int64
+	adopted   bool
+	resumed   bool
 	// replace is the active row a --replace supersedes.
 	replace *sqlitestore.FileRow
 }
@@ -328,10 +327,11 @@ func (a *App) stageUpload(ctx context.Context, run uploadRun, ch uploadChannel, 
 			adoptFileID = pending.rowID
 		}
 	}
-	meta, capRes, tags, slugMaps, err := a.renderUploadMetaWithCaption(s.dest, s.localPath, s.size, hash, now, existingSlugs, s.humanCaption)
+	rendition, err := a.renderUpload(s.dest, s.localPath, s.size, hash, now, ch.manifestChat, existingSlugs, s.humanCaption)
 	if err != nil {
 		return err
 	}
+	meta := rendition.Meta()
 	if run.replaces() {
 		target, found, err := a.DB.ActiveByPath(ctx, ch.rowID, s.dest)
 		if err != nil {
@@ -345,7 +345,7 @@ func (a *App) stageUpload(ctx context.Context, run uploadRun, ch uploadChannel, 
 	if err != nil {
 		return err
 	}
-	s.hash, s.meta, s.capRes, s.tags, s.slugMaps = hash, meta, capRes, tags, slugMaps
+	s.hash, s.rendition, s.meta = hash, rendition, meta
 	s.fileID, s.adopted, s.resumed = fileID, adoptFileID > 0, resumed
 	return nil
 }
@@ -428,7 +428,7 @@ func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUplo
 			Progress:       a.Progress,
 		}
 		if i == 0 && withCaption {
-			req.Caption = s.capRes.Caption
+			req.Caption = s.rendition.Caption()
 		}
 		s.pres.apply(&req)
 		if !s.bigFile {
@@ -470,59 +470,51 @@ func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUplo
 		}
 	}
 
+	sent := make([]sentMember, 0, len(unit))
 	replyID := 0
 	if group {
-		meta := manifest.AlbumMeta{GroupedID: results[0].GroupedID}
-		for i, res := range results {
-			meta.Files = append(meta.Files, manifest.AlbumFileFromMeta(res.MessageID, manifest.FileMeta{
-				CanonicalPath: unit[i].dest,
-				DisplayName:   unit[i].meta.DisplayName,
-				Size:          unit[i].size,
-				Hash:          unit[i].hash,
-				MIME:          unit[i].meta.MIME,
-			}))
+		req := publisher.AlbumRequest{
+			ChannelRowID: ch.rowID,
+			ChannelID:    ch.tgID,
+			GroupedID:    results[0].GroupedID,
 		}
-		// replyID is nonzero when the inventory was sent but not recorded;
-		// the rollback deletes it with the media.
-		if replyID, err = a.writeAlbumManifest(ctx, ch.rowID, ch.tgID, a.manifestCarrier(ch.manifestChat), 0, results[0].MessageID, meta); err != nil {
+		for i, res := range results {
+			m := publisher.AlbumMember{FileID: unit[i].fileID, MessageID: res.MessageID, Rendition: unit[i].rendition}
+			if unit[i].replace != nil {
+				m.ReplaceFileID = unit[i].replace.ID
+			}
+			req.Members = append(req.Members, m)
+		}
+		pubRes, err := a.publisher().PublishAlbum(ctx, req)
+		if err != nil {
+			// The inventory id is set when it reached Telegram; the
+			// rollback deletes it with the media.
+			if pubRes != nil {
+				replyID = pubRes.InventoryMsgID
+			}
 			return nil, nil, a.abandonUnit(ctx, ch, unit, results, replyID, now, err, "could not be completed or rolled back")
 		}
-	}
-
-	sent := make([]sentMember, 0, len(unit))
-	for i, res := range results {
-		s := unit[i]
-		req := publisher.PublishRequest{
-			ChannelRowID:   ch.rowID,
-			ChannelID:      ch.tgID,
-			FileID:         s.fileID,
-			MessageID:      res.MessageID,
-			ManifestChatID: ch.manifestChat,
-			Meta:           s.meta,
-			SetUploadedAt:  true,
-			Rendered:       &s.capRes,
-			Tags:           s.tags,
-			SlugMaps:       s.slugMaps,
+		replyID = pubRes.InventoryMsgID
+		for i, res := range results {
+			sent = append(sent, unit[i].sentAs(res.MessageID, replyID))
 		}
-		if group {
-			req.ManifestMsgID = replyID
-			req.SkipManifestReply = true
+	} else {
+		s := unit[0]
+		req := publisher.FileRequest{
+			ChannelRowID: ch.rowID,
+			ChannelID:    ch.tgID,
+			FileID:       s.fileID,
+			MessageID:    results[0].MessageID,
+			Rendition:    s.rendition,
 		}
 		if s.replace != nil {
 			req.ReplaceFileID = s.replace.ID
 		}
-		pubRes, err := a.publisher().Publish(ctx, req)
+		pubRes, err := a.publisher().PublishFile(ctx, req)
 		if err != nil {
-			return nil, nil, a.abandonUnit(ctx, ch, unit, results, replyID, now, err, "could not be completed or rolled back")
+			return nil, nil, a.abandonUnit(ctx, ch, unit, results, 0, now, err, "could not be completed or rolled back")
 		}
-		sent = append(sent, sentMember{
-			dest:          s.dest,
-			messageID:     res.MessageID,
-			manifestMsgID: pubRes.ManifestMsgID,
-			size:          s.size,
-			hash:          s.hash,
-			resumed:       s.resumed,
-		})
+		sent = append(sent, s.sentAs(results[0].MessageID, pubRes.ManifestMsgID))
 	}
 
 	for _, s := range unit {
@@ -539,6 +531,17 @@ func (a *App) sendUnit(ctx context.Context, ch uploadChannel, unit []*stagedUplo
 		out.MessageIDs = append(out.MessageIDs, s.messageID)
 	}
 	return sent, out, nil
+}
+
+func (s *stagedUpload) sentAs(messageID, manifestMsgID int) sentMember {
+	return sentMember{
+		dest:          s.dest,
+		messageID:     messageID,
+		manifestMsgID: manifestMsgID,
+		size:          s.size,
+		hash:          s.hash,
+		resumed:       s.resumed,
+	}
 }
 
 // retireArgs describes the superseded file for retireReplacedFile.

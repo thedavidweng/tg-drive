@@ -26,6 +26,13 @@ cmd/td
   record module (`fileRecord`: `Retire`, `RetireSuperseded`, `Rename`,
   `Rewrite`). The module hides whether the record is a per-file manifest or
   an entry in a shared album inventory (ADR 0028).
+- `core/publisher` is the File publisher. Its entry points are intents:
+  `Render` + `PublishFile` (new ungrouped file), `Render` + `PublishAlbum`
+  (new media group: the `td-album:v1` inventory plus every member row in one
+  index transaction), `Move` and `Repair` (existing file's record and
+  caption, restored on failure), and `PrepareReindex` + `ReindexBatch` /
+  `Reindex` (index only, no Telegram writes). Captions, tags, and slug maps
+  come from one `Rendition` that only `Render` produces (ADR 0029).
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
 ## Command flow
@@ -51,7 +58,7 @@ td cp
     upload media
     persist message_id on the pending rows
     send the td-album:v1 inventory (groups) or manifest reply (lone member)
-    commit active DB state
+    commit active DB state (one transaction for every member of a group)
     retire a --replace target
     on any failure after upload: delete the unit's media or mark orphaned
   release locks
@@ -80,7 +87,7 @@ td cp
 | `core/fsmodel` | canonical paths and virtual tree rules |
 | `core/pathcodec` | slug and hashtag generation |
 | `core/manifest` | `td:v1`, `td-manifest:v1`, and `td-album:v1` render/parse |
-| `core/publisher` | caption/reply + index commit |
+| `core/publisher` | rendering, manifest/inventory records, index commit |
 | `core/telegram` | interfaces and fake adapter |
 | `adapters/native/telegramgotd` | gotd/td adapter |
 | `internal/service` | use cases: upload, scan, download, move, delete, repair |

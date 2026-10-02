@@ -154,6 +154,78 @@ func TestAlbumCrashWindowReportsOrphansExactly(t *testing.T) {
 	})
 }
 
+// TestAlbumIndexingIsAllOrNothing pins the index commit of a media group:
+// every member row is indexed in one transaction, so a database failure on
+// the last member leaves no member indexed. The failure is injected inside
+// the real index (a trigger aborting the last member's row write), because
+// a failing port double cannot fail halfway through a transaction. Failure
+// modes: (1) earlier members are committed active before the failure, so
+// their derived directory survives the rollback as a phantom directory;
+// (2) when the media cannot be deleted, the orphaned members still carry the
+// path tags of an index entry that never completed.
+func TestAlbumIndexingIsAllOrNothing(t *testing.T) {
+	paths := []string{"/gal/a.bin", "/gal/b.bin", "/gal/c.bin"}
+	failLastMember := func(t *testing.T, app *App) {
+		t.Helper()
+		if _, err := app.DB.Raw().Exec(`create trigger fail_last_member before update of status on files
+			when new.status='active' and new.canonical_path='/gal/c.bin'
+			begin select raise(abort, 'index boom'); end`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	countWhere := func(t *testing.T, app *App, query string) int {
+		t.Helper()
+		var n int
+		if err := app.DB.Raw().QueryRow(query).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	t.Run("clean-rollback", func(t *testing.T) {
+		app, tg := testApp(t)
+		loginAndInit(t, app, tg)
+		ctx := context.Background()
+		failLastMember(t, app)
+		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{})
+		if code := appErrCode(t, err); code != apperr.ErrDB {
+			t.Fatalf("code = %s, want ERR_DB (%v)", code, err)
+		}
+		if n := rowsAt(t, app, paths...); n != 0 {
+			t.Fatalf("rolled-back group left %d rows", n)
+		}
+		if n := countWhere(t, app, `select count(*) from nodes where canonical_path='/gal'`); n != 0 {
+			t.Fatal("rolled-back group left a derived /gal directory")
+		}
+		if n := len(tg.Messages(mustChannel(t, app))); n != 0 {
+			t.Fatalf("rolled-back group left %d messages", n)
+		}
+		if n := len(albumInventoryComments(t, app, ctx)); n != 0 {
+			t.Fatalf("rolled-back group left %d inventories", n)
+		}
+	})
+
+	t.Run("orphaned", func(t *testing.T) {
+		app, tg := testApp(t)
+		loginAndInit(t, app, tg)
+		ctx := context.Background()
+		failLastMember(t, app)
+		tg.SetFailDelete(true)
+		_, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/gal/", ConflictFail, false, Presentation{})
+		if code := appErrCode(t, err); code != apperr.ErrOrphanedUpload {
+			t.Fatalf("code = %s, want ERR_ORPHANED_UPLOAD (%v)", code, err)
+		}
+		for _, p := range paths {
+			if got := fileStatus(t, app, p); got != "orphaned" {
+				t.Fatalf("%s = %q, want orphaned", p, got)
+			}
+		}
+		if n := countWhere(t, app, `select count(*) from path_tags`); n != 0 {
+			t.Fatalf("orphaned members carry %d path tags of a partial index", n)
+		}
+	})
+}
+
 // TestBatchFailureDiscardsUnsentMembers covers a batch larger than one media
 // group whose first group send fails: no member reached Telegram, so every
 // small member's pending row is dropped, not only the failed group's.

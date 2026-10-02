@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Repository seam extracted in ADR 0008.
+Accepted. Repository seam extracted in ADR 0008. Refined by ADR 0029.
 
 ## Context
 

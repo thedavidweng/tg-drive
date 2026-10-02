@@ -202,24 +202,29 @@ func (a *App) RepairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOr
 			}
 			// Complete the interrupted upload: regenerate metadata and resend the
 			// manifest reply, then promote the row.
-			meta := manifest.FileMeta{
-				CanonicalPath: r.path,
-				DisplayName:   r.name,
-				ParentHuman:   fsmodel.HumanParent(r.path),
-				Size:          r.size,
-				Hash:          r.hash,
-				MIME:          r.mimeT,
-				Created:       now,
-			}
-			if _, err := a.publisher().Publish(ctx, publisher.PublishRequest{
-				ChannelRowID:   channelID,
-				ChannelID:      tgChID,
-				FileID:         r.id,
-				MessageID:      int(r.msgID.Int64),
+			pub := a.publisher()
+			rendition, err := pub.Render(publisher.RenderRequest{
+				Meta: manifest.FileMeta{
+					CanonicalPath: r.path,
+					DisplayName:   r.name,
+					ParentHuman:   fsmodel.HumanParent(r.path),
+					Size:          r.size,
+					Hash:          r.hash,
+					MIME:          r.mimeT,
+					Created:       now,
+				},
 				ManifestChatID: manifestChat,
-				Meta:           meta,
 				ExistingSlugs:  a.loadSlugMap(ctx, channelID),
-				SetUploadedAt:  true,
+			})
+			if err != nil {
+				return nil // stays orphaned for a later attempt
+			}
+			if _, err := pub.PublishFile(ctx, publisher.FileRequest{
+				ChannelRowID: channelID,
+				ChannelID:    tgChID,
+				FileID:       r.id,
+				MessageID:    int(r.msgID.Int64),
+				Rendition:    rendition,
 			}); err != nil {
 				return nil // stays orphaned for a later attempt
 			}

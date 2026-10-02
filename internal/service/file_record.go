@@ -8,7 +8,6 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
 	"github.com/thedavidweng/tg-drive-cli/core/publisher"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
@@ -46,6 +45,17 @@ func (r *fileRecord) manifestID() int {
 		return 0
 	}
 	return int(r.row.ManifestMsgID.Int64)
+}
+
+func (r *fileRecord) ref() publisher.RecordRef {
+	return publisher.RecordRef{
+		ChannelRowID:   r.channelID,
+		ChannelID:      r.tgChID,
+		FileID:         r.row.ID,
+		MessageID:      r.messageID(),
+		ManifestMsgID:  r.manifestID(),
+		ManifestChatID: r.row.ManifestChat,
+	}
 }
 
 // album resolves membership: ok reports that the row's manifest message is
@@ -192,10 +202,6 @@ func (r *fileRecord) Rename(ctx context.Context, dst string) error {
 	if err != nil {
 		return err
 	}
-	oldTags, _, err := pathcodec.GenerateChain(src, existingSlugs)
-	if err != nil {
-		return err
-	}
 	if !r.row.MessageID.Valid {
 		return apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", src))
 	}
@@ -216,7 +222,7 @@ func (r *fileRecord) Rename(ctx context.Context, dst string) error {
 			ChannelRowID:  r.channelID,
 			FileID:        r.row.ID,
 			MessageID:     msgID,
-			ManifestMsgID: &manID,
+			ManifestMsgID: manID,
 			Meta: manifest.ParsedMeta{
 				CanonicalPath: dst,
 				DisplayName:   fsmodel.BaseName(dst),
@@ -230,33 +236,21 @@ func (r *fileRecord) Rename(ctx context.Context, dst string) error {
 		}
 		return a.DB.RunDirectoryGC(ctx, r.channelID)
 	}
-	if _, err := a.publisher().Publish(ctx, publisher.PublishRequest{
-		ChannelRowID:   r.channelID,
-		ChannelID:      r.tgChID,
-		FileID:         r.row.ID,
-		MessageID:      msgID,
-		ManifestMsgID:  manID,
-		ManifestChatID: r.row.ManifestChat,
-		Meta: manifest.FileMeta{
-			CanonicalPath: dst,
-			DisplayName:   fsmodel.BaseName(dst),
-			ParentHuman:   fsmodel.HumanParent(dst),
-			Size:          size,
-			Hash:          hash,
-			MIME:          mime,
-		},
-		ExistingSlugs: existingSlugs,
-		EditCaption:   true,
-		OldMeta: &manifest.FileMeta{
-			CanonicalPath: src,
-			DisplayName:   r.row.DisplayName,
-			ParentHuman:   fsmodel.HumanParent(src),
-			Size:          size,
-			Hash:          hash,
-			MIME:          mime,
-			Tags:          oldTags,
-		},
-	}); err != nil {
+	from := manifest.FileMeta{
+		CanonicalPath: src,
+		DisplayName:   r.row.DisplayName,
+		Size:          size,
+		Hash:          hash,
+		MIME:          mime,
+	}
+	to := manifest.FileMeta{
+		CanonicalPath: dst,
+		DisplayName:   fsmodel.BaseName(dst),
+		Size:          size,
+		Hash:          hash,
+		MIME:          mime,
+	}
+	if err := a.publisher().Move(ctx, r.ref(), from, to, existingSlugs); err != nil {
 		return err
 	}
 	return a.DB.RunDirectoryGC(ctx, r.channelID)
@@ -276,29 +270,13 @@ func (r *fileRecord) Rewrite(ctx context.Context) error {
 		_, err := a.writeAlbumManifest(ctx, r.channelID, r.tgChID, r.carrier, manID, albumFirstMediaID(album), album)
 		return err
 	}
-	meta := manifest.FileMeta{
+	return a.publisher().Repair(ctx, r.ref(), manifest.FileMeta{
 		CanonicalPath: p,
 		DisplayName:   r.row.DisplayName,
-		ParentHuman:   fsmodel.HumanParent(p),
 		Size:          r.row.Size.Int64,
 		Hash:          r.row.ContentHash.String,
 		MIME:          r.row.MIME,
-	}
-	oldMeta := meta
-	_, err = a.publisher().Publish(ctx, publisher.PublishRequest{
-		ChannelRowID:      r.channelID,
-		ChannelID:         r.tgChID,
-		FileID:            r.row.ID,
-		MessageID:         r.messageID(),
-		ManifestMsgID:     manID,
-		ManifestChatID:    r.row.ManifestChat,
-		Meta:              meta,
-		ExistingSlugs:     a.loadSlugMap(ctx, r.channelID),
-		EditCaption:       true,
-		IgnoreNotEditable: true,
-		OldMeta:           &oldMeta,
-	})
-	return err
+	}, a.loadSlugMap(ctx, r.channelID))
 }
 
 // retireAlbumMember removes the member from its group in every delete mode:
