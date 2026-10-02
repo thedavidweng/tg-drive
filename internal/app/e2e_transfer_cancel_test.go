@@ -108,6 +108,70 @@ func TestE2ECrossProcessCancel(t *testing.T) {
 	}
 }
 
+// TestE2EInterruptAfterKill: a td cp killed with SIGKILL never renews its
+// lease again; once the lease expires, another process's td transfers list
+// marks the Transfer interrupted (its owner token left for a retry), and
+// td transfers show agrees. While the owner lives, its heartbeat keeps the
+// lease ahead of every read.
+func TestE2EInterruptAfterKill(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+	// A one-second lease expires about a second after the owner dies.
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "config", "set", "locks.ttl_seconds", "1")
+
+	const mib = 1024 * 1024
+	big := e2eSizedFile(t, filepath.Join(dir, "big.bin"), 12*mib)
+	cmd, _, stderr := startTD(t, bin, cfgPath, dbPath, statePath, []string{"TD_FAKE_TRANSFER_DELAY=2s"},
+		"--json", "cp", big, "/big.bin", "--upload-part-size-kb", "1024", "--upload-threads", "1")
+
+	var id string
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		active := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "uploading")
+		if len(active) > 0 {
+			id, _ = active[0]["id"].(string)
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cp never reached uploading; stderr=%s", stderr)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// SIGKILL: no cleanup runs, so the Transfer stays uploading until its
+	// lease expires.
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+
+	var interrupted map[string]any
+	for deadline := time.Now().Add(15 * time.Second); ; {
+		list := listTransfers(t, bin, cfgPath, dbPath, statePath, "--stage", "interrupted")
+		if len(list) > 0 {
+			interrupted = list[0]
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transfer never marked interrupted; stderr=%s", stderr)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if interrupted["id"] != id || interrupted["finished_at"] == nil {
+		t.Fatalf("interrupted transfer = %v, want the killed cp's Transfer %s ended", interrupted, id)
+	}
+	shown := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "transfers", "show", id)
+	if shown["stage"] != "interrupted" {
+		t.Fatalf("transfers show = %v, want interrupted", shown)
+	}
+	// Nothing is uploading any more, and the interrupted Transfer is
+	// terminal: no list filter brings it back active.
+	if active := listTransfers(t, bin, cfgPath, dbPath, statePath); len(active) != 0 {
+		t.Fatalf("active transfers = %v, want none", active)
+	}
+}
+
 // drainWait consumes a running td's remaining stdout and waits for it.
 func drainWait(cmd *exec.Cmd, sc *bufio.Scanner) ([]string, error) {
 	var lines []string

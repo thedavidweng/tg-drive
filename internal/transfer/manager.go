@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
@@ -439,16 +440,18 @@ type Filter struct {
 
 // List returns the Transfers f selects, newest first.
 func (m *Manager) List(ctx context.Context, f Filter) ([]Transfer, error) {
+	// Interrupted Transfers are found by reading, and a stage filter reads
+	// rows already in that stage: the marking pass runs over everything
+	// still active before the filtered query.
+	if err := m.interruptExpired(ctx); err != nil {
+		return nil, err
+	}
 	var stages []string
 	switch {
 	case f.Stage != "":
 		stages = []string{string(f.Stage)}
 	case !f.All:
-		for _, s := range lifecycle {
-			if !s.Terminal() {
-				stages = append(stages, string(s))
-			}
-		}
+		stages = activeStages()
 	}
 	rows, err := m.app.DB.ListTransfers(ctx, stages)
 	if err != nil {
@@ -471,8 +474,59 @@ func (m *Manager) Get(ctx context.Context, id string) (*Transfer, error) {
 	if r == nil {
 		return nil, apperr.New(apperr.ErrTransferNotFound, "no transfer with id "+id)
 	}
+	if err := m.interruptRow(ctx, r, formatTime(time.Now().UTC())); err != nil {
+		return nil, err
+	}
 	t := fromRow(*r)
 	return &t, nil
+}
+
+// activeStages is the stage filter for Transfers that have not ended.
+func activeStages() []string {
+	var stages []string
+	for _, s := range lifecycle {
+		if !s.Terminal() {
+			stages = append(stages, string(s))
+		}
+	}
+	return stages
+}
+
+// interruptExpired marks every active Transfer whose owner vanished — its
+// lease expired without a renewal — interrupted. The reader claims nothing:
+// it leaves the owner token in place for a retry to take over. An empty
+// lease on an active Transfer counts as expired: an owner leases its
+// Transfer from submission.
+func (m *Manager) interruptExpired(ctx context.Context) error {
+	rows, err := m.app.DB.ListTransfers(ctx, activeStages())
+	if err != nil {
+		return err
+	}
+	nowStr := formatTime(time.Now().UTC())
+	for i := range rows {
+		if err := m.interruptRow(ctx, &rows[i], nowStr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// interruptRow marks one read row interrupted when its lease expired,
+// updating it in place. The compare-and-swap on the lease value turns the
+// marking into a no-op when the owner's renewal landed since the read.
+func (m *Manager) interruptRow(ctx context.Context, r *sqlitestore.TransferRow, nowStr string) error {
+	if r.FinishedAt != "" || r.LeaseExpiresAt > nowStr {
+		return nil
+	}
+	marked, err := m.app.DB.InterruptTransfer(ctx, r.ID, r.LeaseExpiresAt, nowStr)
+	if err != nil {
+		return err
+	}
+	if marked {
+		r.Stage = string(StageInterrupted)
+		r.UpdatedAt, r.FinishedAt = nowStr, nowStr
+	}
+	return nil
 }
 
 // tracker records one running Transfer from the reports of the call it runs.
