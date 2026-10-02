@@ -271,10 +271,21 @@ them.
   set. The reader claims nothing: `owner_token` stays for a retry to take
   over. The marking compares and swaps on the lease value read, so a
   renewal that landed meanwhile turns it into a no-op.
+- A retry takes over with one conditional write: only a row in `failed`,
+  `cancelled`, or `interrupted` can be claimed, so a running Transfer —
+  whose fresh lease keeps it active — and a completed one reject the claim,
+  as does a row a concurrent retry claimed first. The claim writes the new
+  owner's `owner_token` and a fresh `lease_expires_at`, moves `stage` back
+  to `queued`, clears `finished_at`, `error_code`, `error_message`, and
+  `cancel_requested` (a recorded cancel request must not cancel the new
+  owner's first heartbeat), and zeroes `bytes_done` and the item counts for
+  the new run. `id` and `created_at` stay: a retry is the same Transfer's
+  history continuing, not a new one.
 - `cancel_requested` is set by `td transfers cancel` from any process. The
   owner polls it on the same heartbeat and cancels the Transfer's context,
   which ends the Transfer `cancelled`; a `queued` Transfer is cancelled
-  without starting. The flag stays set on the ended Transfer.
+  without starting. The flag stays set on the ended Transfer until a retry
+  clears it.
 - Timestamps are fixed-width UTC text
   (`2006-01-02T15:04:05.000000000Z`), so they sort in time order;
   `finished_at` is empty until the Transfer ends.

@@ -1,6 +1,6 @@
 # 0033: Transfers shared through the index, without a daemon
 
-Status: Proposed.
+Status: Accepted.
 
 Context: Users want a Transfer started in the CLI to appear in the GUI,
 with live progress, and to be cancellable from either side. Codex solves
