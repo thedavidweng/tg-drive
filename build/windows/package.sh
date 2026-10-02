@@ -67,8 +67,6 @@ abspath() {
 		echo "$PWD/$1"
 	fi
 }
-echo "package.sh: work dir contents before makensis:" >&2
-ls -la "$WORK" >&2
 NSI_BINARY="$(abspath "$WORK/td-gui.exe")"
 NSI_BOOTSTRAPPER="$(abspath "$WORK/MicrosoftEdgeWebview2Setup.exe")"
 NSI_OUTFILE="$(abspath "$OUT/td-gui_${VERSION}_windows_x86_64-installer.exe")"
