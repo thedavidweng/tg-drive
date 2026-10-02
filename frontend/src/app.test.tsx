@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { cleanup, render, screen, within } from "@testing-library/react"
 
 import { App } from "@/App"
-import { failingBackend, memoryBackend } from "@/testing/memory-backend"
+import { memoryBackend } from "@/testing/memory-backend"
 
 afterEach(cleanup)
 
@@ -27,10 +27,12 @@ test("an empty root says so", async () => {
 })
 
 test("a failed listing shows the service error", async () => {
-  const backend = failingBackend({
-    code: "ERR_CHANNEL_NOT_FOUND",
-    category: "api",
-    message: "no channel bound in this database",
+  const backend = memoryBackend({}, {
+    driveError: {
+      code: "ERR_CHANNEL_NOT_FOUND",
+      category: "api",
+      message: "no channel bound in this database",
+    },
   })
   render(<App backend={backend} languages={["en"]} />)
 
@@ -42,7 +44,7 @@ test("a failed listing shows the service error", async () => {
 test("an unknown system language falls back to English", async () => {
   render(<App backend={memoryBackend({ "/": [] })} languages={["fr-FR", "de"]} />)
 
-  const tabs = screen.getAllByRole("tab").map((t) => t.textContent)
+  const tabs = (await screen.findAllByRole("tab")).map((t) => t.textContent)
   expect(tabs).toEqual(["Drive", "Transfers", "Import", "Maintenance", "Settings"])
   expect(await screen.findByText("This folder is empty.")).toBeTruthy()
 })
@@ -50,7 +52,7 @@ test("an unknown system language falls back to English", async () => {
 test("a Chinese system language selects the Simplified Chinese catalogue", async () => {
   render(<App backend={memoryBackend({ "/": [] })} languages={["fr-FR", "zh-Hans-CN"]} />)
 
-  const tabs = screen.getAllByRole("tab").map((t) => t.textContent)
+  const tabs = (await screen.findAllByRole("tab")).map((t) => t.textContent)
   expect(tabs).toEqual(["云盘", "传输", "导入", "维护", "设置"])
   expect(await screen.findByText("此文件夹为空。")).toBeTruthy()
 })

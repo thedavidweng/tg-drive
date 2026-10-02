@@ -29,10 +29,18 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   need no display or webview. It holds one service per frontend area
   (Drive, Auth, Transfers, Settings) and only translates: frontend calls to
   `internal/service` calls, results to DTOs, and errors to
-  `{code, category, message}` mirroring the JSON contract's error envelope
-  (uncategorized errors become `ERR_UNKNOWN`, as the CLI's JSON output maps
-  them). It opens the service through `service.Open` with the GUI's own
-  session (`gui-session.json` beside the CLI session, ADR 0034).
+  `{code, category, message}` plus the envelope's details, mirroring the
+  JSON contract's error envelope (uncategorized errors become
+  `ERR_UNKNOWN`, as the CLI's JSON output maps them). It opens the service
+  through `service.Open` with the GUI's own session (`gui-session.json`
+  beside the CLI session, ADR 0034) and its own Telegram device model
+  (`td-gui`). A machine without saved Telegram credentials opens offline —
+  no Telegram client — so the setup screen is reachable; saving credentials
+  reopens the App online.
+- Interactive prompts (the login code, the 2FA password) are callbacks in
+  the service layer; the facade turns each into a typed `auth.prompt` event
+  and waits for the frontend's answer (`Auth.AnswerPrompt` /
+  `Auth.CancelPrompt`), which carries the prompt's ID.
 - The Settings facade covers config get/set (secrets stay redacted unless a
   call explicitly confirms revealing) and Omarchy mode: on a detected
   Omarchy desktop it maps the current theme's `colors.toml` and

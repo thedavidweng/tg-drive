@@ -1,21 +1,27 @@
 import type {
+  AuthPrompt,
+  AuthStatus,
+  AuthUser,
   ConfigEntry,
   Entry,
+  LoginResult,
   OmarchyState,
   OmarchyTheme,
   Versions,
 } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui/models"
 
-export type { ConfigEntry, Entry, OmarchyState, OmarchyTheme, Versions }
+export type { AuthPrompt, AuthStatus, AuthUser, ConfigEntry, Entry, LoginResult, OmarchyState, OmarchyTheme, Versions }
 
 /**
  * The error every facade call rejects with: the code and category of the
- * JSON contract's error envelope.
+ * JSON contract's error envelope, plus its machine-readable details (for
+ * example retry_after_seconds on ERR_TELEGRAM_RATE_LIMITED).
  */
 export interface BackendError {
   code: string
   category: string
   message: string
+  details?: Record<string, unknown>
 }
 
 /**
@@ -25,6 +31,16 @@ export interface BackendError {
 export interface Backend {
   drive: {
     list(path: string): Promise<Entry[]>
+  }
+  auth: {
+    status(): Promise<AuthStatus>
+    setup(apiID: string, apiHash: string, phone: string): Promise<AuthStatus>
+    login(phone: string, forceNewCode: boolean): Promise<LoginResult>
+    logout(): Promise<void>
+    answerPrompt(id: string, value: string): Promise<void>
+    cancelPrompt(id: string): Promise<void>
+    /** Subscribes to the typed auth.prompt event; returns an unsubscribe. */
+    onPrompt(cb: (prompt: AuthPrompt) => void): () => void
   }
   settings: {
     /** Every config key in file order, secrets redacted. */

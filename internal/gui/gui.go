@@ -9,7 +9,9 @@ package gui
 import (
 	"context"
 	"path/filepath"
+	"sync"
 
+	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
@@ -18,40 +20,110 @@ import (
 // CLI's session so each front end logs in on its own (ADR 0034).
 const SessionFileName = "gui-session.json"
 
+// DeviceModel is the GUI's Telegram device identity: its logins show up
+// under this name in Telegram's device list, separate from the CLI's (ADR
+// 0034).
+const DeviceModel = "td-gui"
+
 // Services are the facade services cmd/td-gui binds, one per frontend area.
 type Services struct {
 	Drive     *Drive
 	Auth      *Auth
 	Transfers *Transfers
 	Settings  *Settings
+
+	state *appState
+}
+
+// appState owns the service App behind a mutex so Auth can reopen it: a
+// fresh machine opens offline (no Telegram client) and setup upgrades it to
+// a connected one. Services resolve the App per call, never caching it.
+type appState struct {
+	mu       sync.Mutex
+	app      *service.App
+	closeApp func()
+}
+
+func (s *appState) current() *service.App {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.app
+}
+
+// reopen replaces the App with a freshly opened one. The old App closes only
+// after the new one opened, so a failed reopen keeps the previous state.
+func (s *appState) reopen() error {
+	app, closeApp, err := service.Open(openOptions())
+	if err != nil {
+		return toError(err)
+	}
+	s.mu.Lock()
+	old := s.closeApp
+	s.app, s.closeApp = app, closeApp
+	s.mu.Unlock()
+	old()
+	return nil
+}
+
+func (s *appState) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closeApp()
+}
+
+func openOptions() service.Options {
+	_, cliSession, _ := config.ResolvePaths(config.Overrides{})
+	return service.Options{
+		SessionPath: filepath.Join(filepath.Dir(cliSession), SessionFileName),
+		DeviceModel: DeviceModel,
+	}
 }
 
 // Open opens the service layer with the GUI's own session and returns the
 // facade services with a function that closes them. Config and database
-// resolve as they do for the CLI, so both front ends share one index.
+// resolve as they do for the CLI, so both front ends share one index. A
+// machine without Telegram credentials opens offline instead of failing, so
+// the setup screen is reachable; Auth.Setup reopens the App online.
 func Open() (*Services, func(), error) {
-	_, cliSession, _ := config.ResolvePaths(config.Overrides{})
-	opts := service.Options{
-		SessionPath: filepath.Join(filepath.Dir(cliSession), SessionFileName),
-	}
+	opts := openOptions()
 	app, closeApp, err := service.Open(opts)
 	if err != nil {
-		return nil, func() {}, toError(err)
+		if ae, ok := apperr.As(err); !ok || ae.Code != apperr.ErrConfigMissing {
+			return nil, func() {}, toError(err)
+		}
+		opts := openOptions()
+		opts.Offline = true
+		app, closeApp, err = service.Open(opts)
+		if err != nil {
+			return nil, func() {}, toError(err)
+		}
 	}
 	settings := &Settings{opts: opts}
-	closeServices := closeApp
+	state := &appState{app: app, closeApp: closeApp}
+	closeServices := state.close
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())
 		settings.ThemeChanges = watchOmarchy(ctx, omarchyPollInterval())
 		closeServices = func() {
 			cancel()
-			closeApp()
+			state.close()
 		}
 	}
 	return &Services{
-		Drive:     &Drive{app: app},
-		Auth:      &Auth{},
+		Drive:     &Drive{state: state},
+		Auth:      &Auth{state: state, prompts: map[string]chan promptAnswer{}},
 		Transfers: &Transfers{},
 		Settings:  settings,
+		state:     state,
 	}, closeServices, nil
+}
+
+// SetPromptEmitter wires how auth prompts reach the frontend. cmd/td-gui
+// connects it to the typed auth.prompt Wails event; tests connect their own.
+// Services is not a bound Wails service, so this method is not in the
+// frontend bindings.
+func (s *Services) SetPromptEmitter(emit func(AuthPrompt)) {
+	s.Auth.mu.Lock()
+	defer s.Auth.mu.Unlock()
+	s.Auth.emitter = emit
 }

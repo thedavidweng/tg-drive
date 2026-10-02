@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react"
-import { Monitor, Moon, Sun } from "lucide-react"
+import { useCallback, useEffect, useState } from "react"
+import { LogOut, Monitor, Moon, Sun } from "lucide-react"
 
-import type { Backend, OmarchyState } from "@/backend"
+import { ErrorAlert, LoginScreen, SetupScreen } from "@/auth"
+import type { AuthStatus, AuthUser, Backend, BackendError, OmarchyState } from "@/backend"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DriveScreen } from "@/drive"
 import { I18nProvider, storeLanguage, storedLanguage, useI18n, type LanguagePref } from "@/i18n"
@@ -81,6 +82,11 @@ export function App({ backend, languages }: { backend: Backend; languages: reado
   )
 }
 
+type Gate =
+  | { state: "loading" }
+  | { state: "failed"; error: BackendError }
+  | { state: "ready"; status: AuthStatus }
+
 interface ShellProps {
   backend: Backend
   theme: ThemeMode
@@ -95,6 +101,33 @@ interface ShellProps {
 function Shell(props: ShellProps) {
   const { backend } = props
   const { t } = useI18n()
+  const [gate, setGate] = useState<Gate>({ state: "loading" })
+  const refresh = useCallback(() => {
+    backend.auth.status().then(
+      (status) => setGate({ state: "ready", status }),
+      (error: BackendError) => setGate({ state: "failed", error }),
+    )
+  }, [backend])
+  useEffect(refresh, [refresh])
+
+  // The Drive and other tabs are reachable only with a usable session:
+  // without credentials the app lands on setup, without a login on login.
+  if (gate.state === "loading") {
+    return <p className="px-1 py-6 text-center text-muted-foreground">{t("auth.checking")}</p>
+  }
+  if (gate.state === "failed") {
+    return (
+      <main className="p-3.5">
+        <ErrorAlert error={gate.error} />
+      </main>
+    )
+  }
+  if (!gate.status.configured) {
+    return <SetupScreen backend={backend} onDone={refresh} />
+  }
+  if (!gate.status.authenticated) {
+    return <LoginScreen backend={backend} hasPhone={gate.status.has_phone} onLoggedIn={refresh} />
+  }
   return (
     <Tabs defaultValue="drive" className="h-full gap-0">
       <header className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-3.5">
@@ -113,7 +146,17 @@ function Shell(props: ShellProps) {
             </TabsTrigger>
           ))}
         </TabsList>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-1.5">
+          {gate.status.user && (
+            <AccountChip
+              user={gate.status.user}
+              onLogout={() => {
+                // A failed logout leaves the session as it was; refresh
+                // either way so the chip reflects the truth.
+                void backend.auth.logout().then(refresh, refresh)
+              }}
+            />
+          )}
           <ThemeToggle theme={props.theme} onTheme={props.onTheme} />
         </div>
       </header>
@@ -154,6 +197,31 @@ function Logo() {
       </svg>
       <span>td</span>
     </div>
+  )
+}
+
+/** The logged-in account with the logout action, in the header's right. */
+function AccountChip({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  const { t } = useI18n()
+  return (
+    <span
+      aria-label={t("auth.account", { name: user.display_name })}
+      className="flex items-center gap-1.5 rounded-full bg-pill py-1 pr-1 pl-3 text-[12px] text-fg-2"
+    >
+      <span className="max-w-40 truncate">
+        {user.display_name}
+        {user.phone ? ` (${user.phone})` : ""}
+      </span>
+      <button
+        type="button"
+        aria-label={t("auth.logout")}
+        title={t("auth.logout")}
+        onClick={onLogout}
+        className="grid size-[22px] place-items-center rounded-full text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+      >
+        <LogOut aria-hidden className="size-3.5" />
+      </button>
+    </span>
   )
 }
 

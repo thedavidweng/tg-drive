@@ -44,6 +44,9 @@ func run() error {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
+	svc.SetPromptEmitter(func(p gui.AuthPrompt) {
+		app.Event.Emit(EventAuthPrompt, p)
+	})
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "td",
 		Width:     960,

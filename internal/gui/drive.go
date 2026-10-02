@@ -4,13 +4,11 @@ package gui
 
 import (
 	"context"
-
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
 )
 
 // Drive browses the bound channel's index.
 type Drive struct {
-	app *service.App
+	state *appState
 }
 
 // Entry is one row of a directory listing.
@@ -26,7 +24,7 @@ type Entry struct {
 // List lists the children of a remote directory from the local index,
 // directories first. It never contacts Telegram.
 func (d *Drive) List(ctx context.Context, path string) ([]Entry, error) {
-	rows, err := d.app.ListDir(ctx, path)
+	rows, err := d.state.current().ListDir(ctx, path)
 	if err != nil {
 		return nil, toError(err)
 	}

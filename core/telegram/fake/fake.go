@@ -31,6 +31,9 @@ type Client struct {
 	code        string
 	password    string
 	failCode    bool
+	// loginFloodWait makes Login fail with a FloodWaitError of this many
+	// seconds before any code is sent.
+	loginFloodWait int
 
 	nextGroupedID      int64
 	failUpload         bool
@@ -152,7 +155,11 @@ func (c *Client) Login(ctx context.Context, apiID int64, apiHash, phone string, 
 		c.mu.Unlock()
 		return &telegram.LoginResult{User: user, AlreadyAuthorized: true}, nil
 	}
+	floodWait := c.loginFloodWait
 	c.mu.Unlock()
+	if floodWait > 0 {
+		return nil, &telegram.FloodWaitError{Seconds: floodWait}
+	}
 	code, err := codeFn(telegram.CodePrompt{Attempt: 1})
 	if err != nil {
 		return nil, err
