@@ -90,6 +90,14 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   gates, run by `make gui-frontend-check`. The bindings in
   `frontend/bindings` are generated and committed; `make
   gui-bindings-check` fails when they drift from the facade.
+- **UI preview** (`ui-preview/`) is the GUI's end-to-end artifact: the
+  `ui-preview.yml` workflow builds the PR's td-gui in server mode, seeds a
+  drive through the CLI against the fake Telegram, and records scripted
+  scenes with Playwright — one 2x screenshot per scene plus a walkthrough
+  mp4, published into a marked block in the PR description. The same
+  `ui-preview/run.sh` reproduces a preview locally, so every run yields a
+  verifiable repeatable artifact. See "UI preview" in
+  `docs/release-and-ci.md`.
 
 ## Manual tests
 
