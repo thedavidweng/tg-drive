@@ -3,14 +3,36 @@ import type {
   AuthStatus,
   AuthUser,
   ConfigEntry,
+  DeleteOutcome,
+  DirectoryChanged,
   Entry,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
+  ScanOutcome,
+  ScanProgress,
+  ShareLink,
+  TreeNode,
   Versions,
 } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui/models"
 
-export type { AuthPrompt, AuthStatus, AuthUser, ConfigEntry, Entry, LoginResult, OmarchyState, OmarchyTheme, Versions }
+export type {
+  AuthPrompt,
+  AuthStatus,
+  AuthUser,
+  ConfigEntry,
+  DeleteOutcome,
+  DirectoryChanged,
+  Entry,
+  LoginResult,
+  OmarchyState,
+  OmarchyTheme,
+  ScanOutcome,
+  ScanProgress,
+  ShareLink,
+  TreeNode,
+  Versions,
+}
 
 /**
  * The error every facade call rejects with: the code and category of the
@@ -31,6 +53,16 @@ export interface BackendError {
 export interface Backend {
   drive: {
     list(path: string): Promise<Entry[]>
+    tree(path: string, maxDepth: number): Promise<TreeNode[]>
+    mkdir(path: string): Promise<void>
+    move(from: string, to: string, opts: { confirm: boolean }): Promise<void>
+    delete(path: string, opts: { confirm: boolean }): Promise<DeleteOutcome>
+    share(path: string): Promise<ShareLink>
+    scan(): Promise<ScanOutcome>
+  }
+  events: {
+    onDirectoryChanged(cb: (e: DirectoryChanged) => void): () => void
+    onScanProgress(cb: (e: ScanProgress) => void): () => void
   }
   auth: {
     status(): Promise<AuthStatus>

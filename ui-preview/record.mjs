@@ -33,6 +33,41 @@ const scenes = [
     theme: "dark",
   },
   { name: "drive-zh-CN", title: "Drive — 简体中文", colorScheme: "light", locale: "zh-CN" },
+  // The Drive tab's file-manager surfaces: breadcrumb navigation into a
+  // folder, a destructive row action blocked by its confirmation sheet,
+  // and the tree view. All three only navigate or open a sheet — no
+  // server state changes, so later scenes see the seeded drive intact.
+  {
+    name: "drive-breadcrumbs",
+    title: "Drive — breadcrumbs in a folder",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("listitem").filter({ hasText: "Photos" }).getByRole("button", { name: "Photos" }).click()
+      await page.getByRole("list", { name: "Files in /Photos" }).waitFor()
+    },
+  },
+  {
+    name: "drive-delete-sheet",
+    title: "Drive — delete confirmation sheet",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page
+        .getByRole("listitem")
+        .filter({ hasText: "notes.txt" })
+        .getByRole("button", { name: "Delete" })
+        .click()
+      await page.getByRole("dialog", { name: "Delete file" }).waitFor()
+    },
+  },
+  {
+    name: "drive-tree",
+    title: "Drive — tree view",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("button", { name: "Tree" }).click()
+      await page.getByRole("tree").waitFor()
+    },
+  },
   // First-run setup and login, against the credential-free server. They
   // chain through the facade's real state: auth-login saves credentials,
   // auth-code starts a login (and cancels it after the shot), so each

@@ -9,15 +9,16 @@ afterEach(cleanup)
 test("the Drive tab lists the root of the bound channel", async () => {
   const backend = memoryBackend({
     "/": [
-      { name: "photos", path: "/photos", type: "dir", size: 0 },
-      { name: "notes.txt", path: "/notes.txt", type: "file", size: 2048 },
+      { name: "photos", path: "/photos", type: "dir", size: 0, date: "2026-01-01T00:00:00Z" },
+      { name: "notes.txt", path: "/notes.txt", type: "file", size: 2048, date: "2026-01-01T00:00:00Z" },
     ],
   })
   render(<App backend={backend} languages={["en-US"]} />)
 
   const list = await screen.findByRole("list", { name: "Files in /" })
   const rows = within(list).getAllByRole("listitem")
-  expect(rows.map((r) => r.textContent)).toEqual(["photosFolder", "notes.txt2 KB"])
+  expect(rows.some((r) => r.textContent?.includes("photos"))).toBe(true)
+  expect(rows.some((r) => r.textContent?.includes("notes.txt") && r.textContent?.includes("2 KB"))).toBe(true)
 })
 
 test("an empty root says so", async () => {

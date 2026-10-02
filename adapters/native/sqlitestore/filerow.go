@@ -32,15 +32,16 @@ type FileRow struct {
 	MessageID     sql.NullInt64
 	ManifestMsgID sql.NullInt64
 	ManifestChat  string
+	UpdatedAt     string
 }
 
 const fileRowColumns = `id, canonical_path, display_name, original_local_path, size, content_hash,
-	coalesce(mime,''), status, message_id, manifest_message_id, coalesce(manifest_chat_tg_id,'')`
+	coalesce(mime,''), status, message_id, manifest_message_id, coalesce(manifest_chat_tg_id,''), updated_at`
 
 func scanFileRow(row interface{ Scan(...any) error }) (FileRow, error) {
 	var f FileRow
 	err := row.Scan(&f.ID, &f.CanonicalPath, &f.DisplayName, &f.LocalPath, &f.Size, &f.ContentHash,
-		&f.MIME, &f.Status, &f.MessageID, &f.ManifestMsgID, &f.ManifestChat)
+		&f.MIME, &f.Status, &f.MessageID, &f.ManifestMsgID, &f.ManifestChat, &f.UpdatedAt)
 	return f, err
 }
 
