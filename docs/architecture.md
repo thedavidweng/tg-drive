@@ -1,6 +1,6 @@
 # Architecture
 
-`td` has four layers.
+`td` has four layers, plus a desktop GUI beside them.
 
 ```text
 cmd/td
@@ -9,7 +9,39 @@ cmd/td
   -> internal/service      application use cases
   -> core/*                domain: paths, slugs, captions, errors, ports
   -> adapters/native/*     SQLite, local FS, gotd/td
+
+cmd/td-gui (build tag gui, the only package importing Wails)
+  -> internal/gui          facade: Wails services, DTOs, error mapping
+  -> internal/service      the same use cases
 ```
+
+## Desktop GUI (ADR 0031)
+
+- Every GUI Go file carries the `gui` build tag, so default `go build`,
+  `go vet`, and `go test` over `./...` never see Wails: the `td` binary and
+  the default gates stay CGO-free and need no webview. The GUI is vetted,
+  tested, and built with `-tags gui` (`make check-gui`, `make gui-build`).
+- `cmd/td-gui` wires the Wails application: it registers the facade
+  services and owns every `application.RegisterEvent` call (one file,
+  direct init calls with constant names, the only shape the binding
+  generator discovers).
+- `internal/gui` is a thin facade that never imports Wails, so its tests
+  need no display or webview. It holds one service per frontend area
+  (Drive, Auth, Transfers, Settings) and only translates: frontend calls to
+  `internal/service` calls, results to DTOs, and errors to
+  `{code, category, message}` mirroring the JSON contract's error envelope
+  (uncategorized errors become `ERR_UNKNOWN`, as the CLI's JSON output maps
+  them). It opens the service through `service.Open` with the GUI's own
+  session (`gui-session.json` beside the CLI session, ADR 0034).
+- The frontend lives in `frontend/` (React, TypeScript, Vite, Tailwind CSS,
+  shadcn/ui; Bun as package manager, Node LTS running Vite, pinned in
+  `mise.toml`). It calls Go only through the generated bindings in
+  `frontend/bindings` (committed, drift-checked by `make
+  gui-bindings-check`) and typed events. The `gui`-tagged `frontend` Go
+  package embeds the built `frontend/dist`, because `go:embed` cannot reach
+  parent directories; `frontend/dist` is built, not committed.
+- `go.mod` carries `ignore ./frontend/node_modules` so a stray `*.go` file
+  in an npm package can never enter the module's package graph.
 
 ## Dependency direction
 
@@ -134,3 +166,5 @@ td cp
 | `adapters/native/telegramgotd` | gotd/td adapter |
 | `internal/transfer` | Transfer Manager: submit, run with bounded concurrency, record stages and progress, list and show Transfers |
 | `internal/service` | composition root (`Open`) and use cases: upload (and its dry-run plan), scan, download, move, delete, repair, Telegram setup, config get/set, init channel choices |
+| `internal/gui` (`gui` tag) | GUI facade services: DTO translation and error mapping, no business rules |
+| `cmd/td-gui` (`gui` tag) | Wails application wiring: service binding, typed event registration, the window |

@@ -10,6 +10,7 @@ require (
 	github.com/mozillazg/go-unidecode v0.2.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2
+	github.com/wailsapp/wails/v3 v3.0.0-beta.27
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.42.0
@@ -18,6 +19,7 @@ require (
 )
 
 require (
+	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/andybalholm/brotli v1.2.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -29,6 +31,8 @@ require (
 	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
+	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gotd/ige v0.3.0 // indirect
 	github.com/gotd/log v0.1.0 // indirect
 	github.com/gotd/neo v0.1.5 // indirect
@@ -63,3 +67,5 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
+
+ignore ./frontend/node_modules

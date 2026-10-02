@@ -45,6 +45,39 @@ jobs:
           files: coverage.out
         continue-on-error: true
 
+  # The desktop GUI (ADR 0031) links the platform webview through cgo, so it
+  # is checked natively on each OS, apart from the CGO-free gates above.
+  gui:
+    name: gui (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Go, Node, Bun, and the wails3 CLI at the versions pinned in mise.toml.
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.14
+          install_args: go node bun go:github.com/wailsapp/wails/v3/cmd/wails3
+      - name: Install GTK 4 and WebKitGTK 6.0
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+      - name: Install make
+        if: runner.os == 'Windows'
+        run: choco install make --no-progress -y
+      - name: GUI check
+        run: make check-gui
+      - name: Build td-gui
+        run: make gui-build
+
   snapshot:
     runs-on: ubuntu-latest
     timeout-minutes: 45

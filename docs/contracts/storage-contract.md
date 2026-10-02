@@ -287,6 +287,12 @@ Commands that read only the local index never take it. Each front end
 configures its own session path, so the CLI and another front end do not
 share one lock.
 
+The desktop GUI's session is `gui-session.json` in the directory of the
+resolved CLI session path (so with the defaults,
+`~/.config/tg-drive-cli/gui-session.json`). It is not configurable. The GUI
+logs in on it independently and appears as its own device in Telegram (ADR
+0034).
+
 ## Directory GC
 
 When a file leaves `active`, clear `files.node_id` in the same transaction. Then remove derived directory nodes that have no active descendants. Directory GC runs as a single transaction.

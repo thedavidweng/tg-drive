@@ -66,6 +66,30 @@ The Session lock wraps the fake as well as the real client, so the binary
 E2E proves a second process waits and fails with `ERR_SESSION_LOCKED` while
 `td ls` runs at once.
 
+## Desktop GUI
+
+GUI tests are not part of the default gates; `mise run check-gui` runs them
+(see `docs/release-and-ci.md`).
+
+- **GUI Go tests** live in `internal/gui` behind the `gui` tag. They open
+  the facade the way `td-gui` does — `gui.Open` against
+  `TD_FAKE_TELEGRAM_STATE` — after seeding a drive through the CLI's own
+  service calls, and assert the facade's public methods: the Drive listing
+  and the mapping of a service error to `{code, category, message}`. The
+  facade never imports Wails, so these tests run headless with no webview
+  or display.
+- **Frontend behaviour tests** live beside the screens in `frontend/src`
+  and run with `bun test` (Bun's test runner under happy-dom, via
+  `@testing-library/react`; Bun is already the package manager, so no
+  second test runtime is installed). They render screens with the generated
+  bindings replaced by an in-memory backend (`src/testing/memory-backend.ts`)
+  and assert user-visible behaviour: the Drive list rendering, an error
+  alert, and i18n fallback to English for an unknown system language.
+- Frontend type-check (`tsc -b`) and lint (`eslint --max-warnings 0`) are
+  gates, run by `make gui-frontend-check`. The bindings in
+  `frontend/bindings` are generated and committed; `make
+  gui-bindings-check` fails when they drift from the facade.
+
 ## Manual tests
 
 Real-account checks need a Telegram account, `api_id`, and `api_hash`. Use a

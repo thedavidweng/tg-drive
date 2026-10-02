@@ -61,6 +61,10 @@ the rest wait `queued`.
 waits for another process to release the Session lock on the same session
 file before failing with `ERR_SESSION_LOCKED`.
 
+The desktop GUI does not use `storage.session_path` itself: its session is
+`gui-session.json` beside the resolved CLI session path (see the storage
+contract), and it has no config key.
+
 Config, session, and database files are kept readable by the current user
 only (0600 on POSIX, an owner-only DACL on Windows).
 

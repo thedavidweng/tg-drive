@@ -13,3 +13,7 @@ session.json
 
 # smoke test output
 testdata/restore/
+
+# desktop GUI
+frontend/node_modules/
+frontend/dist/
