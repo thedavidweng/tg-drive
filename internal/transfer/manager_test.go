@@ -226,6 +226,152 @@ func leaseExpiry(t *testing.T, app *service.App, id string) string {
 	return row.LeaseExpiresAt
 }
 
+// TestManagerRetryResumesAndClaimsOnce: another process's Manager retries a
+// failed upload, which resumes from the parts the first attempt confirmed
+// (only the unconfirmed parts go out) and ends the same Transfer
+// completed. Only one retry can own a Transfer: concurrent retries leave
+// exactly one winner, and a completed Transfer rejects further retries.
+func TestManagerRetryResumesAndClaimsOnce(t *testing.T) {
+	app, tg := newApp(t)
+	ctx := context.Background()
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+
+	// 12 parts of 1 MiB; the first attempt confirms 3, then fails. The file
+	// must clear the service's big-file cutoff: only a big file's pending
+	// row survives its failed upload for a resume to adopt.
+	tg.SetPartSize(1024 * 1024)
+	tg.SetFailUploadAfterParts(3)
+	h, err := m.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "big.bin", 12*1024*1024),
+		Dest:   "/big.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Wait(); err == nil {
+		t.Fatal("the failing upload must end its Transfer failed")
+	}
+	failed, err := m.Get(ctx, h.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.Stage != transfer.StageFailed || failed.ErrorCode == "" {
+		t.Fatalf("transfer = %+v, want failed with the upload's error", failed)
+	}
+
+	other := transfer.New(app, transfer.Options{})
+	tg.ResetPartSubmissions()
+	rh, err := other.Retry(ctx, h.ID(), service.Observer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := rh.Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, ok := res.(*service.UploadResult)
+	if !ok || !up.Resumed {
+		t.Fatalf("retry result = %#v, want the upload result with resumed set", res)
+	}
+	if got := tg.PartSubmissions(); got != 9 {
+		t.Fatalf("retry submitted %d parts, want the 9 unconfirmed of 12", got)
+	}
+	done, err := other.Get(ctx, h.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Stage != transfer.StageCompleted || done.ID != h.ID() || done.CreatedAt != failed.CreatedAt ||
+		done.BytesDone != 12*1024*1024 || done.ItemsDone != 1 || done.ErrorCode != "" || done.CancelRequested {
+		t.Fatalf("retried transfer = %+v, want the same Transfer completed and cleared", done)
+	}
+
+	// A completed Transfer is done: retrying it is a usage error, as is a
+	// Transfer that is still running.
+	if _, err := other.Retry(ctx, h.ID(), service.Observer{}); err == nil {
+		t.Fatal("retrying a completed Transfer must fail")
+	} else if ae, ok := apperr.As(err); !ok || ae.Code != apperr.ErrUsage {
+		t.Fatalf("retry of a completed Transfer = %v, want ERR_USAGE", err)
+	}
+	tg.SetTransferDelay(50 * time.Millisecond)
+	slow, err := m.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "slow.bin", 30*1024),
+		Dest:   "/slow.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		got, err := other.Get(ctx, slow.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Stage == transfer.StageUploading {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slow upload never reached uploading: %+v", got)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := other.Retry(ctx, slow.ID(), service.Observer{}); err == nil {
+		t.Fatal("retrying a running Transfer must fail")
+	} else if ae, ok := apperr.As(err); !ok || ae.Code != apperr.ErrUsage {
+		t.Fatalf("retry of a running Transfer = %v, want ERR_USAGE", err)
+	}
+	if _, err := slow.Wait(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two retries racing one failed Transfer: exactly one claims it. Back to
+	// small parts so the fail knob has a second part to fire on.
+	tg.SetPartSize(1024)
+	tg.SetFailUploadAfterParts(1)
+	h2, err := m.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "race.bin", 8*1024),
+		Dest:   "/race.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h2.Wait(); err == nil {
+		t.Fatal("the failing upload must end its Transfer failed")
+	}
+	type outcome struct {
+		h   *transfer.Handle[any]
+		err error
+	}
+	resc := make(chan outcome, 2)
+	for _, mgr := range []*transfer.Manager{transfer.New(app, transfer.Options{}), transfer.New(app, transfer.Options{})} {
+		go func(mgr *transfer.Manager) {
+			rh, err := mgr.Retry(ctx, h2.ID(), service.Observer{})
+			resc <- outcome{rh, err}
+		}(mgr)
+	}
+	first, second := <-resc, <-resc
+	var winner *transfer.Handle[any]
+	for _, o := range []outcome{first, second} {
+		if o.err == nil {
+			if winner != nil {
+				t.Fatal("both racing retries claimed the Transfer")
+			}
+			winner = o.h
+			continue
+		}
+		if ae, ok := apperr.As(o.err); !ok || ae.Code != apperr.ErrUsage {
+			t.Fatalf("losing retry = %v, want ERR_USAGE", o.err)
+		}
+	}
+	if winner == nil {
+		t.Fatal("neither racing retry claimed the Transfer")
+	}
+	if _, err := winner.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestManagerCancelQueuedNeverStarts: a queued Transfer cancelled through
 // another Manager — another process's view of the same index — ends
 // cancelled without its upload ever starting, while the Transfer ahead of

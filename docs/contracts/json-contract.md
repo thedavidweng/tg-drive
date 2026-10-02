@@ -277,6 +277,16 @@ stage:
 
 `td transfers show <id>` returns one Transfer (ADR 0033); `td transfers
 list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
+`td transfers retry <id>` re-runs a `failed`, `cancelled`, or `interrupted`
+Transfer and returns it once it ends, in the same shape; the Transfer keeps
+its `id` and `created_at`, and the retrying process becomes its owner. A
+retry of a `running` or `completed` Transfer fails with `ERR_USAGE`, an
+unknown ID with `ERR_TRANSFER_NOT_FOUND`, and a failed re-run reports the
+call's own error envelope, exactly as the equivalent `cp`/`get` would.
+`--events` emits one `transfer.stage` event per stage the retried Transfer
+enters and, for upload kinds, the `cp.progress` lines `td cp --events`
+emits — a resumed upload reports only the parts it actually sends — then a
+final `transfers.retry` line carrying the ended Transfer.
 
 `td transfers watch --events` (or `--json`) streams `transfer.stage`
 events — the same payload shape as `td cp --events` emits — for the
@@ -341,7 +351,9 @@ events only.
   Transfer carries no error.
 - `front_end` is the front end that created it (`cli`).
 - `cancel_requested` is set by `td transfers cancel`; the owning process
-  polls it on its lease heartbeat and ends the Transfer `cancelled`.
+  polls it on its lease heartbeat and ends the Transfer `cancelled`. A
+  retry clears it when it takes the Transfer over, so the recorded request
+  never cancels the new owner.
 - Timestamps are RFC 3339 UTC; `finished_at` appears once the Transfer ended.
 
 ## Channel list

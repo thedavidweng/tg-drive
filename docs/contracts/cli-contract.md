@@ -123,7 +123,20 @@ td transfers watch
   # ones that ended since the watch started
   # piped: prints one line per stage a Transfer enters, in the
   # `transfers list` format
-td mv <remote-from> <remote-to>
+td transfers retry <id>
+  [--events]
+  # re-runs a failed, cancelled, or interrupted Transfer from its recorded
+  # request (source, destination, and options), in the foreground like the
+  # cp/get form it came from: the command waits and exits with the outcome.
+  # The retrying process becomes the Transfer's owner; the Transfer keeps
+  # its ID and created_at. An interrupted upload resumes from the parts
+  # upload_progress saved; a download starts over. Retrying a running or
+  # completed Transfer fails with ERR_USAGE, an unknown ID with
+  # ERR_TRANSFER_NOT_FOUND. Unlike the other transfers subcommands, retry
+  # connects to Telegram, so it can wait for the Session lock.
+  # --events streams one transfer.stage event per stage the retried
+  # Transfer enters, cp.progress lines for upload kinds as td cp emits
+  # them, then a final transfers.retry line with the ended Transfer.td mv <remote-from> <remote-to>
   [--confirm] [--dry-run]
 td rm <remote-path>
   [--tombstone] [--allow-stale-manifest]

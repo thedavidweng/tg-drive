@@ -30,7 +30,7 @@ Binary-level end-to-end tests live in `internal/app`
 `e2e_session_lock_test.go`, `e2e_cancel_test.go`, `e2e_transfers_test.go`,
 `e2e_transfer_kinds_test.go`, `e2e_transfer_cancel_test.go`,
 `e2e_transfer_watch_test.go`, `e2e_transfer_retention_test.go`,
-`resume_cli_test.go`,
+`e2e_transfer_retry_test.go`, `resume_cli_test.go`,
 `app_test.go`). They build the real `td` binary and drive the full user
 journey — login, init, channels,
 cp, ls, tree, get (single and recursive), mv, rm, share, scan, status,
@@ -62,7 +62,15 @@ the next `td cp` resumes from the kept upload
 state. `e2e_transfer_cancel_test.go` cancels a running `td cp` from a second
 process (`td transfers cancel`, which acts through the index while the
 uploader holds the Session lock) and kills one with SIGKILL, whose Transfer
-a reader marks `interrupted` once its lease expires. The Transfer lease
+a reader marks `interrupted` once its lease expires.
+`e2e_transfer_retry_test.go` then retries those ended Transfers with
+`td transfers retry`: the SIGKILLed upload resumes from its saved parts
+(the `--events` stream shows only the unconfirmed parts going out), a
+cancelled upload and download re-run (the slow retry completing proves the
+recorded cancel request was cleared on takeover), failed album and
+recursive uploads re-run from their recorded options, and a running or
+completed Transfer rejects the retry with `ERR_USAGE` — answered from the
+index, fast, while the owning `td cp` runs on. The Transfer lease
 reuses `locks.ttl_seconds`, so both tests shorten it with `td config set`
 to make the owner's cancel poll and the lease expiry land within the tests'
 deadlines. The fake knob `TD_FAKE_TRANSFER_DELAY=<Go duration>` makes every

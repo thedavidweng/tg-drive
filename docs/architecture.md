@@ -125,7 +125,16 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   `Watch` follows every process's Transfers by rereading the index on a
   fixed interval and reporting each change. When a Manager starts it prunes
   terminal Transfers that ended more than 30 days ago.
-  `internal/transfer` depends on `internal/service`, never the reverse, and
+  which ends it `cancelled`. Readers (`td transfers list` / `show`) mark a
+  Transfer whose lease expired `interrupted`. Reading and cancelling need
+  only the index, so those commands open an offline App and never take the
+  Session lock. `td transfers retry` re-runs a `failed`, `cancelled`, or
+  `interrupted` Transfer: it claims the row with a compare-and-swap on the
+  retryable stages, becomes the owner with a fresh lease, and rebuilds the
+  call from the recorded source, destination, and options. An interrupted
+  upload resumes from the parts `upload_progress` saved; downloads start
+  over. Retrying runs the transfer, so it opens the full App like `td cp`
+  and `td get` do.  `internal/transfer` depends on `internal/service`, never the reverse, and
   imports no front-end framework.
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 
