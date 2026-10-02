@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -186,24 +185,19 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 			}
 			defer cleanup()
 			if createCh == createChannelDefault {
-				// Bare --create-channel: derive the title from --channel or
-				// the local root's directory name ("." resolves to the real name).
 				createCh = rt.Channel()
 				if createCh == "" {
-					if abs, err := filepath.Abs(args[0]); err == nil {
-						createCh = filepath.Base(abs)
-					} else {
-						createCh = filepath.Base(strings.TrimRight(args[0], "/"))
-					}
+					createCh = service.DefaultChannelTitle(args[0])
 				}
 			}
 			ctx := context.Background()
 			bindChannel := bindCh
 			if bindCh == bindChannelPick || (createCh == "" && bindCh == "" && rt.Channel() == "") {
-				chs, err := app.ListChannels(ctx, false)
+				choices, err := app.InitChoices(ctx, args[0])
 				if err != nil {
 					return r.Error(err)
 				}
+				chs := choices.Channels
 				if rt.JSON() {
 					return r.Error(apperr.New(apperr.ErrChannelNotFound, "select a channel").WithDetails(map[string]any{"channels": channelsToMap(chs)}))
 				}
