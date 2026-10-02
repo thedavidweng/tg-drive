@@ -1,6 +1,6 @@
 # 0031: Wails v3 desktop GUI outside the service layer
 
-Status: Proposed.
+Status: Accepted.
 
 Context: td needs a desktop GUI with full CLI parity. The CLI is pure Go
 and cross-compiles with `CGO_ENABLED=0`. Desktop webview toolkits need CGO

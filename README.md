@@ -79,6 +79,31 @@ cd tg-drive-cli
 make build          # ./dist/td
 ```
 
+### Desktop app (td-gui)
+
+The same GitHub release also ships `td-gui`, the desktop app. CLI users pay
+nothing for it: the `td` binary and packages stay exactly as they are.
+
+| Platform | Artifacts |
+| --- | --- |
+| macOS (Apple Silicon + Intel) | `td-gui_<version>_darwin_universal.dmg` |
+| Windows (x64) | `td-gui_<version>_windows_x86_64-installer.exe` |
+| Linux | `td-gui_<version>_linux_x86_64.AppImage`, `td-gui_<version>_linux_amd64.deb` (arm64: `aarch64` / `arm64`) |
+
+Each artifact has a `.sha256` sidecar. The Linux `.deb` depends on
+`libgtk-4-1` and `libwebkitgtk-6.0-4` (Ubuntu 24.04+ / Debian 13+); install
+with `sudo apt install ./td-gui_<version>_linux_amd64.deb`. The AppImage is
+self-contained: `chmod +x` and run.
+
+**The GUI artifacts are unsigned.** macOS and Windows will warn on first
+launch; this is expected and safe to bypass:
+
+- **macOS (Gatekeeper):** after copying `td-gui.app` to Applications,
+  right-click it and choose **Open**, then confirm. Or remove the quarantine
+  flag: `xattr -d com.apple.quarantine /Applications/td-gui.app`.
+- **Windows (SmartScreen):** click **More info** → **Run anyway**. The
+  installer also installs the WebView2 runtime if your system lacks it.
+
 ## Requirements
 
 `td` logs in as your Telegram user over MTProto. It is not a bot.

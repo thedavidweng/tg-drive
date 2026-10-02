@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=td
+GenericName=Telegram Drive
+Comment=Telegram-backed virtual file tree
+Exec=td-gui
+Icon=td-gui
+Categories=Utility;FileTools;
+Terminal=false
+StartupNotify=true

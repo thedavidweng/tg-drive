@@ -1,0 +1,25 @@
+# nfpm configuration for the td-gui .deb package. Consumed by
+# `wails3 tool package` (which embeds nfpm) from build/linux/package.sh;
+# VERSION and DEBARCH are expanded from the environment by nfpm.
+name: td-gui
+arch: ${DEBARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: thedavidweng <noreply@github.com>
+vendor: thedavidweng
+homepage: https://github.com/thedavidweng/tg-drive-cli
+description: Desktop GUI for td, the Telegram-backed virtual file tree
+license: Apache-2.0
+contents:
+  - src: dist/td-gui
+    dst: /usr/bin/td-gui
+  - src: assets/icon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/td-gui.png
+  - src: build/linux/td-gui.desktop
+    dst: /usr/share/applications/td-gui.desktop
+# GTK 4 + WebKitGTK 6.0 runtime (Ubuntu 24.04+ / Debian 13+ package names).
+depends:
+  - libgtk-4-1
+  - libwebkitgtk-6.0-4

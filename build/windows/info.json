@@ -1,0 +1,14 @@
+{
+	"fixed": {
+		"file_version": "@VERSION@"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "@VERSION@",
+			"CompanyName": "thedavidweng",
+			"FileDescription": "td-gui - Telegram-backed drive",
+			"LegalCopyright": "Apache-2.0",
+			"ProductName": "td"
+		}
+	}
+}
