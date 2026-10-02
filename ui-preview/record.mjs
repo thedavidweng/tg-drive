@@ -12,6 +12,7 @@
 // second, credential-free server run.sh launches.
 import fs from "node:fs/promises"
 import path from "node:path"
+import { spawn } from "node:child_process"
 import { chromium } from "playwright"
 
 // The window size cmd/td-gui opens with; screenshots are taken at 2x.
@@ -22,7 +23,10 @@ const VIEWPORT = { width: 960, height: 640 }
 // the browser locale the i18n catalogues resolve from. open replaces the
 // default navigation (openDrive); settle is optional extra interaction
 // before the shot; leave runs after it, to hand the next scene a clean
-// state. setup selects the credential-free server.
+// state. setup selects the credential-free server. spawn names an
+// environment variable holding a shell command (run.sh exports them) to
+// start once the scene's page has loaded — how a scene runs a CLI upload
+// against the same fake Telegram.
 const scenes = [
   { name: "drive-light", title: "Drive — light", colorScheme: "light" },
   { name: "drive-dark", title: "Drive — dark", colorScheme: "dark" },
@@ -177,6 +181,76 @@ const scenes = [
       await page.getByLabel("Logged in as Test User").waitFor()
     },
   },
+  // The Transfers scenes. Native pickers are no-ops in server mode, so the
+  // binary answers them from TD_GUI_PICK_FILES (see picker.go). The "CLI"
+  // scenes start a real td cp against the same fake Telegram through the
+  // spawn hook, then watch it surface through the index poll.
+  //
+  // Order matters: the fake serializes Telegram calls, and a running
+  // upload holds it for every part — so no page may load while an upload
+  // runs. The CLI scenes open their page first, then spawn their upload;
+  // the live-upload scene goes last, so its album overlaps only the video
+  // walkthrough (which never calls Telegram).
+  {
+    name: "transfers-cli-upload",
+    title: "Transfers — a CLI upload among finished ones",
+    colorScheme: "light",
+    open: openTransfers,
+    spawn: "TD_PREVIEW_CLI_CP",
+    settle: async (page) => {
+      const active = page.getByRole("region", { name: "Active" })
+      // exact: the upload's source path ends with the same file name.
+      await active.getByText("/big.bin", { exact: true }).waitFor({ timeout: 15_000 })
+      await active.getByText("Uploading").first().waitFor()
+      // The history carries the failed seeding upload, its reason, and the
+      // error code, with a retry button.
+      const history = page.getByRole("region", { name: "Last 30 days" })
+      await history.getByText("/broken.bin", { exact: true }).waitFor()
+      await history.getByText(/ERR_TELEGRAM/).waitFor()
+      await history.getByRole("button", { name: "Retry /broken.bin" }).waitFor()
+    },
+    // Hand the next scene a quiet server: big.bin has completed.
+    leave: async (page) => {
+      await page
+        .getByRole("region", { name: "Last 30 days" })
+        .getByText("/big.bin", { exact: true })
+        .waitFor({ timeout: 30_000 })
+    },
+  },
+  {
+    name: "transfers-cli-cancel",
+    title: "Transfers — cancelling a CLI upload",
+    colorScheme: "light",
+    open: openTransfers,
+    spawn: "TD_PREVIEW_CLI_CP2",
+    settle: async (page) => {
+      const active = page.getByRole("region", { name: "Active" })
+      await active.getByText("/cli-slow.bin", { exact: true }).waitFor({ timeout: 15_000 })
+      await page.getByRole("button", { name: "Cancel /cli-slow.bin" }).click()
+      await page.getByText("Cancelled").first().waitFor({ timeout: 15_000 })
+    },
+  },
+  {
+    name: "transfers-upload-live",
+    title: "Transfers — live upload",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("button", { name: "Upload files" }).click()
+      await page.getByRole("tab", { name: "Transfers" }).click()
+      const active = page.getByRole("region", { name: "Active" })
+      await active.getByText("Uploading").first().waitFor()
+      await active.getByRole("progressbar").waitFor()
+    },
+    // The video walkthrough loads a page after this scene; wait the album
+    // out so its fake-Telegram RPCs do not block the load.
+    leave: async (page) => {
+      await page
+        .getByRole("region", { name: "Last 30 days" })
+        .getByText("/", { exact: true })
+        .first()
+        .waitFor({ timeout: 60_000 })
+    },
+  },
 ]
 
 function parseArgs(argv) {
@@ -192,17 +266,27 @@ function parseArgs(argv) {
 }
 
 // The Drive list is ready when its <ul> renders (the loading and error
-// states render no list).
+// states render no list). goto waits for "load", not "networkidle":
+// active Transfers stream progress events over the bindings websocket,
+// and "networkidle" never arrives while one runs.
 async function openDrive(page, base) {
-  await page.goto(base + "/", { waitUntil: "networkidle" })
+  await page.goto(base + "/", { waitUntil: "load" })
   await page.waitForSelector("ul", { timeout: 30_000 })
 }
 
 // The auth screens render no <ul>; readiness is the role and name the
 // scene passes (the setup form, the login heading).
 async function openAuth(page, base, role, name) {
-  await page.goto(base + "/", { waitUntil: "networkidle" })
+  await page.goto(base + "/", { waitUntil: "load" })
   await page.getByRole(role, { name }).waitFor({ timeout: 30_000 })
+}
+
+// openTransfers navigates straight to the Transfers tab: the CLI scenes
+// have nothing to do on the Drive tab.
+async function openTransfers(page, base) {
+  await page.goto(base + "/", { waitUntil: "load" })
+  await page.getByRole("tab", { name: "Transfers" }).click()
+  await page.getByRole("region", { name: "Active" }).waitFor({ timeout: 30_000 })
 }
 
 async function shootScene(browser, base, out, scene) {
@@ -216,8 +300,23 @@ async function shootScene(browser, base, out, scene) {
     await context.addInitScript((theme) => localStorage.setItem("td-theme", theme), scene.theme)
   }
   const page = await context.newPage()
-  await (scene.open ?? openDrive)(page, base)
-  if (scene.settle) await scene.settle(page)
+  try {
+    await (scene.open ?? openDrive)(page, base)
+    // A scene's spawn hook starts an outside process — the CLI upload the
+    // Transfers scenes watch. It keeps running into the following scenes;
+    // the main loop SIGINTs every spawned child before exiting.
+    if (scene.spawn) {
+      const cmd = process.env[scene.spawn]
+      if (!cmd) throw new Error(`scene ${scene.name} wants $${scene.spawn}; run.sh exports it`)
+      const child = spawn("bash", ["-c", cmd], { stdio: "ignore", env: process.env })
+      spawned.push(child)
+    }
+    if (scene.settle) await scene.settle(page)
+  } catch (err) {
+    // A failure screenshot shows the state the scene got stuck on.
+    await page.screenshot({ path: path.join(out, `${scene.name}-failed.png`) }).catch(() => {})
+    throw err
+  }
   const file = `${scene.name}.png`
   await page.screenshot({ path: path.join(out, file) })
   if (scene.leave) await scene.leave(page)
@@ -258,24 +357,34 @@ await fs.mkdir(out, { recursive: true })
 const browser = await chromium.launch()
 const errors = []
 const shots = []
-for (const scene of scenes) {
-  try {
-    shots.push(await shootScene(browser, scene.setup ? setupUrl : url, out, scene))
-  } catch (err) {
-    errors.push(`${scene.name}: ${err.message}`)
-  }
-}
+// CLI processes the scenes started; a SIGINT lets each end its transfer
+// as cancelled instead of leaving a dead lease in the index.
+const spawned = []
 let video = ""
 try {
-  const webm = await shootVideo(browser, url, out)
-  video = path.basename(webm)
-} catch (err) {
-  errors.push(`video: ${err.message}`)
-  for (const f of await fs.readdir(out)) {
-    if (f.endsWith(".webm")) await fs.unlink(path.join(out, f)).catch(() => {})
+  for (const scene of scenes) {
+    try {
+      shots.push(await shootScene(browser, scene.setup ? setupUrl : url, out, scene))
+    } catch (err) {
+      errors.push(`${scene.name}: ${err.message.split("\n")[0]}`)
+    }
+  }
+  try {
+    const webm = await shootVideo(browser, url, out)
+    video = path.basename(webm)
+  } catch (err) {
+    errors.push(`video: ${err.message}`)
+    for (const f of await fs.readdir(out)) {
+      if (f.endsWith(".webm")) await fs.unlink(path.join(out, f)).catch(() => {})
+    }
+  }
+  await browser.close()
+} finally {
+  for (const child of spawned) {
+    child.kill("SIGINT")
+    child.unref()
   }
 }
-await browser.close()
 
 await fs.writeFile(
   path.join(out, "manifest.json"),

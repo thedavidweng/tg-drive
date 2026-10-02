@@ -3,7 +3,8 @@ import { Check, ChevronDown, HardDrive, Plus } from "lucide-react"
 
 import type { Backend, BackendError, BindChoices, BindRequest, ChannelInfo, ChannelStatus } from "@/backend"
 import { Button } from "@/components/ui/button"
-import { formatDate, formatSize, Sheet, SheetError } from "@/drive"
+import { Sheet, SheetError } from "@/drive"
+import { formatDate, formatSize } from "@/format"
 import { useI18n } from "@/i18n"
 
 /**

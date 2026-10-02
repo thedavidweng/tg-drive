@@ -14,6 +14,7 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
 )
 
 // SessionFileName is the GUI's Telegram session file. It sits beside the
@@ -38,7 +39,10 @@ type Services struct {
 
 // appState owns the service App behind a mutex so Auth can reopen it: a
 // fresh machine opens offline (no Telegram client) and setup upgrades it to
-// a connected one. Services resolve the App per call, never caching it.
+// a connected one. Services resolve the App per call, never caching it. It
+// also owns the one Transfer Manager every facade shares; the Manager is
+// rebuilt on every reopen — an Auth reopen or a channel switch — since it
+// binds the App it runs Transfers on.
 type appState struct {
 	mu       sync.Mutex
 	app      *service.App
@@ -48,6 +52,10 @@ type appState struct {
 	// so Channels switches channels by reopening the App with another one;
 	// "" selects the first bound channel.
 	channel string
+	manager *transfer.Manager
+	// observer is the Manager Observer wired in Open; a reopen reuses it
+	// for the new Manager.
+	observer transfer.Observer
 }
 
 func (s *appState) current() *service.App {
@@ -56,9 +64,16 @@ func (s *appState) current() *service.App {
 	return s.app
 }
 
+// currentManager is the Transfer Manager of the current App.
+func (s *appState) currentManager() *transfer.Manager {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.manager
+}
+
 // reopen replaces the App with a freshly opened one, bound to the selected
-// channel. The old App closes only after the new one opened, so a failed
-// reopen keeps the previous state.
+// channel, and a Transfer Manager for it. The old App closes only after
+// the new one opened, so a failed reopen keeps the previous state.
 func (s *appState) reopen() error {
 	opts := openOptions()
 	s.mu.Lock()
@@ -68,9 +83,11 @@ func (s *appState) reopen() error {
 	if err != nil {
 		return toError(err)
 	}
+	manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: s.observer})
 	s.mu.Lock()
 	old := s.closeApp
 	s.app, s.closeApp = app, closeApp
+	s.manager = manager
 	s.mu.Unlock()
 	old()
 	return nil
@@ -127,6 +144,12 @@ func Open() (*Services, func(), error) {
 	}
 	settings := &Settings{opts: opts}
 	state := &appState{app: app, closeApp: closeApp}
+	transfers := &Transfers{state: state, seen: map[string]Transfer{}}
+	state.observer = transfer.Observer{
+		OnStage:    transfers.observeStage,
+		OnProgress: transfers.observeProgress,
+	}
+	state.manager = transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: state.observer})
 	closeServices := state.close
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -141,7 +164,7 @@ func Open() (*Services, func(), error) {
 		Drive:     drive,
 		Auth:      &Auth{state: state, prompts: map[string]chan promptAnswer{}},
 		Channels:  &Channels{state: state, drive: drive},
-		Transfers: &Transfers{},
+		Transfers: transfers,
 		Settings:  settings,
 		state:     state,
 	}, closeServices, nil
@@ -164,4 +187,23 @@ func (s *Services) SetPromptEmitter(emit func(AuthPrompt)) {
 // frontend bindings.
 func (s *Services) SetDriveEmitter(em Emitter) {
 	s.Drive.emit = em
+}
+
+// SetTransferEmitter wires how the Transfers facade's typed events
+// (transfer-stage, transfer-progress, transfer-removed) reach the
+// frontend. cmd/td-gui connects it to the Wails event manager; tests
+// connect a recorder. Services is not a bound Wails service, so this
+// method is not in the frontend bindings.
+func (s *Services) SetTransferEmitter(em Emitter) {
+	s.Transfers.mu.Lock()
+	defer s.Transfers.mu.Unlock()
+	s.Transfers.emit = em
+}
+
+// SetFilePicker connects the native file dialogs the Transfers facade's
+// PickFiles and PickDirectory open. cmd/td-gui connects the Wails dialog
+// manager; tests connect a fake. Services is not a bound Wails service, so
+// this method is not in the frontend bindings.
+func (s *Services) SetFilePicker(p FilePicker) {
+	s.Transfers.pick = p
 }

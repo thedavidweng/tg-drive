@@ -16,6 +16,7 @@ import {
 } from "@/omarchy"
 import { SettingsScreen } from "@/settings"
 import { applyTheme, storedTheme, type ThemeMode } from "@/theme"
+import { TransfersScreen } from "@/transfers"
 
 const tabs = [
   { id: "drive", label: "tab.drive" },
@@ -171,6 +172,9 @@ function Shell(props: ShellProps) {
         <TabsContent value="drive">
           <DriveScreen key={activeChannel} backend={backend} />
         </TabsContent>
+        <TabsContent value="transfers">
+          <TransfersScreen backend={backend} />
+        </TabsContent>
         <TabsContent value="settings">
           <SettingsScreen
             backend={backend}
@@ -183,7 +187,7 @@ function Shell(props: ShellProps) {
             onOmarchyToggle={props.onOmarchyToggle}
           />
         </TabsContent>
-        {tabs.slice(1, 4).map((tab) => (
+        {tabs.slice(2, 4).map((tab) => (
           <TabsContent key={tab.id} value={tab.id}>
             <p className="px-1 py-6 text-center text-muted-foreground">{t("placeholder.notYet")}</p>
           </TabsContent>

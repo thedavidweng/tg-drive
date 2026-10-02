@@ -183,7 +183,13 @@ the setup and login scenes (its fake account has two-step verification,
 `TD_FAKE_AUTH_PASSWORD`). Each scene is one entry in the scenes list in
 `record.mjs` (color scheme, locale, optional theme override or
 interaction, and `setup` to record against the credential-free server);
-adding a scene is a new entry plus any seed data in `run.sh`. Scenes run
+adding a scene is a new entry plus any seed data in `run.sh`. A scene's
+`spawn` names an environment variable `run.sh` exports holding a shell
+command to start once the scene's page loaded — how the Transfers scenes
+run a CLI upload against the same fake Telegram. The GUI's native file
+dialogs are no-ops in server mode, so the build answers them from
+`TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR` (see `cmd/td-gui/picker.go`);
+`run.sh` points those at staged files. Scenes run
 in order against shared server state, so a scene that starts something
 the next one depends on (or must not see) uses `leave` to restore a clean
 state after its shot. The run writes one 2x PNG per scene, `preview.mp4`,

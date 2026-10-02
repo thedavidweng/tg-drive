@@ -70,10 +70,28 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   parent directories; `frontend/dist` is built, not committed.
 - `go.mod` carries `ignore ./frontend/node_modules` so a stray `*.go` file
   in an npm package can never enter the module's package graph.
+- The Transfers facade runs every GUI upload and download through the one
+  Transfer Manager `appState` owns (rebuilt with the App on an Auth
+  reopen), so GUI transfers are the same index records the CLI writes,
+  created with `front_end = gui`. The Transfers tab streams them as typed
+  `transfer-stage` / `transfer-progress` / `transfer-removed` events: one
+  deduping snapshot is fed by the Manager's Observer (this process's
+  Transfers) and by the index-sync poller (everyone's). Upload and
+  download entry points are the Drive tab's toolbar (native multi-file and
+  directory dialogs), the row actions, and window drag-and-drop: Wails
+  delivers dropped paths to the window's file-drop target as a
+  Go-side window event, and the facade answers the dialogs through an
+  injected picker (cmd/td-gui connects the Wails dialog manager; the
+  server-mode build answers from `TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR`,
+  because native dialogs are no-ops without a window). Retry and cancel go
+  through the Manager's cross-process claim and cancel flag, so the tab
+  manages CLI transfers too.
 - Index sync (ADR 0033): `Services.StartSync` polls `PRAGMA data_version`
   on a pinned connection (the pragma advances only for *other* connections'
   commits) and, on change, re-reads the directory the frontend last listed
-  and emits the typed `directory-changed` event with the fresh listing.
+  and emits the typed `directory-changed` event with the fresh listing,
+  and reports changed or vanished Transfers into the same deduping
+  snapshot the Transfers facade's Observer feeds.
   The poller resolves the App through `appState` every tick: an Auth
   reopen closes the old pool, so the poller re-pins the new pool and runs
   one refresh to cover commits that landed while unpinned. The Drive

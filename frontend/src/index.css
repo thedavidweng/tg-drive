@@ -224,3 +224,10 @@ html.omarchy *::after {
 html.omarchy body {
   border: var(--om-border, 1px) solid var(--om-edge, var(--line));
 }
+
+/* The Wails runtime puts this class on a data-file-drop-target element
+   while OS files hover over it (the Drive screen). */
+.file-drop-target-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}

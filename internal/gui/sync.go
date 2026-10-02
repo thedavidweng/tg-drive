@@ -15,12 +15,18 @@ const DefaultSyncInterval = 250 * time.Millisecond
 // StartSync launches index sync: every interval it reads PRAGMA
 // data_version, and when another writer committed to the index it re-reads
 // the directory the frontend is showing and emits EventDirectoryChanged
-// with the fresh listing. It runs until ctx is cancelled; the ctx a caller
-// passes should live as long as the application. It survives Auth reopening
-// the App (setup/login on a fresh machine): the poller resolves the current
-// App every tick and re-pins its connection when the pool changes.
+// with the fresh listing, and diffs the Transfers, emitting the
+// transfer-stage, transfer-progress, and transfer-removed events for what
+// changed (a td process's Transfers included). It runs until ctx is
+// cancelled; the ctx a caller passes should live as long as the
+// application. It survives Auth reopening the App (setup/login on a fresh
+// machine): the poller resolves the current App every tick and re-pins its
+// connection when the pool changes.
 func (s *Services) StartSync(ctx context.Context, interval time.Duration) {
-	go pollIndexChanges(ctx, s.state, interval, s.Drive.refreshCurrent)
+	go pollIndexChanges(ctx, s.state, interval, func(ctx context.Context) {
+		s.Drive.refreshCurrent(ctx)
+		s.Transfers.syncFromIndex(ctx)
+	})
 }
 
 // pollIndexChanges runs task after every commit another connection makes to

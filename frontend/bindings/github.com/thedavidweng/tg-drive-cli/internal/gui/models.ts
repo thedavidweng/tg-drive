@@ -263,6 +263,15 @@ export interface Entry {
 }
 
 /**
+ * FilesDropped is the payload of EventFilesDropped: the absolute local
+ * paths the OS reported for the drop. cmd/td-gui translates the window's
+ * native drop event into it; the facade itself never sees the window.
+ */
+export interface FilesDropped {
+    "paths": string[] | null;
+}
+
+/**
  * LoginResult reports a completed login.
  */
 export interface LoginResult {
@@ -358,6 +367,71 @@ export interface ShareLink {
     "hashtag"?: string;
     "path": string;
     "channel": string;
+}
+
+/**
+ * Transfer is one Transfer as the frontend sees it: the index record with
+ * RFC3339 timestamps.
+ */
+export interface Transfer {
+    "id": string;
+    "kind": string;
+    "stage": string;
+
+    /**
+     * Channel is the Telegram ID of the drive channel the Transfer works
+     * on.
+     */
+    "channel": string;
+    "source": string;
+    "dest": string;
+
+    /**
+     * BytesDone and BytesTotal track single-file Transfers; multi-item
+     * kinds count items instead.
+     */
+    "bytes_done": number;
+    "bytes_total": number;
+    "items_done": number;
+    "items_total": number;
+
+    /**
+     * ItemsFailed is omitted when nothing failed.
+     */
+    "items_failed"?: number;
+
+    /**
+     * ErrorCode and ErrorMessage are the failure a failed Transfer ended
+     * with: the envelope's code and its plain-language message.
+     */
+    "error_code"?: string;
+    "error_message"?: string;
+    "front_end": string;
+    "cancel_requested": boolean;
+    "created_at": string;
+    "updated_at": string;
+
+    /**
+     * FinishedAt is empty while the Transfer runs.
+     */
+    "finished_at"?: string;
+}
+
+/**
+ * TransferList is the Transfers tab's data: the active Transfers above the
+ * history of the last 30 days (the index prunes older terminal Transfers),
+ * each newest first.
+ */
+export interface TransferList {
+    "active": Transfer[] | null;
+    "history": Transfer[] | null;
+}
+
+/**
+ * TransferRemoved is the payload of EventTransferRemoved.
+ */
+export interface TransferRemoved {
+    "id": string;
 }
 
 /**

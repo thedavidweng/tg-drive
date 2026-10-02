@@ -194,3 +194,103 @@ test("the toolbar and sheets are translated", async () => {
   expect(screen.getByRole("button", { name: "新建文件夹" })).toBeTruthy()
   expect(screen.getByRole("button", { name: "重新扫描" })).toBeTruthy()
 })
+
+test("picking files uploads them into the shown directory as a transfer", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { files: ["/tmp/a.jpg", "/tmp/b.jpg"] } } })
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  // Navigate into the folder first: the upload lands where the user looks.
+  fireEvent.click(screen.getByRole("button", { name: "photos" }))
+  await screen.findByRole("list", { name: "Files in /photos" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  await screen.findByText("Upload started — watch it in Transfers.")
+  expect(backend.uploads).toEqual([{ paths: ["/tmp/a.jpg", "/tmp/b.jpg"], dest: "/photos" }])
+})
+
+test("picking a folder uploads it as a transfer", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { dir: "/home/me/Pictures" } } })
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload folder" }))
+  await screen.findByText("Upload started — watch it in Transfers.")
+  expect(backend.uploads).toEqual([{ paths: ["/home/me/Pictures"], dest: "/" }])
+})
+
+test("a cancelled picker starts nothing", async () => {
+  const backend = memoryBackend(seed) // no picks: the dialogs answer empty
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  fireEvent.click(screen.getByRole("button", { name: "Upload folder" }))
+  await new Promise((r) => setTimeout(r, 10))
+  expect(backend.uploads).toEqual([])
+  expect(screen.queryByText(/Upload started/)).toBeNull()
+})
+
+test("files dropped onto the window upload into the shown directory", async () => {
+  const backend = memoryBackend(seed)
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  backend.emitFilesDropped(["/home/me/Desktop/clip.mp4"])
+  await screen.findByText("Upload started — watch it in Transfers.")
+  expect(backend.uploads).toEqual([{ paths: ["/home/me/Desktop/clip.mp4"], dest: "/" }])
+})
+
+test("downloading a file goes through the folder picker and starts a transfer", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { dir: "/home/me/Downloads" } } })
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(within(row("notes.txt")).getByRole("button", { name: "Download" }))
+  await screen.findByText("Download started — watch it in Transfers.")
+  expect(backend.downloads).toEqual([{ remotePath: "/notes.txt", destDir: "/home/me/Downloads" }])
+})
+
+test("downloading a folder starts a transfer too", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { dir: "/home/me/Downloads" } } })
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(within(row("photos")).getByRole("button", { name: "Download" }))
+  await screen.findByText("Download started — watch it in Transfers.")
+  expect(backend.downloads).toEqual([{ remotePath: "/photos", destDir: "/home/me/Downloads" }])
+})
+
+test("a transfer that fails to start reports the error", async () => {
+  const backend = memoryBackend(seed, {
+    transfers: {
+      picks: { files: ["/tmp/a.jpg"] },
+      submitError: { code: "ERR_USAGE", category: "validation", message: "nothing to upload" },
+    },
+  })
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  await screen.findByText("Could not start the transfer: nothing to upload")
+  expect(backend.uploads).toEqual([])
+})
+
+test("a failing picker reports the error instead of dying silently", async () => {
+  const backend = memoryBackend(seed, {
+    transfers: {
+      pickError: { code: "ERR_USAGE", category: "validation", message: "no file dialog is connected" },
+    },
+  })
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  await screen.findByText("Could not start the transfer: no file dialog is connected")
+  expect(backend.uploads).toEqual([])
+
+  // The download row action's picker goes through the same note.
+  fireEvent.click(within(row("notes.txt")).getByRole("button", { name: "Download" }))
+  await screen.findAllByText("Could not start the transfer: no file dialog is connected")
+  expect(backend.downloads).toEqual([])
+})
