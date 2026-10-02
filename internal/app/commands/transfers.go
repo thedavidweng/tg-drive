@@ -15,10 +15,10 @@ import (
 func NewTransfersCmd(rt Runtime) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "transfers",
-		Short: "List and inspect uploads recorded as Transfers",
+		Short: "List, inspect, and cancel Transfers",
 	}
 	GroupUsage(rt, c)
-	c.AddCommand(newTransfersListCmd(rt), newTransfersShowCmd(rt))
+	c.AddCommand(newTransfersListCmd(rt), newTransfersShowCmd(rt), newTransfersCancelCmd(rt))
 	return c
 }
 
@@ -69,6 +69,33 @@ func newTransfersListCmd(rt Runtime) *cobra.Command {
 	c.Flags().BoolVar(&all, "all", false, "list every Transfer, ended ones included")
 	c.Flags().StringVar(&stage, "stage", "", "list only Transfers in this stage")
 	return c
+}
+
+// newTransfersCancelCmd requests a Transfer's cancellation through the
+// index; the owning process notices on its lease heartbeat and ends the
+// Transfer cancelled.
+func newTransfersCancelCmd(rt Runtime) *cobra.Command {
+	return &cobra.Command{
+		Use:   "cancel <id>",
+		Short: "Request cancellation of a running Transfer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r := rt.Renderer()
+			app, cleanup, err := rt.OpenOfflineApp(cmd)
+			if err != nil {
+				return r.Error(err)
+			}
+			defer cleanup()
+			t, err := transfer.New(app, transfer.Options{}).Cancel(cmd.Context(), args[0])
+			if err != nil {
+				return r.Error(err)
+			}
+			if rt.JSON() {
+				return r.Success(t)
+			}
+			return r.SuccessLine("cancel requested for transfer %s", t.ID)
+		},
+	}
 }
 
 func newTransfersShowCmd(rt Runtime) *cobra.Command {

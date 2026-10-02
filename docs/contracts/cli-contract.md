@@ -85,8 +85,8 @@ cp), `download` (single-file get), `album_upload` (multi-file cp, one
 Transfer for the whole album call), `recursive_upload`, and
 `recursive_download`. A single-file `td cp --events` also emits one
 `transfer.stage` event per stage the Transfer enters, alongside the
-`cp.progress` events. Ctrl-C ends the command's Transfers `failed` with
-`ERR_CANCELLED`.
+`cp.progress` events. Ctrl-C cancels the command's Transfers: they end
+`cancelled`.
 
 `--as photo` sends a native photo message: Telegram recompresses the bytes,
 downloads fetch the largest representation, and strict size/hash verification
@@ -104,6 +104,13 @@ td transfers list
   # --active (the default) lists Transfers that have not ended; --all
   # includes ended ones; --stage lists only that stage
 td transfers show <id>
+td transfers cancel <id>
+  # reads and writes the index only: never waits for another process's
+  # Session lock. Sets the Transfer's cancel-requested flag; the owning
+  # process notices on its lease heartbeat and ends the Transfer
+  # `cancelled`, a queued one without starting it. Cancelling an ended
+  # Transfer fails with ERR_USAGE; an unknown ID with
+  # ERR_TRANSFER_NOT_FOUND.
 td mv <remote-from> <remote-to>
   [--confirm] [--dry-run]
 td rm <remote-path>
@@ -161,7 +168,8 @@ change stdout.
 `td import saved` (unless `--dry-run`), and `td repair --delete-orphaned`.
 
 SIGINT (Ctrl-C) and SIGTERM cancel the running command. It stops at the
-next item or transfer part, releases its operation locks, and exits 130
+next item or transfer part, releases its operation locks, ends its
+Transfers `cancelled`, and exits 130
 with `ERR_CANCELLED` (an error envelope on stdout under `--json`). An
 interrupted large upload keeps its confirmed parts, so running the same
 `td cp` again resumes it. A prompt waiting for input is cancelled too. An

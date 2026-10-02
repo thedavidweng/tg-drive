@@ -57,6 +57,11 @@ and writable with `td config set`, except `hash.algorithm` (always `blake3`). In
 `transfers.concurrency` bounds how many Transfers one process runs at once;
 the rest wait `queued`.
 
+`locks.ttl_seconds` is the lease time of Operation locks and of the Transfer
+owner's lease on each Transfer; both renew on a heartbeat at one third of
+it, so a Transfer whose owner vanished reads as expired — and is marked
+`interrupted` — within about one TTL.
+
 `locks.session_wait_seconds` bounds how long a command that needs Telegram
 waits for another process to release the Session lock on the same session
 file before failing with `ERR_SESSION_LOCKED`.

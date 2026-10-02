@@ -262,7 +262,8 @@ Long-running commands such as `td cp --events` emit one JSON envelope per line:
 
 A single-file `td cp --events` also emits `transfer.stage` events, one each
 time its Transfer enters a stage: `queued`, then `hashing` (when the file is
-hashed), `uploading`, `publishing`, and finally `completed` or `failed`.
+hashed), `uploading`, `publishing`, and finally `completed`, `failed`, or
+`cancelled`.
 They are interleaved with the `cp.progress` lines in the order the stages
 happen, before the final `cp` line (or error envelope). `data` is the
 Transfer as `td transfers show` returns it, at the moment it entered the
@@ -283,7 +284,7 @@ list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
   "data": {
     "id": "6f1c2a7e-3b0d-4c55-9a43-2f0a1b7c9d10",
     "kind": "upload",
-    "stage": "failed",
+    "stage": "cancelled",
     "channel": "1001",
     "source": "/home/me/big.bin",
     "dest": "/big.bin",
@@ -291,8 +292,6 @@ list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
     "bytes_total": 12582912,
     "items_done": 0,
     "items_total": 1,
-    "error_code": "ERR_CANCELLED",
-    "error_message": "operation cancelled",
     "front_end": "cli",
     "cancel_requested": false,
     "created_at": "2026-10-02T10:40:01.927632222Z",
@@ -305,9 +304,15 @@ list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
 - `id` is the Transfer ID, a UUID. `kind` is `upload`, `download`,
   `album_upload`, `recursive_upload`, or `recursive_download`.
 - `stage` is `queued`, `hashing`, `uploading`, `downloading`, `publishing`,
-  `completed`, or `failed`. A Transfer only moves forward, and visits the
+  `completed`, `failed`, `cancelled`, or `interrupted`. A Transfer only
+  moves forward, and visits the
   stages its kind has: an upload `hashing`, `uploading`, `publishing`; a
-  download `downloading`. `completed` and `failed` are terminal.
+  download `downloading`. `completed`, `failed`, `cancelled`, and
+  `interrupted` are terminal. `cancelled` ends a Transfer its owner
+  cancelled — Ctrl-C on the owning command, or `td transfers cancel` from
+  any process. `interrupted` ends one whose owner vanished mid-run: a
+  reading process marks it once the Transfer's lease expires, and retrying
+  it resumes from saved state.
 - `channel` is the drive channel's Telegram ID. `source` and `dest` are the
   two ends of the Transfer: for uploads `source` is the absolute local path
   and `dest` the requested remote path; for downloads the reverse, with
@@ -320,9 +325,11 @@ list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
   skipped, and `items_failed` is omitted when nothing failed. A recursive
   Transfer's `items_total` grows as items report.
 - `error_code` / `error_message` appear only on a `failed` Transfer and match
-  the error envelope its command reported. Ctrl-C ends a Transfer `failed`
-  with `ERR_CANCELLED`.
+  the error envelope its command reported. A `cancelled` or `interrupted`
+  Transfer carries no error.
 - `front_end` is the front end that created it (`cli`).
+- `cancel_requested` is set by `td transfers cancel`; the owning process
+  polls it on its lease heartbeat and ends the Transfer `cancelled`.
 - Timestamps are RFC 3339 UTC; `finished_at` appears once the Transfer ended.
 
 ## Channel list

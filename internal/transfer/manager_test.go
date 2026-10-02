@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
+	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
@@ -173,5 +174,122 @@ func TestManagerThrottlesProgress(t *testing.T) {
 	}
 	if got.Stage != transfer.StageCompleted || got.BytesDone != parts*1024 || got.BytesTotal != parts*1024 {
 		t.Fatalf("transfer = %+v, want completed with all %d bytes", got, parts*1024)
+	}
+}
+
+// TestManagerRenewsLease: a running Transfer's lease advances with the
+// owner's heartbeat (the locks.ttl_seconds TTL and its one-third renewal
+// interval, as Operation locks use), recorded in the index for other
+// processes to see; once the Transfer ends, its lease stops advancing.
+func TestManagerRenewsLease(t *testing.T) {
+	app, tg := newApp(t)
+	app.Cfg.Locks.TTLSeconds = 3
+	tg.SetTransferDelay(100 * time.Millisecond)
+
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+	h, err := m.SubmitUpload(context.Background(), transfer.Upload{
+		Source: localFile(t, "big.bin", 30*1024),
+		Dest:   "/big.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := leaseExpiry(t, app, h.ID())
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if got := leaseExpiry(t, app, h.ID()); got > initial {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatalf("lease still %s after 5s, want the heartbeat past %s", got, initial)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	ended := leaseExpiry(t, app, h.ID())
+	time.Sleep(1500 * time.Millisecond)
+	if got := leaseExpiry(t, app, h.ID()); got != ended {
+		t.Fatalf("lease advanced to %s after the Transfer ended at %s", got, ended)
+	}
+}
+
+func leaseExpiry(t *testing.T, app *service.App, id string) string {
+	t.Helper()
+	row, err := app.DB.GetTransfer(context.Background(), id)
+	if err != nil || row == nil {
+		t.Fatalf("read transfer %s: row=%v err=%v", id, row, err)
+	}
+	if row.LeaseExpiresAt == "" {
+		t.Fatalf("transfer %s has no lease; the owner must lease it from submission", id)
+	}
+	return row.LeaseExpiresAt
+}
+
+// TestManagerCancelQueuedNeverStarts: a queued Transfer cancelled through
+// another Manager — another process's view of the same index — ends
+// cancelled without its upload ever starting, while the Transfer ahead of
+// it completes undisturbed.
+func TestManagerCancelQueuedNeverStarts(t *testing.T) {
+	app, tg := newApp(t)
+	app.Cfg.Transfers.Concurrency = 1
+	app.Cfg.Locks.TTLSeconds = 3
+	tg.SetTransferDelay(100 * time.Millisecond)
+
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+	ctx := context.Background()
+	// The first upload holds the one slot for about 3s (30 parts), so the
+	// second Transfer is still queued when the cancel lands.
+	first, err := m.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "first.bin", 30*1024),
+		Dest:   "/first.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued, err := m.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "queued.bin", 6*1024),
+		Dest:   "/queued.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	other := transfer.New(app, transfer.Options{})
+	if _, err := other.Cancel(ctx, queued.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queued.Wait(); !apperr.IsCancelled(err) {
+		t.Fatalf("queued Transfer ended with %v, want ERR_CANCELLED", err)
+	}
+	got, err := other.Get(ctx, queued.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Stage != transfer.StageCancelled || got.FinishedAt == nil || !got.CancelRequested {
+		t.Fatalf("cancelled queued Transfer = %+v, want cancelled with the flag recorded", got)
+	}
+	if _, err := first.Wait(); err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	// The cancelled Transfer never started: there is nothing to download.
+	_, err = app.DownloadFile(ctx, "/queued.bin", filepath.Join(t.TempDir(), "q.bin"), service.ConflictFail, service.DownloadOptions{})
+	if ae, ok := apperr.As(err); !ok || ae.Code != apperr.ErrRemoteNotFound {
+		t.Fatalf("downloading the never-started upload: %v, want ERR_REMOTE_NOT_FOUND", err)
+	}
+
+	// Cancelling an ended Transfer is a usage error; an unknown ID is not
+	// found.
+	if _, err := m.Cancel(ctx, queued.ID()); err == nil {
+		t.Fatal("cancelling an ended Transfer must fail")
+	} else if ae, ok := apperr.As(err); !ok || ae.Code != apperr.ErrUsage {
+		t.Fatalf("cancel of an ended Transfer = %v, want ERR_USAGE", err)
+	}
+	if _, err := m.Cancel(ctx, "00000000-0000-4000-8000-000000000000"); err == nil {
+		t.Fatal("cancelling an unknown Transfer must fail")
+	} else if ae, ok := apperr.As(err); !ok || ae.Code != apperr.ErrTransferNotFound {
+		t.Fatalf("cancel of an unknown Transfer = %v, want ERR_TRANSFER_NOT_FOUND", err)
 	}
 }

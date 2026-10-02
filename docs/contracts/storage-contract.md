@@ -243,9 +243,12 @@ them.
   Transfers add `continue_on_error`, and a recursive upload
   `include_empty_dirs`. Unset and zero values are omitted.
 - `stage` moves forward only: `queued`, `hashing`, `uploading` /
-  `downloading`, `publishing`, then one terminal stage, `completed` or
-  `failed`. A Transfer visits the stages its kind has. A Transfer cancelled
-  by its owner (Ctrl-C) ends `failed` with `ERR_CANCELLED`.
+  `downloading`, `publishing`, then one terminal stage: `completed`,
+  `failed`, `cancelled`, or `interrupted`. A Transfer visits the stages its
+  kind has. A Transfer cancelled by its owner — Ctrl-C on the owning
+  command, or a cancel request from another process — ends `cancelled`.
+  `interrupted` ends a Transfer whose owner vanished mid-run: see
+  `owner_token` / `lease_expires_at` below.
 - `bytes_done` / `bytes_total` are byte progress of a single-file Transfer;
   `bytes_total` starts as the source file's size, and multi-item Transfers
   count items instead and leave both at 0. Stage changes are written at
@@ -256,11 +259,22 @@ them.
   recursive Transfer's `items_total` grows as items report. A completed
   Transfer has `items_done` = `items_total` − `items_failed`.
 - `error_code` / `error_message` are set when it ends `failed`: the same
-  code and message the creating command reported.
+  code and message the creating command reported. A `cancelled` or
+  `interrupted` Transfer leaves them empty.
 - `front_end` is the creating front end: `cli`.
-- `owner_token` identifies the owning process's Transfer Manager.
-  `lease_expires_at` is empty and `cancel_requested` is 0: no process
-  leases Transfers or requests their cancellation through the index yet.
+- `owner_token` identifies the owning process's Transfer Manager. The owner
+  leases the Transfer from submission: it writes `lease_expires_at` and
+  renews it on the Operation-lock heartbeat (the `locks.ttl_seconds` TTL,
+  renewed at one third of it) until the Transfer ends. Any process that
+  reads a non-terminal Transfer whose lease expired — an empty lease counts
+  as expired — marks it `interrupted` with `updated_at` and `finished_at`
+  set. The reader claims nothing: `owner_token` stays for a retry to take
+  over. The marking compares and swaps on the lease value read, so a
+  renewal that landed meanwhile turns it into a no-op.
+- `cancel_requested` is set by `td transfers cancel` from any process. The
+  owner polls it on the same heartbeat and cancels the Transfer's context,
+  which ends the Transfer `cancelled`; a `queued` Transfer is cancelled
+  without starting. The flag stays set on the ended Transfer.
 - Timestamps are fixed-width UTC text
   (`2006-01-02T15:04:05.000000000Z`), so they sort in time order;
   `finished_at` is empty until the Transfer ends.
