@@ -41,7 +41,8 @@ type RepairCaptionsResult struct {
 // from modern captions. The exact path, hash, MIME, and tag records remain in
 // the discussion manifest, so this operation only changes the human surface.
 // Legacy rows are excluded because their captions may still carry td:v1.
-func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, continueOnError bool) (*RepairCaptionsResult, error) {
+func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, continueOnError bool, obs Observer) (*RepairCaptionsResult, error) {
+	obs = obs.changes(dryRun)
 	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
@@ -92,12 +93,14 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 			Path:      target.path,
 			MessageID: target.messageID,
 		}
+		it := Item{Path: target.path, MessageID: target.messageID}
 		tags, _, tagErr := pathcodec.GenerateChain(target.path, existingSlugs)
 		if tagErr != nil {
 			item.Action = "failed"
 			item.Reason = tagErr.Error()
 			items = append(items, item)
 			failed++
+			obs.done(it, tagErr)
 			if !continueOnError {
 				return nil, tagErr
 			}
@@ -134,6 +137,7 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 				item.Action = "would_clean"
 				return nil
 			}
+			obs.stage(it, StagePublishing)
 			tx, err := a.DB.Raw().BeginTx(ctx, nil)
 			if err != nil {
 				return apperr.Wrap(apperr.ErrDB, "begin caption cleanup", err)
@@ -165,6 +169,7 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 			item.Reason = repairErr.Error()
 			failed++
 			items = append(items, item)
+			obs.done(it, repairErr)
 			if !continueOnError {
 				return nil, repairErr
 			}
@@ -173,10 +178,12 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 		switch item.Action {
 		case "clean":
 			cleaned++
+			obs.done(it, nil)
 		case "would_clean":
 			planned++
 		case "skipped":
 			skipped++
+			obs.item(ItemResult{Item: it, Status: ItemSkipped})
 		}
 		items = append(items, item)
 	}

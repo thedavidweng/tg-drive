@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"io"
 	"strings"
 	"time"
 
@@ -62,7 +63,7 @@ type RepairHashResult struct {
 // their entry updated inside the group's one td-album:v1 inventory. A
 // download also repairs a zero/missing size, which native photo imports
 // never recorded.
-func (a *App) RepairHash(ctx context.Context, remotePath string) (*RepairHashResult, error) {
+func (a *App) RepairHash(ctx context.Context, remotePath string, obs Observer) (*RepairHashResult, error) {
 	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
@@ -107,8 +108,9 @@ func (a *App) RepairHash(ctx context.Context, remotePath string) (*RepairHashRes
 	for _, r := range targets {
 		item := hashBackfillItem{Path: r.path}
 		lockErr := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
-			return a.repairHashTarget(ctx, r, channelID, tgChID, existingSlugs, now)
+			return a.repairHashTarget(ctx, r, channelID, tgChID, existingSlugs, now, obs)
 		})
+		obs.done(Item{Path: r.path, MessageID: r.msgID}, lockErr)
 		switch {
 		case lockErr != nil:
 			var nf *telegram.MessageNotFoundError
@@ -133,11 +135,15 @@ func (a *App) RepairHash(ctx context.Context, remotePath string) (*RepairHashRes
 // update the machine record on its carrier, then the index. Telegram is the
 // source of truth, so the record edit must land first or the next scan drops
 // the hash again.
-func (a *App) repairHashTarget(ctx context.Context, r hashTarget, channelID, tgChID int64, existingSlugs map[string]string, now string) error {
+func (a *App) repairHashTarget(ctx context.Context, r hashTarget, channelID, tgChID int64, existingSlugs map[string]string, now string, obs Observer) error {
+	it := Item{Path: r.path, MessageID: r.msgID}
+	obs.stage(it, StageDownloading)
 	hw := &countingHasher{h: blake3.New(32, nil)}
-	if err := a.TG.DownloadMedia(ctx, tgChID, r.msgID, hw); err != nil {
+	progress := &progressWriter{obs: obs, item: it, total: r.size}
+	if err := a.TG.DownloadMedia(ctx, tgChID, r.msgID, io.MultiWriter(hw, progress)); err != nil {
 		return err
 	}
+	obs.stage(it, StagePublishing)
 	hash := "blake3:" + hex.EncodeToString(hw.h.Sum(nil))
 	meta := manifest.FileMeta{
 		CanonicalPath: r.path,

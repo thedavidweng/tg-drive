@@ -600,7 +600,7 @@ func TestRepairPendingRetriesUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -929,7 +929,7 @@ func TestIndexFailureAfterUploadDeletesMedia(t *testing.T) {
 		t.Fatalf("media not rolled back, %d messages remain", n)
 	}
 	app.Index = nil
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -965,7 +965,7 @@ func TestIndexFailureAfterUploadOrphansWhenDeleteFails(t *testing.T) {
 		t.Fatalf("messages = %d, want 1", before)
 	}
 	app.Index = nil
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -994,7 +994,7 @@ func TestRepairPendingDoesNotDuplicateRecordedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := len(tg.Messages(tgChID))
-	res, err := app.RepairPending(ctx)
+	res, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}

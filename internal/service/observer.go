@@ -125,6 +125,13 @@ func (o Observer) changes(dryRun bool) Observer {
 	return o
 }
 
+// stages is o without its per-item results, for a call that runs another
+// use case for an item and reports that item's result itself.
+func (o Observer) stages() Observer {
+	o.OnItem = nil
+	return o
+}
+
 // done reports it completed when err is nil and failed otherwise.
 func (o Observer) done(it Item, err error) {
 	if err != nil {

@@ -54,7 +54,7 @@ func TestRepairHashBackfillsSingleAndAlbum(t *testing.T) {
 	}
 	stripHashes(t, app)
 
-	res, err := app.RepairHash(ctx, "")
+	res, err := app.RepairHash(ctx, "", Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestRepairHashBackfillsSingleAndAlbum(t *testing.T) {
 	}
 
 	// A second run is a no-op: rows already carry hashes.
-	res2, err := app.RepairHash(ctx, "")
+	res2, err := app.RepairHash(ctx, "", Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestRepairHashPathScopeAndSkip(t *testing.T) {
 	if _, err := app.DB.Raw().Exec(`update files set content_hash='' where canonical_path in ('/scope/in.txt','/other/out.txt')`); err != nil {
 		t.Fatal(err)
 	}
-	res, err := app.RepairHash(ctx, "/scope")
+	res, err := app.RepairHash(ctx, "/scope", Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}

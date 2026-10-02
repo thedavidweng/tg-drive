@@ -10,6 +10,7 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
 	"github.com/thedavidweng/tg-drive-cli/core/publisher"
+	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 )
 
 // RepairOptions selects one td repair mode. No selection at all repairs
@@ -33,6 +34,8 @@ type RepairOptions struct {
 	// DryRun and ContinueOnError apply to Captions mode only.
 	DryRun          bool
 	ContinueOnError bool
+	// Observer receives the selected mode's stages and per-item results.
+	Observer Observer
 }
 
 // Validate rejects conflicting modes, mode-specific flags outside their mode,
@@ -71,17 +74,17 @@ func (a *App) Repair(ctx context.Context, opts RepairOptions) (any, error) {
 	}
 	switch {
 	case opts.Captions:
-		return a.RepairCaptions(ctx, path, opts.DryRun, opts.ContinueOnError)
+		return a.RepairCaptions(ctx, path, opts.DryRun, opts.ContinueOnError, opts.Observer)
 	case opts.Hash:
-		return a.RepairHash(ctx, path)
+		return a.RepairHash(ctx, path, opts.Observer)
 	case opts.Path != nil:
-		return a.RepairPath(ctx, path)
+		return a.RepairPath(ctx, path, opts.Observer)
 	case opts.Orphaned:
-		return a.repairOrphaned(ctx, opts.DeleteOrphaned)
+		return a.repairOrphaned(ctx, opts.DeleteOrphaned, opts.Observer)
 	case opts.ScanErrors:
-		return a.RepairScanErrors(ctx)
+		return a.RepairScanErrors(ctx, opts.Observer)
 	default:
-		return a.RepairPending(ctx)
+		return a.RepairPending(ctx, opts.Observer)
 	}
 }
 
@@ -97,7 +100,7 @@ type RepairPendingResult struct {
 // RepairPending resolves stale pending rows and expired operation locks.
 // Only rows older than the lock TTL whose path is not currently locked are
 // touched, so a live in-flight upload is never deleted or duplicated.
-func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
+func (a *App) RepairPending(ctx context.Context, obs Observer) (*RepairPendingResult, error) {
 	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
@@ -139,10 +142,15 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 	_ = rows.Close()
 	repaired, invalid, orphaned, skipped := 0, 0, 0, 0
 	for _, r := range pending {
+		it := Item{Source: r.local.String, Path: r.path}
+		skip := func() {
+			skipped++
+			obs.item(ItemResult{Item: it, Status: ItemSkipped})
+		}
 		// A path lock held right now means an operation is in flight (e.g. an
 		// upload adopting this very row); leave it alone.
 		if held, err := a.pathLocked(ctx, ch, r.path); err == nil && held {
-			skipped++
+			skip()
 			continue
 		}
 		markInvalid := func(ctx context.Context) error { return a.DB.MarkInvalid(ctx, r.id, now) }
@@ -156,7 +164,7 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 			})
 			if err != nil {
 				ok = false
-				skipped++
+				skip()
 			}
 			return ok
 		}
@@ -167,6 +175,7 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 			// finished, so any resumable part state is garbage.
 			if flip(func(ctx context.Context) error { return a.DB.MarkOrphaned(ctx, r.id, int(r.msgID.Int64), now) }) {
 				orphaned++
+				obs.done(it, nil)
 			}
 		case r.local.Valid && r.local.String != "":
 			if _, statErr := a.files().Stat(ctx, r.local.String); statErr == nil {
@@ -177,22 +186,26 @@ func (a *App) RepairPending(ctx context.Context) (*RepairPendingResult, error) {
 					return nil
 				})
 				if err != nil {
-					skipped++
+					skip()
 					continue
 				}
-				if _, err := a.UploadFile(ctx, r.local.String, r.path, ConflictSkip, false, UploadOptions{}); err == nil {
+				_, err = a.uploadFile(ctx, r.local.String, r.path, ConflictSkip, false, Presentation{}, "", UploadOptions{Observer: obs.stages()})
+				if err == nil {
 					repaired++
-					continue
+				} else {
+					invalid++
 				}
-				invalid++
+				obs.done(it, err)
 				continue
 			}
 			if flip(markInvalid) {
 				invalid++
+				obs.done(it, apperr.New(apperr.ErrLocalNotFound, fmt.Sprintf("local source %q no longer exists", r.local.String)))
 			}
 		default:
 			if flip(markInvalid) {
 				invalid++
+				obs.done(it, apperr.New(apperr.ErrLocalNotFound, "no local source recorded to retry the upload from"))
 			}
 		}
 	}
@@ -208,7 +221,7 @@ type RepairOrphanedResult struct {
 
 // repairOrphaned completes or removes uploads whose media message exists on
 // Telegram but whose index promotion failed.
-func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOrphanedResult, error) {
+func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool, obs Observer) (*RepairOrphanedResult, error) {
 	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
@@ -248,11 +261,17 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOr
 	now := time.Now().UTC().Format(time.RFC3339)
 	repaired, deleted, invalid := 0, 0, 0
 	for _, r := range orphans {
+		it := Item{Path: r.path, MessageID: int(r.msgID.Int64)}
 		if !r.msgID.Valid {
 			_ = a.DB.MarkInvalid(ctx, r.id, now)
 			invalid++
+			obs.done(it, apperr.New(apperr.ErrDB, "orphaned row records no message"))
 			continue
 		}
+		obs.stage(it, StagePublishing)
+		// itemErr is why the orphan was not resolved; it stays orphaned or
+		// turns invalid, and the repair moves on.
+		var itemErr error
 		// Each orphan repair holds its path lock, so it cannot race a
 		// concurrent move or delete of the same file.
 		err := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
@@ -262,12 +281,14 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOr
 					if err := a.DB.MarkDeleted(ctx, r.id, now); err != nil {
 						// Stays orphaned: the next repair finds the message
 						// gone and retires the row then.
+						itemErr = apperr.Wrap(apperr.ErrDB, "mark deleted", err)
 						return nil
 					}
 					deleted++
 					return nil
 				}
 				invalid++
+				itemErr = telegram.MapError(err)
 				return nil
 			}
 			// Complete the interrupted upload: regenerate metadata and resend the
@@ -287,6 +308,7 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOr
 				ExistingSlugs:  a.loadSlugMap(ctx, channelID),
 			})
 			if err != nil {
+				itemErr = err
 				return nil // stays orphaned for a later attempt
 			}
 			if _, err := pub.PublishFile(ctx, publisher.FileRequest{
@@ -296,6 +318,7 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOr
 				MessageID:    int(r.msgID.Int64),
 				Rendition:    rendition,
 			}); err != nil {
+				itemErr = err
 				return nil // stays orphaned for a later attempt
 			}
 			_ = a.DB.DeleteUploadStateByFile(ctx, r.id)
@@ -303,8 +326,10 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool) (*RepairOr
 			return nil
 		})
 		if err != nil {
+			obs.done(it, err)
 			return nil, err
 		}
+		obs.done(it, itemErr)
 	}
 	return &RepairOrphanedResult{Deleted: deleted, Invalid: invalid, Repaired: repaired}, nil
 }
@@ -316,7 +341,7 @@ type RepairPathResult struct {
 
 // RepairPath re-renders and re-applies caption, manifest, and tags for one
 // active file, repairing caption/manifest drift.
-func (a *App) RepairPath(ctx context.Context, remotePath string) (*RepairPathResult, error) {
+func (a *App) RepairPath(ctx context.Context, remotePath string, obs Observer) (*RepairPathResult, error) {
 	p, err := fsmodel.NormalizeCanonicalPath(remotePath)
 	if err != nil {
 		return nil, err
@@ -332,9 +357,12 @@ func (a *App) RepairPath(ctx context.Context, remotePath string) (*RepairPathRes
 	if !found || !row.MessageID.Valid {
 		return nil, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
 	}
+	it := Item{Path: p, MessageID: int(row.MessageID.Int64)}
+	obs.stage(it, StagePublishing)
 	lockErr := a.operate(ctx, ch, []string{p}, func(ctx context.Context) error {
 		return a.fileRecord(ch.rowID, ch.tgID, row).Rewrite(ctx)
 	})
+	obs.done(it, lockErr)
 	if lockErr != nil {
 		return nil, lockErr
 	}
@@ -348,7 +376,7 @@ type RepairScanErrorsResult struct {
 }
 
 // RepairScanErrors reprocesses the channel and clears resolved scan errors.
-func (a *App) RepairScanErrors(ctx context.Context) (*RepairScanErrorsResult, error) {
+func (a *App) RepairScanErrors(ctx context.Context, obs Observer) (*RepairScanErrorsResult, error) {
 	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
@@ -356,7 +384,7 @@ func (a *App) RepairScanErrors(ctx context.Context) (*RepairScanErrorsResult, er
 	channelID := ch.rowID
 	var before int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from scan_errors where channel_id=? and status='pending'`, channelID).Scan(&before)
-	if _, err := a.Scan(ctx, ScanOptions{Full: true, Repair: true}); err != nil {
+	if _, err := a.Scan(ctx, ScanOptions{Full: true, Repair: true, Observer: obs}); err != nil {
 		return nil, err
 	}
 	var after int

@@ -368,7 +368,7 @@ func TestRepairPendingLeavesInFlightUploadUntouched(t *testing.T) {
 	// Wait for the lock to actually be held before repairing.
 	waitLockHeld(t, app, sqlitestore.LockKey(channelID, "/locked.txt"))
 
-	out, err := app.RepairPending(ctx)
+	out, err := app.RepairPending(ctx, Observer{})
 	if err != nil {
 		t.Fatal(err)
 	}

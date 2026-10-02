@@ -79,17 +79,20 @@ func TestAdoptObserverRewriteCaptions(t *testing.T) {
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
 	tgChID, _ := app.tgChannelID(ctx)
-	for id, caption := range map[int]string{300: "a.mp4", 301: "#tag\nweekend dump", 302: "c.mp4"} {
-		name := map[int]string{300: "a.mp4", 301: "b.mp4", 302: "c.mp4"}[id]
+	for _, m := range []struct {
+		id            int
+		name, caption string
+	}{{300, "a.mp4", "a.mp4"}, {301, "b.mp4", "#tag\nweekend dump"}, {302, "c.mp4", "c.mp4"}} {
 		tg.AddMessage(tgChID, telegram.Message{
-			ID: id, Kind: telegram.KindDocument, MIME: "video/mp4",
-			FileName: name, FileSize: 4, Data: []byte("data"), Caption: caption, GroupedID: 9,
+			ID: m.id, Kind: telegram.KindDocument, MIME: "video/mp4",
+			FileName: m.name, FileSize: 4, Data: []byte("data"), Caption: m.caption, GroupedID: 9,
 		})
 	}
 	if _, err := app.Adopt(ctx, AdoptOptions{Unmanaged: true, NoHash: true, Confirm: true}); err != nil {
 		t.Fatal(err)
 	}
-	for reply, media := range map[int]int{400: 300, 401: 301} {
+	for _, reply := range []int{400, 401} {
+		media := reply - 100
 		tg.AddMessage(tgChID, telegram.Message{ID: reply, Text: "td-manifest:v1 p=x", ReplyTo: &media})
 	}
 
