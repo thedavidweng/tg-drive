@@ -162,6 +162,7 @@ code and only asks for a fresh one with `--resend`.
 | `ERR_FILE_TOO_LARGE` | over the account limit | free: 2 GB, premium: 4 GB (`td doctor`) |
 | `ERR_CAPTION_TOO_LONG` | deep path exceeded the caption budget | shorten the path; metadata goes to a manifest reply automatically near the limit |
 | `ERR_OPERATION_LOCKED` | another process holds the path lock | wait, or clear stale locks via `td repair --pending` |
+| `ERR_SESSION_LOCKED` | another `td` process is using the same Telegram session | wait for it to finish, or raise `locks.session_wait_seconds` |
 | `ERR_ORPHANED_UPLOAD` | crash between media accept and index write | `td repair --orphaned` |
 | `ERR_AUTH_REQUIRED` | no session | `td auth setup`, then `td auth login` |
 | `ERR_CHANNEL_NOT_FOUND` | no channel bound in this database (new machine, deleted DB) | `td init <root> --bind-channel` for an existing drive, `--create-channel` for a new one |

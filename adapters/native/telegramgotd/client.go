@@ -118,7 +118,7 @@ func (c *Client) ensureConn(ctx context.Context) (*conn, error) {
 	limiter := NewRateLimiter(c.waitFlood, c.maxWait)
 	limiter.SetLogger(c.logf)
 	opts := telegram.Options{
-		SessionStorage: &telegram.FileSessionStorage{Path: c.sessionPath},
+		SessionStorage: newSessionStorage(c.sessionPath),
 		NoUpdates:      true,
 		Middlewares:    []telegram.Middleware{limiter.Middleware()},
 	}

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/sessionlock"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/telegramgotd"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
@@ -64,6 +65,8 @@ func LoadConfig(opts Options) (config.Config, string, error) {
 // Open is the composition root every front end uses: it loads config, opens
 // the database and the Telegram client (the offline fake when
 // TD_FAKE_TELEGRAM=1), and returns the App with a function that closes them.
+// Either client is guarded by the Session lock of the configured session
+// path, taken on its first Telegram call (ADR 0034).
 func Open(opts Options) (*App, func(), error) {
 	cfg, cfgPath, err := LoadConfig(opts)
 	if err != nil {
@@ -75,11 +78,14 @@ func Open(opts Options) (*App, func(), error) {
 	}
 	var tg telegram.Client
 	if !opts.Offline {
-		tg, err = openTelegram(opts, cfg, database)
+		inner, err := openTelegram(opts, cfg, database)
 		if err != nil {
 			_ = database.Close()
 			return nil, func() {}, err
 		}
+		lock := sessionlock.New(cfg.Storage.SessionPath,
+			time.Duration(cfg.Locks.SessionWaitSeconds)*time.Second, opts.Debugf)
+		tg = sessionlock.Wrap(inner, lock)
 	}
 	app := &App{
 		Cfg:        cfg,

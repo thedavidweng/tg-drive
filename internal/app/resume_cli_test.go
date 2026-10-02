@@ -25,13 +25,15 @@ func execCommand(bin string, args ...string) *exec.Cmd {
 	return exec.Command(bin, args...)
 }
 
-// runTD executes the built binary in the fake-telegram environment.
-func runTD(t *testing.T, bin, cfgPath, dbPath, statePath string, extraEnv []string, stdin string, args ...string) (string, string, error) {
-	t.Helper()
+// tdCommand prepares the built binary in the fake-telegram environment. The
+// session path sits beside the fake state so the Session lock never touches
+// the developer's real session.
+func tdCommand(bin, cfgPath, dbPath, statePath string, extraEnv []string, args ...string) *exec.Cmd {
 	cmd := execCommand(bin, args...)
 	cmd.Env = append(os.Environ(),
 		"TD_FAKE_TELEGRAM=1",
 		"TD_FAKE_TELEGRAM_STATE="+statePath,
+		"TD_SESSION="+filepath.Join(filepath.Dir(statePath), "session.json"),
 	)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	if cfgPath != "" {
@@ -39,6 +41,13 @@ func runTD(t *testing.T, bin, cfgPath, dbPath, statePath string, extraEnv []stri
 	} else {
 		cmd.Args = append([]string{bin}, args...)
 	}
+	return cmd
+}
+
+// runTD executes the built binary in the fake-telegram environment.
+func runTD(t *testing.T, bin, cfgPath, dbPath, statePath string, extraEnv []string, stdin string, args ...string) (string, string, error) {
+	t.Helper()
+	cmd := tdCommand(bin, cfgPath, dbPath, statePath, extraEnv, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
