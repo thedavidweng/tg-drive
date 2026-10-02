@@ -461,7 +461,10 @@ function TreeCard({
   }
   return (
     <div className="rounded-card border border-line bg-card px-3.5 py-2">
-      <ul role="tree" aria-label={t("drive.treeLabel", { path })}>
+      {/* A static, fully expanded outline: nested lists, not the tree
+          widget roles — those would promise keyboard navigation a
+          non-interactive view does not have. */}
+      <ul aria-label={t("drive.treeLabel", { path })}>
         {tree.nodes.map((node) => (
           <TreeItem key={node.path} node={node} />
         ))}
@@ -473,7 +476,7 @@ function TreeCard({
 function TreeItem({ node }: { node: TreeNode }) {
   const children = node.children ?? []
   return (
-    <li role="treeitem" aria-expanded={node.type === "dir" ? children.length > 0 : undefined}>
+    <li>
       <span className="flex min-h-7 items-center gap-2 text-[12.5px]">
         {node.type === "dir" ? (
           <Folder aria-hidden className="size-[15px] shrink-0 text-primary" />
@@ -483,7 +486,7 @@ function TreeItem({ node }: { node: TreeNode }) {
         <span className={node.type === "dir" ? "font-medium" : ""}>{node.name}</span>
       </span>
       {children.length > 0 && (
-        <ul role="group" className="ml-[9px] border-l border-line-2 pl-3">
+        <ul className="ml-[9px] border-l border-line-2 pl-3">
           {children.map((child) => (
             <TreeItem key={child.path} node={child} />
           ))}
@@ -534,7 +537,7 @@ function NewFolderSheet({
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
-          className="mt-1 h-8 w-full rounded-control border border-line bg-background px-2 text-[13px] text-fg outline-none focus:border-ring"
+          className="mt-1 h-8 w-full rounded-control border border-line bg-background px-2 text-[13px] text-fg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </label>
       <SheetError error={error} />
@@ -580,7 +583,7 @@ function MoveSheet({
           value={dest}
           onChange={(e) => setDest(e.target.value)}
           autoFocus
-          className="mt-1 h-8 w-full rounded-control border border-line bg-background px-2 font-mono text-[12.5px] text-fg outline-none focus:border-ring"
+          className="mt-1 h-8 w-full rounded-control border border-line bg-background px-2 font-mono text-[12.5px] text-fg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </label>
       <SheetError error={error} />

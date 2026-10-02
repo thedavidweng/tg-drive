@@ -120,11 +120,15 @@ function Shell(props: ShellProps) {
   // The Drive and other tabs are reachable only with a usable session:
   // without credentials the app lands on setup, without a login on login.
   if (gate.state === "loading") {
-    return <p className="px-1 py-6 text-center text-muted-foreground">{t("auth.checking")}</p>
+    return (
+      <main className="app-drag h-full p-3.5">
+        <p className="px-1 py-6 text-center text-muted-foreground">{t("auth.checking")}</p>
+      </main>
+    )
   }
   if (gate.state === "failed") {
     return (
-      <main className="p-3.5">
+      <main className="app-drag h-full p-3.5">
         <ErrorAlert error={gate.error} />
       </main>
     )
@@ -137,7 +141,7 @@ function Shell(props: ShellProps) {
   }
   return (
     <Tabs defaultValue="drive" className="h-full gap-0">
-      <header className="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-3.5">
+      <header className="app-drag app-header grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-3.5">
         <div className="flex min-w-0 items-center gap-2">
           <Logo />
           <ChannelSwitcher backend={backend} onActiveChange={setActiveChannel} />
