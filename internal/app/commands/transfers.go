@@ -3,20 +3,23 @@ package commands
 import (
 	"github.com/spf13/cobra"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive-cli/internal/service"
 	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
 )
 
 // The transfers commands read Transfers from the index only, through an
 // offline App: they never wait for the Session lock another process holds
-// while it runs Transfers.
+// while it runs Transfers. retry is the exception: it re-runs the Transfer,
+// so it opens the full App like td cp and td get do.
 
 func NewTransfersCmd(rt Runtime) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "transfers",
-		Short: "List, inspect, watch, and cancel Transfers",
+		Short: "List, inspect, watch, cancel, and retry Transfers",
 	}
 	GroupUsage(rt, c)
-	c.AddCommand(newTransfersListCmd(rt), newTransfersShowCmd(rt), newTransfersCancelCmd(rt), newTransfersWatchCmd(rt))
+	c.AddCommand(newTransfersListCmd(rt), newTransfersShowCmd(rt), newTransfersCancelCmd(rt), newTransfersWatchCmd(rt), newTransfersRetryCmd(rt))
 	return c
 }
 
@@ -95,6 +98,65 @@ func newTransfersCancelCmd(rt Runtime) *cobra.Command {
 			return r.SuccessLine("cancel requested for transfer %s", t.ID)
 		},
 	}
+}
+
+// newTransfersRetryCmd re-runs a failed, cancelled, or interrupted Transfer
+// from its recorded request, in the foreground like td cp and td get: the
+// command waits and reports the outcome. The retrying process becomes the
+// Transfer's owner; an interrupted upload resumes from its saved parts.
+func newTransfersRetryCmd(rt Runtime) *cobra.Command {
+	var events bool
+	c := &cobra.Command{
+		Use:   "retry <id>",
+		Short: "Retry a failed, cancelled, or interrupted Transfer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r := rt.Renderer()
+			app, cleanup, err := rt.OpenApp(cmd)
+			if err != nil {
+				return r.Error(err)
+			}
+			defer cleanup()
+			var observer transfer.Observer
+			var callObserver service.Observer
+			if events {
+				observer.OnStage = func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) }
+				callObserver.OnProgress = func(p service.Progress) {
+					if p.Part == nil {
+						return
+					}
+					_ = r.Event("cp.progress", telegram.UploadProgressState{
+						FileName: p.Part.FileName,
+						Part:     p.Part.Index,
+						PartSize: p.Part.Size,
+						Uploaded: p.Done,
+						Total:    p.Total,
+					})
+				}
+			}
+			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
+			handle, err := manager.Retry(cmd.Context(), args[0], callObserver)
+			if err != nil {
+				return r.Error(err)
+			}
+			if _, err := handle.Wait(); err != nil {
+				return r.Error(err)
+			}
+			t, err := manager.Get(cmd.Context(), args[0])
+			if err != nil {
+				return r.Error(err)
+			}
+			if events {
+				return r.Event("transfers.retry", t)
+			}
+			if rt.JSON() {
+				return r.Success(t)
+			}
+			return printTransferLine(cmd.OutOrStdout(), *t)
+		},
+	}
+	c.Flags().BoolVar(&events, "events", false, "emit NDJSON progress events during the retry")
+	return c
 }
 
 func newTransfersShowCmd(rt Runtime) *cobra.Command {

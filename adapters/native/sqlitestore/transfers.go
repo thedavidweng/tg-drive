@@ -128,6 +128,26 @@ func (d *DB) GetTransfer(ctx context.Context, id string) (*TransferRow, error) {
 	return &rows[0], nil
 }
 
+// ClaimTransfer hands a retryable Transfer — failed, cancelled, or
+// interrupted — to a new owner, atomically: the row moves back to queued
+// under r's owner token and lease, its ending (error, finish time, cancel
+// request) and progress counts reset for the new run. It reports whether
+// the row was claimed: false when the Transfer is running, completed, or
+// already claimed by another retry, none of which a retry may take over.
+func (d *DB) ClaimTransfer(ctx context.Context, r TransferRow) (bool, error) {
+	res, err := d.sql.ExecContext(ctx,
+		`update transfers set stage=?, owner_token=?, lease_expires_at=?, cancel_requested=0,
+			error_code='', error_message='', finished_at='', bytes_done=0, bytes_total=?,
+			items_done=0, items_total=?, items_failed=0, updated_at=?
+		where id=? and stage in ('failed','cancelled','interrupted')`,
+		r.Stage, r.OwnerToken, r.LeaseExpiresAt, r.BytesTotal, r.ItemsTotal, r.UpdatedAt, r.ID)
+	if err != nil {
+		return false, apperr.Wrap(apperr.ErrDB, "claim transfer", err)
+	}
+	n, err := res.RowsAffected()
+	return err == nil && n > 0, nil
+}
+
 // RenewTransferLease moves a running Transfer's lease to expiresAt, done by
 // its owner's heartbeat. It reports whether the row was renewed: false when
 // the Transfer ended or another owner holds it, which tells the owner to

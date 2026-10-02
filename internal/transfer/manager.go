@@ -111,6 +111,28 @@ func marshalUploadOptions(policy service.ConflictPolicy, noHash bool, pres servi
 	}
 }
 
+// presentation is the stored upload's Presentation.
+func (o uploadOptions) presentation() service.Presentation {
+	return service.Presentation{
+		Kind: o.Kind, DurationSeconds: o.DurationSeconds, Width: o.Width, Height: o.Height,
+		SupportsStreaming: o.SupportsStreaming, ThumbPath: o.ThumbPath,
+	}
+}
+
+// upload is the stored upload's call settings.
+func (o uploadOptions) upload() service.UploadOptions {
+	return service.UploadOptions{Threads: o.Threads, PartSizeKB: o.PartSizeKB, ConfirmReplace: o.ConfirmReplace}
+}
+
+// parseOptions reads a Transfer's stored options JSON.
+func parseOptions[T any](options string) (T, error) {
+	var o T
+	if err := json.Unmarshal([]byte(options), &o); err != nil {
+		return o, apperr.Wrap(apperr.ErrDB, "read transfer options", err)
+	}
+	return o, nil
+}
+
 // pinChannel resolves the bound drive channel's Telegram ID for the
 // Transfer record and pins it as the call's channel, so record and call
 // agree. A channel that does not resolve is recorded empty and left to the
@@ -340,11 +362,21 @@ func submit[T any](ctx context.Context, m *Manager, t Transfer, options string,
 	if err := m.app.DB.InsertTransfer(ctx, row); err != nil {
 		return nil, err
 	}
+	return start(ctx, m, t, run), nil
+}
+
+// start runs an owned Transfer — freshly inserted or claimed by a retry —
+// under the shared ctx contract: cancelling ctx cancels the Transfer,
+// queued or running, which then ends cancelled, and Handle.Wait reports
+// ERR_CANCELLED.
+func start[T any](ctx context.Context, m *Manager, t Transfer,
+	run func(ctx context.Context, tr *tracker) (T, error),
+) *Handle[T] {
 	tctx, cancel := context.WithCancel(ctx)
 	// A Transfer submitted without an item total (the recursive kinds, whose
 	// item count only the walk discovers) grows it as items report; one
 	// submitted with a total keeps it.
-	tr := &tracker{m: m, t: t, written: now, ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0}
+	tr := &tracker{m: m, t: t, written: time.Now().UTC(), ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0}
 	stop := m.leaseHeartbeat(t.ID, tr.ctx, cancel)
 	tr.notify(m.opts.Observer.OnStage)
 	h := &Handle[T]{id: t.ID, done: make(chan struct{})}
@@ -371,7 +403,7 @@ func submit[T any](ctx context.Context, m *Manager, t Transfer, options string,
 		}
 		tr.finish(h.err)
 	}()
-	return h, nil
+	return h
 }
 
 // leaseHeartbeat renews the Transfer's lease and polls its cancel-requested
@@ -471,6 +503,17 @@ func (m *Manager) List(ctx context.Context, f Filter) ([]Transfer, error) {
 // Get returns the Transfer with id, failing with ERR_TRANSFER_NOT_FOUND when
 // there is none.
 func (m *Manager) Get(ctx context.Context, id string) (*Transfer, error) {
+	r, err := m.getRow(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	t := fromRow(*r)
+	return &t, nil
+}
+
+// getRow reads one Transfer's row, marking it interrupted first when its
+// owner's lease expired.
+func (m *Manager) getRow(ctx context.Context, id string) (*sqlitestore.TransferRow, error) {
 	r, err := m.app.DB.GetTransfer(ctx, id)
 	if err != nil {
 		return nil, err
@@ -481,8 +524,137 @@ func (m *Manager) Get(ctx context.Context, id string) (*Transfer, error) {
 	if err := m.interruptRow(ctx, r, formatTime(time.Now().UTC())); err != nil {
 		return nil, err
 	}
+	return r, nil
+}
+
+// Retry re-runs a failed, cancelled, or interrupted Transfer from its
+// recorded request, under the same ctx contract as SubmitUpload. The
+// Transfer keeps its ID and creation time; this process's Manager becomes
+// its new owner. A completed Transfer is already done and a running one
+// still has its owner — its fresh lease is what keeps it active — so both
+// are ERR_USAGE, as is a Transfer a concurrent retry claimed first. An
+// interrupted upload resumes from the parts upload_progress saved; a
+// download starts over, having no saved parts. obs observes the re-run
+// call, like the Observer field of the Submit requests.
+func (m *Manager) Retry(ctx context.Context, id string, obs service.Observer) (*Handle[any], error) {
+	r, err := m.getRow(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 	t := fromRow(*r)
-	return &t, nil
+	switch t.Stage {
+	case StageFailed, StageCancelled, StageInterrupted:
+	case StageCompleted:
+		return nil, apperr.New(apperr.ErrUsage, "transfer already completed: "+id)
+	default:
+		return nil, apperr.New(apperr.ErrUsage,
+			"transfer is still "+string(t.Stage)+" (only failed, cancelled, or interrupted transfers can be retried): "+id)
+	}
+	run, err := m.retryRun(&t, r.Options, obs)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	t.Stage = StageQueued
+	t.FinishedAt = nil
+	t.ErrorCode, t.ErrorMessage = "", ""
+	t.CancelRequested = false
+	t.BytesDone, t.ItemsDone, t.ItemsFailed = 0, 0, 0
+	t.UpdatedAt = now
+	claim := t.row()
+	claim.OwnerToken = m.owner
+	claim.LeaseExpiresAt = formatTime(now.Add(m.app.LockTTL()))
+	claimed, err := m.app.DB.ClaimTransfer(ctx, claim)
+	if err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return nil, apperr.New(apperr.ErrUsage, "transfer was claimed by another retry: "+id)
+	}
+	// The recorded channel pins the call, so the re-run works on the drive
+	// the Transfer was created on even when the app's selection changed.
+	if t.Channel != "" {
+		ctx = service.WithChannel(ctx, t.Channel)
+	}
+	return start(ctx, m, t, run), nil
+}
+
+// retryRun rebuilds a Transfer's recorded request as the call to re-run,
+// resetting t's progress totals for the new run the way the Submit of its
+// kind sets them.
+func (m *Manager) retryRun(t *Transfer, options string, obs service.Observer) (func(ctx context.Context, tr *tracker) (any, error), error) {
+	switch t.Kind {
+	case KindUpload:
+		o, err := parseOptions[uploadOptions](options)
+		if err != nil {
+			return nil, err
+		}
+		t.ItemsTotal = 1
+		if st, err := os.Stat(t.Source); err == nil && st.Mode().IsRegular() {
+			t.BytesTotal = st.Size()
+		} else {
+			t.BytesTotal = 0
+		}
+		return func(ctx context.Context, tr *tracker) (any, error) {
+			opts := o.upload()
+			opts.Observer = tr.observe(obs)
+			res, err := m.app.UploadFileAs(ctx, t.Source, t.Dest, o.Policy, o.NoHash, o.presentation(), opts)
+			if err == nil {
+				tr.landed(res.Path, res.Size, !res.Skipped)
+			}
+			return res, err
+		}, nil
+	case KindAlbumUpload:
+		o, err := parseOptions[uploadOptions](options)
+		if err != nil {
+			return nil, err
+		}
+		t.BytesTotal, t.ItemsTotal = 0, len(o.Sources)
+		return func(ctx context.Context, tr *tracker) (any, error) {
+			opts := o.upload()
+			opts.Observer = tr.observe(obs)
+			return m.app.UploadFilesAs(ctx, o.Sources, t.Dest, o.Policy, o.NoHash, o.presentation(), opts)
+		}, nil
+	case KindRecursiveUpload:
+		o, err := parseOptions[uploadOptions](options)
+		if err != nil {
+			return nil, err
+		}
+		t.BytesTotal, t.ItemsTotal = 0, 0
+		return func(ctx context.Context, tr *tracker) (any, error) {
+			opts := o.upload()
+			opts.Observer = tr.observe(obs)
+			return m.app.UploadRecursive(ctx, t.Source, t.Dest, o.Policy, o.ContinueOnError, o.NoHash, o.IncludeEmptyDirs, opts)
+		}, nil
+	case KindDownload:
+		o, err := parseOptions[downloadOptions](options)
+		if err != nil {
+			return nil, err
+		}
+		t.BytesTotal, t.ItemsTotal = 0, 1
+		return func(ctx context.Context, tr *tracker) (any, error) {
+			opts := service.DownloadOptions{}
+			opts.Observer = tr.observe(obs)
+			res, err := m.app.DownloadFile(ctx, t.Source, t.Dest, o.Policy, opts)
+			if err == nil {
+				tr.landed(absPath(res.Dest), res.Size, !res.Skipped)
+			}
+			return res, err
+		}, nil
+	case KindRecursiveDownload:
+		o, err := parseOptions[downloadOptions](options)
+		if err != nil {
+			return nil, err
+		}
+		t.BytesTotal, t.ItemsTotal = 0, 0
+		return func(ctx context.Context, tr *tracker) (any, error) {
+			opts := service.DownloadOptions{}
+			opts.Observer = tr.observe(obs)
+			return m.app.DownloadRecursive(ctx, t.Source, t.Dest, o.Policy, o.ContinueOnError, opts)
+		}, nil
+	default:
+		return nil, apperr.New(apperr.ErrUsage, "retry is not implemented for transfer kind "+string(t.Kind))
+	}
 }
 
 // activeStages is the stage filter for Transfers that have not ended.
