@@ -50,22 +50,14 @@ func (o AdoptOptions) Validate() error {
 	return nil
 }
 
-// record adds item to the result and reports its outcome: skip and fail
-// actions as skipped and failed, every other action as completed.
+// record adds item to the result and reports its outcome. err is why a
+// failed item failed; its reason stands in when err is nil.
 func (out *AdoptResult) record(obs Observer, item AdoptPlanItem, err error) {
 	out.Items = append(out.Items, item)
-	it := Item{Path: item.Path, MessageID: item.MessageID}
-	switch item.Action {
-	case "skip":
-		obs.item(ItemResult{Item: it, Status: ItemSkipped})
-	case "fail":
-		if err == nil {
-			err = errors.New(item.Reason)
-		}
-		obs.item(ItemResult{Item: it, Status: ItemFailed, Err: err})
-	default:
-		obs.item(ItemResult{Item: it, Status: ItemCompleted})
+	if item.Action == "fail" && err == nil {
+		err = errors.New(item.Reason)
 	}
+	obs.outcome(Item{Path: item.Path, MessageID: item.MessageID}, item.Action, err)
 }
 
 // AdoptPlanItem is one message that would be adopted or restored.

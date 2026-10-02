@@ -750,7 +750,7 @@ func (a *App) publishImportedSingle(ctx context.Context, ch *channelContext, opt
 	if caption == "" {
 		caption = unit.caption
 	}
-	data, err := a.uploadFileWithCaption(ctx, st.local, st.item.Path, opts.Policy, false, st.pres, caption,
+	data, err := a.uploadFile(ctx, st.local, st.item.Path, opts.Policy, false, st.pres, caption,
 		UploadOptions{Observer: importUploadObserver(opts.Observer, []*stagedItem{st})})
 	if err != nil {
 		a.failImported(ctx, ch, opts, st, err)
@@ -1157,16 +1157,11 @@ func (a *App) removeStagedIfNoPending(ctx context.Context, channelID int64, st *
 }
 
 func (a *App) emitImportItem(opts ImportSavedOptions, item *ImportSavedItem) {
-	obs := opts.Observer.changes(opts.DryRun)
-	it := importItem(item)
-	switch item.Action {
-	case "skip":
-		obs.item(ItemResult{Item: it, Status: ItemSkipped})
-	case "fail":
-		obs.item(ItemResult{Item: it, Status: ItemFailed, Err: errors.New(item.Error)})
-	default:
-		obs.item(ItemResult{Item: it, Status: ItemCompleted})
+	var err error
+	if item.Action == "fail" {
+		err = errors.New(item.Error)
 	}
+	opts.Observer.changes(opts.DryRun).outcome(importItem(item), item.Action, err)
 	if opts.Emit == nil {
 		return
 	}

@@ -132,6 +132,19 @@ func (o Observer) stages() Observer {
 	return o
 }
 
+// outcome reports it by the action a call's result records for it: "skip"
+// as skipped, "fail" as failed with err, any other action as completed.
+func (o Observer) outcome(it Item, action string, err error) {
+	switch action {
+	case "skip":
+		o.item(ItemResult{Item: it, Status: ItemSkipped})
+	case "fail":
+		o.item(ItemResult{Item: it, Status: ItemFailed, Err: err})
+	default:
+		o.item(ItemResult{Item: it, Status: ItemCompleted})
+	}
+}
+
 // done reports it completed when err is nil and failed otherwise.
 func (o Observer) done(it Item, err error) {
 	if err != nil {
