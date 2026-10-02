@@ -1,4 +1,7 @@
 import type {
+  AdoptItem,
+  AdoptOptions,
+  AdoptOutcome,
   AuthPrompt,
   AuthStatus,
   AuthUser,
@@ -12,11 +15,22 @@ import type {
   DeleteOutcome,
   DirectoryChanged,
   DiscussionLink,
+  DoctorCheck,
+  DoctorReport,
   Entry,
   FilesDropped,
+  ImportItem,
+  ImportOptions,
+  ImportOutcome,
+  ImportPrompt,
+  ItemEvent,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
+  PathCodecReport,
+  RepairItem,
+  RepairOptions,
+  RepairOutcome,
   ScanOutcome,
   ScanProgress,
   ShareLink,
@@ -28,6 +42,9 @@ import type {
 } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui/models"
 
 export type {
+  AdoptItem,
+  AdoptOptions,
+  AdoptOutcome,
   AuthPrompt,
   AuthStatus,
   AuthUser,
@@ -41,11 +58,22 @@ export type {
   DeleteOutcome,
   DirectoryChanged,
   DiscussionLink,
+  DoctorCheck,
+  DoctorReport,
   Entry,
   FilesDropped,
+  ImportItem,
+  ImportOptions,
+  ImportOutcome,
+  ImportPrompt,
+  ItemEvent,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
+  PathCodecReport,
+  RepairItem,
+  RepairOptions,
+  RepairOutcome,
   ScanOutcome,
   ScanProgress,
   ShareLink,
@@ -156,5 +184,33 @@ export interface Backend {
     omarchy(): Promise<OmarchyState>
     /** Subscribe to omarchy:theme-changed; returns an unsubscribe. */
     onOmarchyTheme(cb: (theme: OmarchyTheme) => void): () => void
+  }
+  import: {
+    /** The dry-run plan; never writes to Telegram. */
+    preview(opts: ImportOptions): Promise<ImportOutcome>
+    /** The real run; rejects with ERR_CONFIRMATION_REQUIRED unconfirmed. */
+    run(opts: ImportOptions): Promise<ImportOutcome>
+    /** Answer the pending import.prompt ("document" or "photo"). */
+    answerPrompt(id: string, choice: string): Promise<void>
+    /** Cancel the pending import.prompt, aborting the import. */
+    cancelPrompt(id: string): Promise<void>
+    /** Subscribes to import.prompt; returns an unsubscribe. */
+    onPrompt(cb: (prompt: ImportPrompt) => void): () => void
+    /** Subscribes to import.item per-item progress; returns an unsubscribe. */
+    onItem(cb: (event: ItemEvent) => void): () => void
+  }
+  maintenance: {
+    /** The adopt dry-run plan; never writes to Telegram or the index. */
+    previewAdopt(opts: AdoptOptions): Promise<AdoptOutcome>
+    /** The real adopt; rejects with ERR_CONFIRMATION_REQUIRED unconfirmed. */
+    adopt(opts: AdoptOptions): Promise<AdoptOutcome>
+    /** Run one repair mode; delete-orphans rejects unconfirmed. */
+    repair(opts: RepairOptions): Promise<RepairOutcome>
+    /** The capability checks (edit, delete, upload, invite, …). */
+    doctor(): Promise<DoctorReport>
+    /** The path-codec self-test and stored-slug verification. */
+    pathCodecDoctor(): Promise<PathCodecReport>
+    /** Subscribes to repair.item per-item progress; returns an unsubscribe. */
+    onRepairItem(cb: (event: ItemEvent) => void): () => void
   }
 }

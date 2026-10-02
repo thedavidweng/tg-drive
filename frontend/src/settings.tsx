@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState } from "react"
 import { Eye, EyeOff } from "lucide-react"
 
 import type { Backend, BackendError, ConfigEntry, OmarchyState, Versions } from "@/backend"
+import { Card, Row, Segmented } from "@/card"
 import { useI18n } from "@/i18n"
 import type { LanguagePref } from "@/i18n"
 import type { ThemeMode } from "@/theme"
@@ -24,51 +25,6 @@ export function SettingsScreen(props: SettingsProps) {
       <Appearance {...props} />
       <Configuration backend={props.backend} />
       <About backend={props.backend} />
-    </div>
-  )
-}
-
-function Card({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <section aria-label={label}>
-      <h2 className="px-1 pb-1.5 text-[11.5px] font-medium tracking-[.04em] text-muted-foreground uppercase">
-        {label}
-      </h2>
-      <ul className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-card">
-        {children}
-      </ul>
-    </section>
-  )
-}
-
-function Row({ children }: { children: ReactNode }) {
-  return <li className="flex min-h-11 items-center gap-3 px-3.5 py-2">{children}</li>
-}
-
-function Segmented<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string
-  options: readonly { value: T; name: string }[]
-  value: T
-  onChange: (value: T) => void
-}) {
-  return (
-    <div role="group" aria-label={label} className="flex rounded-seg bg-seg-track p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          aria-pressed={value === o.value}
-          onClick={() => onChange(o.value)}
-          className="h-6 rounded-control px-3 text-[12.5px] text-ctl-fg transition-colors duration-150 ease-quiet hover:text-fg-2 aria-pressed:bg-seg-thumb aria-pressed:text-fg aria-pressed:shadow-seg"
-        >
-          {o.name}
-        </button>
-      ))}
     </div>
   )
 }

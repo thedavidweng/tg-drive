@@ -1,4 +1,5 @@
 import type {
+  AdoptOutcome,
   AuthPrompt,
   AuthStatus,
   AuthUser,
@@ -9,11 +10,18 @@ import type {
   ChannelStatus,
   ConfigEntry,
   DirectoryChanged,
+  DoctorReport,
   Entry,
   FilesDropped,
+  ImportOptions,
+  ImportOutcome,
+  ImportPrompt,
+  ItemEvent,
   LoginResult,
   OmarchyState,
   OmarchyTheme,
+  PathCodecReport,
+  RepairOutcome,
   ScanProgress,
   Transfer,
   TransferRemoved,
@@ -286,6 +294,25 @@ export interface MemoryTransfers {
   submitError?: BackendError
 }
 
+/** How the in-memory import fake answers. */
+export interface MemoryImport {
+  /** The saved-chat plan preview returns; run returns it with dry_run off. */
+  plan?: ImportOutcome
+  /** When > 0 and the call carries no photos_as, the call emits an
+   * import.prompt and waits for answerPrompt/cancelPrompt, like the facade. */
+  photoCount?: number
+}
+
+/** How the in-memory maintenance fake answers. */
+export interface MemoryMaintenance {
+  adoptPlan?: AdoptOutcome
+  adoptOutcome?: AdoptOutcome
+  /** Repair outcomes by mode; an unlisted mode gets an empty outcome. */
+  repair?: Partial<Record<string, RepairOutcome>>
+  doctor?: DoctorReport
+  pathCodec?: PathCodecReport
+}
+
 export interface MemoryBackendOptions extends MemorySettings {
   auth?: AuthFakeOptions
   transfers?: MemoryTransfers
@@ -301,6 +328,161 @@ export interface MemoryBackendOptions extends MemorySettings {
    * bind choices. Default: one unbound "Archive".
    */
   telegramChannels?: { id: string; title: string }[]
+  import?: MemoryImport
+  maintenance?: MemoryMaintenance
+}
+
+const emptyImportOutcome: ImportOutcome = {
+  dry_run: true,
+  into: "/saved",
+  history_complete: true,
+  imported: 0,
+  skipped: 0,
+  failed: 0,
+  duplicates: 0,
+  captions_merged: 0,
+  sources_deleted: 0,
+  photos: 0,
+  items: [],
+}
+
+const emptyAdoptOutcome: AdoptOutcome = { dry_run: true, adopted: 0, skipped: 0, failed: 0, deleted: 0, items: [] }
+
+const defaultDoctorReport: DoctorReport = {
+  checks: [
+    { name: "auth", status: "pass" },
+    { name: "channel", status: "pass" },
+    { name: "delete", status: "pass" },
+    { name: "edit_old_caption", status: "pass" },
+    { name: "history_read", status: "pass" },
+    { name: "invite_link", status: "pass" },
+    { name: "upload", status: "pass" },
+  ],
+  max_upload_bytes: 2147483648,
+}
+
+const defaultPathCodecReport: PathCodecReport = {
+  fixed_vectors: "pass",
+  db_check: "pass",
+  db_rows: 0,
+  corrupt_rows: 0,
+}
+
+/** The empty outcome of a repair mode the test did not configure. */
+function emptyRepairOutcome(mode: string): RepairOutcome {
+  switch (mode) {
+    case "captions":
+      return { mode, captions: { dry_run: false, total: 0, planned: 0, cleaned: 0, skipped: 0, failed: 0, items: [] } }
+    case "hash":
+      return { mode, hash: { total: 0, backfilled: 0, failed: 0, items: [] } }
+    case "path":
+      return { mode, path: { repaired: "" } }
+    case "orphaned":
+      return { mode, orphaned: { repaired: 0, deleted: 0, invalid: 0 } }
+    case "scan_errors":
+      return { mode, scan_errors: { resolved: 0, pending: 0 } }
+    default:
+      return { mode, pending: { repaired: 0, invalid: 0, orphaned: 0, skipped: 0, locks_cleared: 0 } }
+  }
+}
+
+/** The in-memory import photo prompt, mirroring the facade's prompt seam. */
+class ImportFake {
+  private readonly opts: MemoryImport
+  private listeners = new Set<(p: ImportPrompt) => void>()
+  private pending = new Map<string, (a: { value?: string; err?: BackendError }) => void>()
+  private seq = 0
+
+  constructor(opts: MemoryImport = {}) {
+    this.opts = opts
+  }
+
+  /** Resolves the photo choice, prompting when the plan holds photos and no
+   * choice was given. */
+  private photoChoice(opts: ImportOptions, photos: number): Promise<string> {
+    if (opts.photos_as) return Promise.resolve(opts.photos_as)
+    if (photos <= 0) return Promise.resolve("")
+    return new Promise((resolve, reject) => {
+      const prompt: ImportPrompt = { id: `import-prompt-${++this.seq}`, kind: "photos", photos }
+      this.pending.set(prompt.id, (a) => {
+        if (a.err) {
+          reject(a.err)
+        } else if (a.value === "document" || a.value === "photo") {
+          resolve(a.value)
+        } else {
+          reject({ code: "ERR_USAGE", category: "validation", message: `unknown photo presentation "${a.value}"` } satisfies BackendError)
+        }
+      })
+      queueMicrotask(() => {
+        for (const cb of this.listeners) cb(prompt)
+      })
+    })
+  }
+
+  async call(dryRun: boolean, opts: ImportOptions): Promise<ImportOutcome> {
+    // The service's gates: a real run needs confirmation, delete-source
+    // needs it even on a dry run.
+    if (opts.delete_source && !opts.confirm) throw confirmationRequired
+    if (!dryRun && !opts.confirm) throw confirmationRequired
+    const plan = this.opts.plan ?? emptyImportOutcome
+    const photosAs = await this.photoChoice(opts, this.opts.photoCount ?? plan.photos)
+    const outcome: ImportOutcome = { ...plan, dry_run: dryRun, ...(photosAs ? { photos_as: photosAs } : {}) }
+    if (!dryRun) {
+      // One import.item event per planned item, tally included.
+      let completed = 0
+      let skipped = 0
+      let failed = 0
+      for (const item of outcome.items ?? []) {
+        const status = item.action === "fail" ? "failed" : item.action === "skip" ? "skipped" : "completed"
+        if (status === "completed") completed++
+        else if (status === "skipped") skipped++
+        else failed++
+        this.emitItem({
+          path: item.path ?? "",
+          message_id: item.message_id,
+          status,
+          ...(item.error ? { error: item.error } : {}),
+          completed,
+          skipped,
+          failed,
+        })
+      }
+    }
+    return outcome
+  }
+
+  private itemCbs = new Set<(e: ItemEvent) => void>()
+
+  private emitItem(e: ItemEvent) {
+    for (const cb of this.itemCbs) cb(e)
+  }
+
+  onItem(cb: (e: ItemEvent) => void): () => void {
+    this.itemCbs.add(cb)
+    return () => this.itemCbs.delete(cb)
+  }
+
+  answerPrompt(id: string, choice: string): Promise<void> {
+    const settle = this.pending.get(id)
+    if (!settle) {
+      return Promise.reject({ code: "ERR_USAGE", category: "validation", message: "no pending prompt with that id" } satisfies BackendError)
+    }
+    this.pending.delete(id)
+    settle({ value: choice })
+    return Promise.resolve()
+  }
+
+  cancelPrompt(id: string): Promise<void> {
+    const settle = this.pending.get(id)
+    this.pending.delete(id)
+    settle?.({ err: { code: "ERR_CANCELLED", category: "cancelled", message: "operation cancelled" } satisfies BackendError })
+    return Promise.resolve()
+  }
+
+  onPrompt(cb: (p: ImportPrompt) => void): () => void {
+    this.listeners.add(cb)
+    return () => this.listeners.delete(cb)
+  }
 }
 
 /**
@@ -340,6 +522,7 @@ export class MemoryBackend implements Backend {
   readonly retried: string[] = []
 
   private readonly authFake: AuthFake
+  private readonly importFake: ImportFake
   private readonly opts: MemoryBackendOptions
   private readonly secrets: Set<string>
   private readonly store: Map<string, string | number | boolean>
@@ -354,6 +537,7 @@ export class MemoryBackend implements Backend {
   constructor(opts: MemoryBackendOptions = {}) {
     this.opts = opts
     this.authFake = new AuthFake(opts.auth)
+    this.importFake = new ImportFake(opts.import)
     this.secrets = new Set(opts.secrets ?? [])
     this.store = new Map(Object.entries(opts.config ?? {}))
     this.bound = (opts.channels ?? [{ id: "1001", title: "Drive", discussion: "Drive Discussion" }]).map((c) => ({
@@ -743,6 +927,34 @@ export class MemoryBackend implements Backend {
     onOmarchyTheme: (cb) => (this.opts.onOmarchyTheme ?? (() => () => {}))(cb),
   }
 
+  readonly import: Backend["import"] = {
+    preview: (opts) => this.importFake.call(true, opts),
+    run: (opts) => this.importFake.call(false, opts),
+    answerPrompt: (id, choice) => this.importFake.answerPrompt(id, choice),
+    cancelPrompt: (id) => this.importFake.cancelPrompt(id),
+    onPrompt: (cb) => this.importFake.onPrompt(cb),
+    onItem: (cb) => this.importFake.onItem(cb),
+  }
+
+  readonly maintenance: Backend["maintenance"] = {
+    previewAdopt: async () => this.opts.maintenance?.adoptPlan ?? emptyAdoptOutcome,
+    adopt: async (opts) => {
+      if (!opts.confirm) throw confirmationRequired
+      return this.opts.maintenance?.adoptOutcome ?? { ...emptyAdoptOutcome, dry_run: false }
+    },
+    repair: async (opts) => {
+      const known = ["pending", "orphaned", "scan_errors", "hash", "captions", "path"]
+      if (!known.includes(opts.mode)) {
+        throw { code: "ERR_USAGE", category: "validation", message: `unknown repair mode "${opts.mode}"` } satisfies BackendError
+      }
+      if (opts.mode === "orphaned" && opts.delete_orphaned && !opts.confirm) throw confirmationRequired
+      return this.opts.maintenance?.repair?.[opts.mode] ?? emptyRepairOutcome(opts.mode)
+    },
+    doctor: async () => this.opts.maintenance?.doctor ?? defaultDoctorReport,
+    pathCodecDoctor: async () => this.opts.maintenance?.pathCodec ?? defaultPathCodecReport,
+    onRepairItem: () => () => {},
+  }
+
   /** Test helper: the next scan() call stays open until finishScan(). */
   holdScan(): void {
     this.scanHeld = true
@@ -919,6 +1131,22 @@ export function failingBackend(err: BackendError): Backend {
       answerPrompt: () => Promise.reject(err),
       cancelPrompt: () => Promise.reject(err),
       onPrompt: () => () => {},
+    },
+    import: {
+      preview: fail,
+      run: fail,
+      answerPrompt: () => Promise.reject(err),
+      cancelPrompt: () => Promise.reject(err),
+      onPrompt: () => () => {},
+      onItem: () => () => {},
+    },
+    maintenance: {
+      previewAdopt: fail,
+      adopt: fail,
+      repair: fail,
+      doctor: fail,
+      pathCodecDoctor: fail,
+      onRepairItem: () => () => {},
     },
   }
 }
