@@ -13,7 +13,6 @@ import (
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	"github.com/thedavidweng/tg-drive-cli/internal/config"
 )
@@ -40,11 +39,11 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 			if err := config.EnsureSessionDir(cfg.Storage.SessionPath); err != nil {
 				return r.Error(err)
 			}
-			database, err := sqlitestore.Open(cfg.Storage.DBPath)
+			_, cleanup, err := rt.OpenOfflineApp(cmd)
 			if err != nil {
 				return r.Error(err)
 			}
-			_ = database.Close()
+			cleanup()
 			if rt.JSON() {
 				return r.Success(map[string]any{
 					"config_path":  configPath,

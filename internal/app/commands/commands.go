@@ -26,6 +26,8 @@ type Runtime interface {
 	Renderer() *output.Renderer
 	LoadConfig() (config.Config, string, error)
 	OpenApp(cmd *cobra.Command) (*service.App, func(), error)
+	// OpenOfflineApp opens config and the database without a Telegram client.
+	OpenOfflineApp(cmd *cobra.Command) (*service.App, func(), error)
 }
 
 func EnsureTelegramConfig(cfg *config.Config, configPath string, requirePhone bool) error {
