@@ -207,10 +207,13 @@ function ConfigRow({
 }) {
   const { t } = useI18n()
   const [draft, setDraft] = useState(String(entry.value))
+  // The value the draft is compared against: the revealed one for a secret,
+  // so merely revealing is not an edit.
+  const [baseline, setBaseline] = useState(String(entry.value))
   const [revealed, setRevealed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const masked = entry.secret && !revealed
-  const dirty = !masked && draft !== String(entry.value)
+  const dirty = !masked && draft !== baseline
 
   return (
     <li className="px-3.5 py-2">
@@ -228,6 +231,7 @@ function ConfigRow({
                 onReveal().then(
                   (value) => {
                     setDraft(value)
+                    setBaseline(value)
                     setRevealed(true)
                   },
                   (err: BackendError) => setError(err.message),
@@ -271,6 +275,7 @@ function ConfigRow({
                   onSave(draft).then(
                     (saved) => {
                       setDraft(String(saved.value))
+                      setBaseline(String(saved.value))
                       if (saved.secret) setRevealed(false)
                     },
                     (err: BackendError) => setError(err.message),

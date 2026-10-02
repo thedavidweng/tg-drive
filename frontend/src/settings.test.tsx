@@ -55,6 +55,8 @@ test("Settings lists every config key with secrets masked until revealed", async
   )
   // the other secret stays masked
   expect(screen.queryByText("+15551234567")).toBeNull()
+  // revealing alone is not an edit: no save offers itself
+  expect(screen.queryByRole("button", { name: "Save telegram.api_hash" })).toBeNull()
 })
 
 test("editing a key saves it through the backend and shows the saved value", async () => {
