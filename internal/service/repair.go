@@ -12,10 +12,14 @@ import (
 	"github.com/thedavidweng/tg-drive-cli/core/publisher"
 )
 
-// RepairOptions selects one td repair mode. Path alone repairs that path, and
-// no selection at all repairs pending uploads.
+// RepairOptions selects one td repair mode. No selection at all repairs
+// pending uploads.
 type RepairOptions struct {
-	Path       string
+	// Path is the path argument, nil when none was given. It scopes Captions
+	// and Hash; otherwise it names the one file to repair and takes
+	// precedence over Pending, Orphaned, and ScanErrors. A given empty path
+	// normalizes to "/" like any other.
+	Path       *string
 	Pending    bool
 	Orphaned   bool
 	ScanErrors bool
@@ -61,13 +65,17 @@ func (a *App) Repair(ctx context.Context, opts RepairOptions) (any, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
+	path := ""
+	if opts.Path != nil {
+		path = *opts.Path
+	}
 	switch {
 	case opts.Captions:
-		return a.RepairCaptions(ctx, opts.Path, opts.DryRun, opts.ContinueOnError)
+		return a.RepairCaptions(ctx, path, opts.DryRun, opts.ContinueOnError)
 	case opts.Hash:
-		return a.RepairHash(ctx, opts.Path)
-	case opts.Path != "":
-		return a.RepairPath(ctx, opts.Path)
+		return a.RepairHash(ctx, path)
+	case opts.Path != nil:
+		return a.RepairPath(ctx, path)
 	case opts.Orphaned:
 		return a.repairOrphaned(ctx, opts.DeleteOrphaned)
 	case opts.ScanErrors:

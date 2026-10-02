@@ -112,7 +112,7 @@ func NewRepairCmd(rt Runtime) *cobra.Command {
 				ContinueOnError: continueOnError,
 			}
 			if len(args) == 1 {
-				opts.Path = args[0]
+				opts.Path = &args[0]
 			}
 			if err := opts.Validate(); err != nil {
 				return r.Error(err)

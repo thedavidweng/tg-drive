@@ -48,6 +48,9 @@ func TestE2ESafetyGates(t *testing.T) {
 		{2, "ERR_USAGE", []string{"repair", "--scan-errors", "--hash"}},
 		{2, "ERR_USAGE", []string{"repair", "--delete-orphaned", "--confirm"}},
 		{2, "ERR_USAGE", []string{"repair", "--dry-run"}},
+		// An empty path argument is still a path: it repairs "/", which is
+		// never a file.
+		{2, "ERR_REMOTE_NOT_FOUND", []string{"repair", ""}},
 	}
 	for _, tc := range cases {
 		runE2EExpectError(t, bin, cfgPath, dbPath, statePath, tc.exit, tc.code, tc.args...)

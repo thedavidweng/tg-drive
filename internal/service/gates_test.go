@@ -158,7 +158,7 @@ func TestRepairRejectsMoreThanOneMode(t *testing.T) {
 	for _, opts := range []RepairOptions{
 		{Pending: true, Orphaned: true},
 		{ScanErrors: true, Hash: true},
-		{Hash: true, Captions: true, Path: "/x"},
+		{Hash: true, Captions: true, Pending: true},
 	} {
 		_, err := app.Repair(context.Background(), opts)
 		wantCode(t, err, apperr.ErrUsage)
