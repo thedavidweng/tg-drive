@@ -40,6 +40,9 @@ type LSEntry struct {
 	Hash      string `json:"-"`
 	Status    string `json:"status,omitempty"`
 	Ephemeral bool   `json:"ephemeral,omitempty"`
+	// UpdatedAt is the RFC3339 time the row last changed. It stays out of
+	// the ls --json wire shape; front ends that render a date read it here.
+	UpdatedAt string `json:"-"`
 }
 
 // lsFileJSON is the wire shape of a file entry in ls --json output.
@@ -59,10 +62,14 @@ type lsDirJSON LSEntry
 
 // MarshalJSON pins the ls --json entry contract: file entries always carry
 // hash — the stored blake3 value, "" when unknown — while dir entries keep
-// their historical key set.
+// their historical key set. Fields that never reach the wire (UpdatedAt)
+// are excluded here by construction.
 func (e LSEntry) MarshalJSON() ([]byte, error) {
 	if e.Type == "file" {
-		return json.Marshal(lsFileJSON(e))
+		return json.Marshal(lsFileJSON{
+			Name: e.Name, Path: e.Path, Type: e.Type, Size: e.Size,
+			Hash: e.Hash, Status: e.Status, Ephemeral: e.Ephemeral,
+		})
 	}
 	return json.Marshal(lsDirJSON(e))
 }
@@ -85,10 +92,10 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 		prefix += "/"
 	}
 	rows, err := a.DB.Raw().QueryContext(ctx, `
-		select canonical_path, display_name, 'file' as type, coalesce(size,0), status, 0, coalesce(content_hash,'')
+		select canonical_path, display_name, 'file' as type, coalesce(size,0), status, 0, coalesce(content_hash,''), updated_at
 		from files where channel_id=? and status='active' and canonical_path like ? escape '\'
 		union
-		select canonical_path, display_name, 'dir', 0, '', ephemeral, ''
+		select canonical_path, display_name, 'dir', 0, '', ephemeral, '', updated_at
 		from nodes where channel_id=? and type='dir' and parent_path=?
 		order by type desc, display_name`, channelID, escapeLike(prefix)+"%", channelID, p)
 	if err != nil {
@@ -98,10 +105,10 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 	seen := map[string]bool{}
 	var out []LSEntry
 	for rows.Next() {
-		var fullPath, name, typ, status, contentHash string
+		var fullPath, name, typ, status, contentHash, updatedAt string
 		var size int64
 		var ephemeral int
-		if err := rows.Scan(&fullPath, &name, &typ, &size, &status, &ephemeral, &contentHash); err != nil {
+		if err := rows.Scan(&fullPath, &name, &typ, &size, &status, &ephemeral, &contentHash, &updatedAt); err != nil {
 			return nil, err
 		}
 		childName := name
@@ -119,7 +126,7 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 			continue
 		}
 		seen[fullPath] = true
-		entry := LSEntry{Name: childName, Path: fullPath, Type: typ, Size: size, Status: status, Ephemeral: ephemeral == 1}
+		entry := LSEntry{Name: childName, Path: fullPath, Type: typ, Size: size, Status: status, Ephemeral: ephemeral == 1, UpdatedAt: updatedAt}
 		if typ == "file" {
 			entry.Hash = contentHash
 		}
@@ -133,7 +140,9 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 		case err != nil:
 			return nil, apperr.Wrap(apperr.ErrDB, "ls", err)
 		case found:
-			return []LSEntry{{Name: row.DisplayName, Path: p, Type: "file", Size: row.Size.Int64, Hash: row.ContentHash.String, Status: row.Status}}, nil
+			var updatedAt string
+			_ = a.DB.Raw().QueryRowContext(ctx, `select updated_at from files where id=?`, row.ID).Scan(&updatedAt)
+			return []LSEntry{{Name: row.DisplayName, Path: p, Type: "file", Size: row.Size.Int64, Hash: row.ContentHash.String, Status: row.Status, UpdatedAt: updatedAt}}, nil
 		default:
 			var one int
 			dirErr := a.DB.Raw().QueryRowContext(ctx, `select 1 from nodes where channel_id=? and canonical_path=? and type='dir'`, channelID, p).Scan(&one)
