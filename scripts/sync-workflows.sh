@@ -40,7 +40,7 @@ if [ "$MODE" = "check" ]; then
       continue
     fi
     for wf in "${SYNC_WORKFLOWS[@]}"; do
-      # tg-drive-cli has customized flags for release.yml (WASM/parallelism)
+      # tg-drive-cli has customized flags for release.yml (parallelism)
       if { [ "$repo" = "tg-drive-cli" ] || [ "${CURRENT_REPO##*/}" = "tg-drive-cli" ]; } && [ "$wf" = "release.yml" ]; then
         continue
       fi

@@ -1,7 +1,7 @@
 BINARY_NAME=td
 DIST_DIR=dist
 
-.PHONY: all bootstrap build test test-race test-core-wasm clean lint fmt fmt-check vet ci-local mod-tidy mod-tidy-check snapshot goreleaser-check run-doctor
+.PHONY: all bootstrap build test test-race clean lint fmt fmt-check vet ci-local mod-tidy mod-tidy-check snapshot goreleaser-check run-doctor
 
 all: ci-local build
 
@@ -12,17 +12,8 @@ build:
 	mkdir -p $(DIST_DIR)
 	go build -trimpath -o $(DIST_DIR)/$(BINARY_NAME) ./cmd/td
 
-build-wasm:
-	mkdir -p $(DIST_DIR)
-	GOOS=js GOARCH=wasm go build -trimpath -o $(DIST_DIR)/td.wasm ./cmd/td-wasm
-
 test:
 	go test ./...
-
-test-core-wasm:
-	GOOS=js GOARCH=wasm go test -c ./core/...
-	GOOS=js GOARCH=wasm go build ./core/...
-	rm -f *.test
 
 test-race:
 	go test -race ./...
@@ -40,7 +31,7 @@ lint: fmt-check vet
 	@command -v golangci-lint >/dev/null 2>&1 || (echo "golangci-lint not installed; run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2" && exit 1)
 	golangci-lint run
 
-ci-local: fmt-check vet test test-race test-core-wasm
+ci-local: fmt-check vet test test-race
 
 mod-tidy:
 	go mod tidy

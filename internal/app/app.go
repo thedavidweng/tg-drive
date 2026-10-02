@@ -9,10 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/localfs"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/telegramgotd"
-	"github.com/thedavidweng/tg-drive-cli/core/drive"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram"
 	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
@@ -259,7 +257,6 @@ func (o *runtimeOpts) OpenApp(cmd *cobra.Command) (*service.App, func(), error) 
 		DB:         database,
 		TG:         tg,
 		Channel:    o.channel,
-		Runtime:    drive.NewRuntime(database, localfs.FS{}, tg),
 	}
 	cleanup := func() {
 		if closer, ok := tg.(interface{ Close() error }); ok {

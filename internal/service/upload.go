@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/localfs"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	"github.com/thedavidweng/tg-drive-cli/core/drive"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
@@ -34,7 +34,6 @@ type App struct {
 	ConfigPath string
 	DB         *sqlitestore.DB
 	TG         telegram.Client
-	Runtime    *drive.Runtime
 	// Channel optionally selects a configured channel by title or Telegram ID
 	// (from --channel / TD_CHANNEL). Empty selects the first configured one.
 	Channel string
@@ -50,10 +49,7 @@ type App struct {
 }
 
 func (a *App) files() ports.FileSystem {
-	if a.Runtime == nil || a.Runtime.Files == nil {
-		panic("runtime filesystem not configured")
-	}
-	return a.Runtime.Files
+	return localfs.FS{}
 }
 
 func (a *App) fileIndex() ports.FileIndex {

@@ -31,7 +31,7 @@ needed for private repos.
 ## Workflows
 
 - `.github/workflows/ci.yml` runs two jobs:
-  - `test` (25m): tidy, fmt, vet, lint, unit tests, race, WASM, `make build`, coverage
+  - `test` (25m): tidy, fmt, vet, lint, unit tests, race, `make build`, coverage
   - `snapshot` (30m): `goreleaser build --snapshot --clean` on its own runner
 - `.github/workflows/release-please.yml` manages release PRs, tags, and
   releases, then dispatches packaging.

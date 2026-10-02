@@ -5,7 +5,7 @@
 ```sh
 make test
 make test-race
-make ci-local          # fmt-check, vet, unit tests, race, WASM compile
+make ci-local          # fmt-check, vet, unit tests, race
 ```
 
 Unit coverage includes path normalization, slug generation, UTF-16 caption

@@ -9,17 +9,16 @@ import (
 	"testing"
 )
 
-// Core packages must stay free of platform-specific imports so they compile to WASM.
+// Core is the domain layer: adapters, storage drivers, gotd/td, and the CLI
+// framework depend on it, never the other way around.
 var forbiddenImports = []string{
-	"os",
-	"path/filepath",
 	"database/sql",
 	"net/http",
 	"prefix:github.com/gotd/td/",
 	"modernc.org/sqlite",
 	"github.com/spf13/cobra",
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore",
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/telegramgotd",
+	"prefix:github.com/thedavidweng/tg-drive-cli/adapters/",
+	"prefix:github.com/thedavidweng/tg-drive-cli/internal/",
 }
 
 func TestCorePackagesAvoidForbiddenImports(t *testing.T) {
