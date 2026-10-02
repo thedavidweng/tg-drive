@@ -60,7 +60,11 @@ func New(app *service.App, opts Options) *Manager {
 	if n < 1 {
 		n = defaultConcurrency
 	}
-	return &Manager{app: app, opts: opts, owner: newOwnerToken(), slots: make(chan struct{}, n)}
+	m := &Manager{app: app, opts: opts, owner: newOwnerToken(), slots: make(chan struct{}, n)}
+	// Retention housekeeping at Manager start. A failed prune is not the
+	// caller's failure: the next Manager start retries.
+	_ = m.pruneFinished(context.Background(), time.Now().UTC().Add(-retention))
+	return m
 }
 
 // Upload asks for one local file to be uploaded, as service.App.UploadFileAs

@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
@@ -15,10 +13,10 @@ import (
 func NewTransfersCmd(rt Runtime) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "transfers",
-		Short: "List, inspect, and cancel Transfers",
+		Short: "List, inspect, watch, and cancel Transfers",
 	}
 	GroupUsage(rt, c)
-	c.AddCommand(newTransfersListCmd(rt), newTransfersShowCmd(rt), newTransfersCancelCmd(rt))
+	c.AddCommand(newTransfersListCmd(rt), newTransfersShowCmd(rt), newTransfersCancelCmd(rt), newTransfersWatchCmd(rt))
 	return c
 }
 
@@ -59,8 +57,9 @@ func newTransfersListCmd(rt Runtime) *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			for _, t := range list {
-				_, _ = fmt.Fprintf(out, "%s  %s  %s  %s/%s  %s -> %s\n", t.ID, t.Stage, t.Kind,
-					humanSize(t.BytesDone), humanSize(t.BytesTotal), t.Source, t.Dest)
+				if err := printTransferLine(out, t); err != nil {
+					return r.Error(err)
+				}
 			}
 			return nil
 		},

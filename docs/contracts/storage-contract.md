@@ -278,6 +278,10 @@ them.
 - Timestamps are fixed-width UTC text
   (`2006-01-02T15:04:05.000000000Z`), so they sort in time order;
   `finished_at` is empty until the Transfer ends.
+- Retention: when a Transfer Manager starts (any command that submits or
+  lists Transfers starts one), it deletes the rows in a terminal stage
+  whose `finished_at` is more than 30 days old. Active Transfers and newer
+  history are kept.
 
 ## Operation locks
 

@@ -278,6 +278,18 @@ stage:
 `td transfers show <id>` returns one Transfer (ADR 0033); `td transfers
 list` returns `{"transfers": [...]}`, newest first, `[]` when none match.
 
+`td transfers watch --events` (or `--json`) streams `transfer.stage`
+events — the same payload shape as `td cp --events` emits — for the
+Transfers of every process, not just the watching one. The watch rereads
+the index every 250 ms and reports what it observes: a Transfer already
+running enters the stream at its current stage, and one that passes a
+stage between two polls is reported at its later stage, so events may skip
+stages. A Transfer that already ended when the watch started is history
+and emits nothing. The stream runs until Ctrl-C, which closes it with the
+usual `ERR_CANCELLED` error envelope (exit 130); without `--json` that
+error is human text on stderr and the stdout stream holds `transfer.stage`
+events only.
+
 ```json
 {
   "ok": true,
