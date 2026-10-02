@@ -93,10 +93,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				return r.Error(err)
 			}
 			if dryRun {
-				plan := map[string]any{"local": args[:len(args)-1], "remote": args[len(args)-1], "policy": string(policy)}
-				if replace {
-					plan["would_replace"] = args[len(args)-1]
-				}
+				plan := service.PlanUpload(args[:len(args)-1], args[len(args)-1], policy)
 				if events {
 					return r.Event("cp.dry-run", plan)
 				}
