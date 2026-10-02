@@ -219,10 +219,11 @@ func (r *fileRecord) Rename(ctx context.Context, dst string) error {
 		// The group caption belongs to the whole album, so only the index
 		// follows the member.
 		if _, err := a.publisher().Reindex(ctx, publisher.ReindexRequest{
-			ChannelRowID:  r.channelID,
-			FileID:        r.row.ID,
-			MessageID:     msgID,
-			ManifestMsgID: manID,
+			ChannelRowID:   r.channelID,
+			FileID:         r.row.ID,
+			MessageID:      msgID,
+			ManifestMsgID:  manID,
+			ManifestChatID: r.row.ManifestChat,
 			Meta: manifest.ParsedMeta{
 				CanonicalPath: dst,
 				DisplayName:   fsmodel.BaseName(dst),

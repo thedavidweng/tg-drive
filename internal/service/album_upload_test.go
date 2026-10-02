@@ -636,3 +636,63 @@ func TestReplaceAlbumMemberKeepsInventory(t *testing.T) {
 		})
 	}
 }
+
+// TestMoveAlbumMemberKeepsCommentCarrier moves one member of an album whose
+// inventory is a discussion comment, then removes it. The moved row must keep
+// pointing at the comment carrier; otherwise the follow-up rm resolves the
+// inventory id against the channel and rewrites the wrong record.
+func TestMoveAlbumMemberKeepsCommentCarrier(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+
+	if _, err := app.UploadFilesAs(ctx, writeLocals(t, 3), "/albums/", ConflictFail, false, Presentation{}); err != nil {
+		t.Fatal(err)
+	}
+	chatOf := func(p string) string {
+		t.Helper()
+		var chat string
+		if err := app.DB.Raw().QueryRow(`select coalesce(manifest_chat_tg_id,'') from files where canonical_path=? and status='active'`, p).Scan(&chat); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		return chat
+	}
+	before := chatOf("/albums/b.bin")
+	if before == "" {
+		t.Fatal("album inventory is not a discussion comment")
+	}
+
+	if err := app.MoveFile(ctx, "/albums/b.bin", "/moved/b.bin"); err != nil {
+		t.Fatal(err)
+	}
+	if got := chatOf("/moved/b.bin"); got != before {
+		t.Fatalf("moved member manifest chat = %q, want %q", got, before)
+	}
+
+	if _, err := app.DeleteFile(ctx, "/moved/b.bin", DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	var inventories []manifest.AlbumMeta
+	for _, m := range machineRecords(t, app, ctx) {
+		if strings.Contains(m.Text, "td-album:v1") {
+			meta, err := manifest.ParseAlbumReply(m.Text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inventories = append(inventories, meta)
+		}
+	}
+	if len(inventories) != 1 || len(inventories[0].Files) != 2 {
+		t.Fatalf("inventories after mv+rm = %+v, want one listing two members", inventories)
+	}
+	for _, f := range inventories[0].Files {
+		if f.CanonicalPath != "/albums/a.bin" && f.CanonicalPath != "/albums/c.bin" {
+			t.Fatalf("inventory lists %q after removing the moved member", f.CanonicalPath)
+		}
+	}
+	for _, p := range []string{"/albums/a.bin", "/albums/c.bin"} {
+		if fileStatus(t, app, p) != "active" {
+			t.Fatalf("%s not active after removing a moved sibling", p)
+		}
+	}
+}
