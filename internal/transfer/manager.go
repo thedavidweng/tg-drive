@@ -328,35 +328,104 @@ func submit[T any](ctx context.Context, m *Manager, t Transfer, options string,
 	row := t.row()
 	row.Options = options
 	row.OwnerToken = m.owner
+	// The owner leases the Transfer from submission on, renewed by the
+	// heartbeat below: a queued Transfer whose process dies is interrupted
+	// by its readers just like a running one.
+	row.LeaseExpiresAt = formatTime(now.Add(m.app.LockTTL()))
 	if err := m.app.DB.InsertTransfer(ctx, row); err != nil {
 		return nil, err
 	}
+	tctx, cancel := context.WithCancel(ctx)
 	// A Transfer submitted without an item total (the recursive kinds, whose
 	// item count only the walk discovers) grows it as items report; one
 	// submitted with a total keeps it.
 	tr := &tracker{m: m, t: t, written: now, ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0}
+	stop := m.leaseHeartbeat(t.ID, tr.ctx, cancel)
 	tr.notify(m.opts.Observer.OnStage)
 	h := &Handle[T]{id: t.ID, done: make(chan struct{})}
 	go func() {
+		// finish records the ending before the heartbeat stops and Wait
+		// unblocks, so a finished Transfer's lease never advances again.
 		defer close(h.done)
+		defer stop()
+		defer cancel()
 		select {
 		case m.slots <- struct{}{}:
-		case <-ctx.Done():
+		case <-tctx.Done():
 			h.err = apperr.Cancelled()
 			tr.finish(h.err)
 			return
 		}
 		defer func() { <-m.slots }()
-		h.result, h.err = run(ctx, tr)
+		h.result, h.err = run(tctx, tr)
 		// A Transfer ends cancelled, not failed, when its context stopped
 		// it; AfterCancel keeps the code of a failure that left durable
 		// state, which still ends the Transfer failed.
-		if h.err != nil && ctx.Err() != nil {
+		if h.err != nil && tctx.Err() != nil {
 			h.err = apperr.AfterCancel(h.err)
 		}
 		tr.finish(h.err)
 	}()
 	return h, nil
+}
+
+// leaseHeartbeat renews the Transfer's lease and polls its cancel-requested
+// flag on the Operation-lock heartbeat: same TTL, renewed at one third of
+// it. A set flag — written by any process sharing the index — cancels the
+// Transfer's context, as does a renewal that finds the lease lost, so a
+// Transfer never runs unowned. It writes with writeCtx, which outlives the
+// Transfer's cancellation. The returned stop waits for the heartbeat to
+// exit.
+func (m *Manager) leaseHeartbeat(id string, writeCtx context.Context, cancel context.CancelFunc) (stop func()) {
+	ttl := m.app.LockTTL()
+	interval := ttl / 3
+	if interval <= 0 {
+		interval = time.Second
+	}
+	stopCh := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				ok, err := m.app.DB.RenewTransferLease(writeCtx, id, m.owner, formatTime(time.Now().UTC().Add(ttl)))
+				if err != nil || !ok {
+					cancel()
+					return
+				}
+				if requested, err := m.app.DB.TransferCancelRequested(writeCtx, id); err == nil && requested {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return func() { close(stopCh); <-done }
+}
+
+// Cancel requests the cancellation of a non-terminal Transfer, from any
+// process sharing the index: the owner notices the flag on its lease
+// heartbeat and ends the Transfer cancelled. Cancelling while the request
+// is already recorded is a no-op; an ended Transfer is ERR_USAGE and an
+// unknown ID is ERR_TRANSFER_NOT_FOUND.
+func (m *Manager) Cancel(ctx context.Context, id string) (*Transfer, error) {
+	set, err := m.app.DB.SetTransferCancelRequested(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	t, err := m.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !set {
+		return nil, apperr.New(apperr.ErrUsage, "transfer already ended ("+string(t.Stage)+"): "+id)
+	}
+	return t, nil
 }
 
 // Filter selects Transfers to list. The zero Filter selects the active

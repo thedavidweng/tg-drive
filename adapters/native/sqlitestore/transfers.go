@@ -112,6 +112,61 @@ func (d *DB) GetTransfer(ctx context.Context, id string) (*TransferRow, error) {
 	return &rows[0], nil
 }
 
+// RenewTransferLease moves a running Transfer's lease to expiresAt, done by
+// its owner's heartbeat. It reports whether the row was renewed: false when
+// the Transfer ended or another owner holds it, which tells the owner to
+// stop.
+func (d *DB) RenewTransferLease(ctx context.Context, id, owner, expiresAt string) (bool, error) {
+	res, err := d.sql.ExecContext(ctx,
+		`update transfers set lease_expires_at=? where id=? and owner_token=? and finished_at=''`,
+		expiresAt, id, owner)
+	if err != nil {
+		return false, apperr.Wrap(apperr.ErrDB, "renew transfer lease", err)
+	}
+	n, err := res.RowsAffected()
+	return err == nil && n > 0, nil
+}
+
+// TransferCancelRequested reports whether a Transfer's cancellation was
+// requested.
+func (d *DB) TransferCancelRequested(ctx context.Context, id string) (bool, error) {
+	var requested bool
+	err := d.sql.QueryRowContext(ctx, `select cancel_requested from transfers where id=?`, id).Scan(&requested)
+	if err != nil {
+		return false, apperr.Wrap(apperr.ErrDB, "read transfer cancel flag", err)
+	}
+	return requested, nil
+}
+
+// SetTransferCancelRequested marks a Transfer's cancellation requested. It
+// reports whether the flag was set: false when no such Transfer exists or
+// it already ended.
+func (d *DB) SetTransferCancelRequested(ctx context.Context, id string) (bool, error) {
+	res, err := d.sql.ExecContext(ctx,
+		`update transfers set cancel_requested=1 where id=? and finished_at=''`, id)
+	if err != nil {
+		return false, apperr.Wrap(apperr.ErrDB, "request transfer cancel", err)
+	}
+	n, err := res.RowsAffected()
+	return err == nil && n > 0, nil
+}
+
+// InterruptTransfer marks a non-terminal Transfer interrupted, as read with
+// lease leaseExpiresAt. The lease value is part of the condition, so a
+// renewal that landed since the read turns the marking into a no-op instead
+// of interrupting a live Transfer. It reports whether the row was marked.
+func (d *DB) InterruptTransfer(ctx context.Context, id, leaseExpiresAt, now string) (bool, error) {
+	res, err := d.sql.ExecContext(ctx,
+		`update transfers set stage='interrupted', updated_at=?, finished_at=?
+		where id=? and lease_expires_at=? and finished_at=''`,
+		now, now, id, leaseExpiresAt)
+	if err != nil {
+		return false, apperr.Wrap(apperr.ErrDB, "mark transfer interrupted", err)
+	}
+	n, err := res.RowsAffected()
+	return err == nil && n > 0, nil
+}
+
 // ListTransfers reads the Transfers in one of stages, every Transfer when
 // stages is empty, newest first.
 func (d *DB) ListTransfers(ctx context.Context, stages []string) ([]TransferRow, error) {

@@ -19,11 +19,21 @@ import (
 // is cancelled so fn aborts instead of continuing unprotected. Locks are
 // released on a background context afterwards, so cancelling the caller (e.g.
 // Ctrl-C) cannot strand a path for the remaining TTL.
-func (a *App) withLocks(ctx context.Context, keys []string, fn func(ctx context.Context) error) error {
+// defaultLockTTL applies when locks.ttl_seconds is unset.
+const defaultLockTTL = 900 * time.Second
+
+// LockTTL is the lease time of Operation locks and of the Transfer owner's
+// lease (ADR 0033): both renew on a heartbeat at one third of it.
+func (a *App) LockTTL() time.Duration {
 	ttl := time.Duration(a.Cfg.Locks.TTLSeconds) * time.Second
 	if ttl <= 0 {
-		ttl = 900 * time.Second
+		ttl = defaultLockTTL
 	}
+	return ttl
+}
+
+func (a *App) withLocks(ctx context.Context, keys []string, fn func(ctx context.Context) error) error {
+	ttl := a.LockTTL()
 	sorted := append([]string(nil), keys...)
 	sort.Strings(sorted)
 	owner := newOwnerToken()
