@@ -14,8 +14,8 @@ Most sync tools treat the cloud as a mirror of a local database. `td` inverts
 that: **Telegram messages are the source of truth; SQLite is a cache**. Every
 design decision follows from this:
 
-- Delete the database and nothing is lost — `td scan --full` rebuilds it from
-  the channel.
+- Delete the database and nothing is lost — `td init <root> --bind-channel`
+  rebuilds it from the channel.
 - The channel stays a normal channel — any Telegram client can browse and
   download without `td`.
 - Writes must land on Telegram first; the index is updated as a record of

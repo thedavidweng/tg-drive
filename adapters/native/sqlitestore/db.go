@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/fileperm"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/model"
@@ -203,6 +204,11 @@ func Open(path string) (*DB, error) {
 			return nil, apperr.Wrap(apperr.ErrDB, "create database directory", err)
 		}
 	}
+	// Pre-create the file owner-only: SQLite gives the -wal and -shm
+	// sidecars the main file's mode, so this keeps all three private.
+	if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600); err == nil {
+		_ = f.Close()
+	}
 	sqlDB, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "open database", err)
@@ -213,6 +219,11 @@ func Open(path string) (*DB, error) {
 	if err := d.init(); err != nil {
 		_ = sqlDB.Close()
 		return nil, err
+	}
+	// Best effort: a loosened DB (copied, restored from backup) is tightened
+	// on next open; td doctor reports files that stay readable by others.
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		_ = fileperm.Restrict(p)
 	}
 	return d, nil
 }

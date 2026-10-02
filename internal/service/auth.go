@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/fileperm"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
 	"github.com/thedavidweng/tg-drive-cli/core/manifest"
@@ -88,6 +89,9 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 			}, nil
 		}
 	}
+	if abs, err := filepath.Abs(localRoot); err == nil {
+		localRoot = abs
+	}
 	var ch *telegram.Channel
 	switch {
 	case create != "":
@@ -135,17 +139,29 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 	if err := a.DB.SetDiscussionGroup(ctx, channelRowID, fmt.Sprintf("%d", group.ID), fmt.Sprintf("%d", group.AccessHash), group.Title); err != nil {
 		return nil, err
 	}
-	a.initScan(ctx)
-	return map[string]any{
+	out := map[string]any{
 		"channel_id":            ch.ID,
 		"channel_title":         ch.Title,
 		"local_root":            localRoot,
 		"discussion_channel_id": group.ID,
-	}, nil
+	}
+	// Binding an existing drive rebuilds its index here. A failed scan
+	// leaves a usable binding, so report it instead of failing init.
+	if scanned, err := a.initScan(ctx, ch.ID); err != nil {
+		out["scan_error"] = err.Error()
+	} else {
+		out["indexed_files"] = scanned["active"]
+	}
+	return out, nil
 }
 
-func (a *App) initScan(ctx context.Context) {
-	_, _ = a.Scan(ctx, ScanOptions{Full: true})
+// initScan full-scans the channel just bound; without pinning the selector,
+// Scan would pick the first channel in the DB when several are bound.
+func (a *App) initScan(ctx context.Context, tgChannelID int64) (map[string]any, error) {
+	prev := a.Channel
+	a.Channel = strconv.FormatInt(tgChannelID, 10)
+	defer func() { a.Channel = prev }()
+	return a.Scan(ctx, ScanOptions{Full: true})
 }
 
 // findRootBinding returns the channel already bound to localRoot for the
@@ -245,7 +261,13 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 		checks["session_file"] = "pass"
 	} else {
 		checks["session_file"] = "warn"
-		hints["session_file"] = fmt.Sprintf("no session file at %s; run: td auth login", a.Cfg.Storage.SessionPath)
+		hints["session_file"] = fmt.Sprintf("no session file at %s; run: td auth login", config.DisplayPath(a.Cfg.Storage.SessionPath))
+	}
+	if loose := a.loosePrivateFiles(); len(loose) == 0 {
+		checks["file_permissions"] = "pass"
+	} else {
+		checks["file_permissions"] = "warn"
+		hints["file_permissions"] = "readable by other users: " + strings.Join(loose, ", ") + "; restrict them to your account (chmod 600 on POSIX)"
 	}
 	checks["caption_counter"] = captionCounterSelfTest()
 	checks["path_codec"] = pathCodecSelfTest()
@@ -264,14 +286,23 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 	_ = user
 
 	if a.DB != nil {
-		if _, err := a.DB.JournalMode(ctx); err != nil {
+		mode, err := a.DB.JournalMode(ctx)
+		switch {
+		case err != nil:
 			checks["db"] = "fail"
-			hints["db"] = fmt.Sprintf("database error at %s; check storage.db_path", a.Cfg.Storage.DBPath)
-		} else {
+			checks["db_wal"] = "unknown"
+			hints["db"] = fmt.Sprintf("database error at %s; check storage.db_path", config.DisplayPath(a.Cfg.Storage.DBPath))
+		case strings.EqualFold(mode, "wal"):
 			checks["db"] = "pass"
+			checks["db_wal"] = "pass"
+		default:
+			checks["db"] = "pass"
+			checks["db_wal"] = "fail"
+			hints["db_wal"] = fmt.Sprintf("journal_mode is %q, not WAL; concurrent td processes may hit lock errors (network filesystems often refuse WAL)", mode)
 		}
 	} else {
 		checks["db"] = "unknown"
+		checks["db_wal"] = "unknown"
 	}
 
 	channelID, _, chErr := a.channelID(ctx)
@@ -283,6 +314,7 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 		checks["invite_link"] = "unknown"
 		checks["edit_old_caption"] = "unknown"
 		checks["file_size_limit"] = "unknown"
+		checks["history_read"] = "unknown"
 		// Saved Messages is independent of the bound drive channel. Probe it
 		// with a zero channel id so `td doctor` can still report whether
 		// `td import saved` is available before `td init`.
@@ -298,6 +330,14 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 	} else {
 		checks["channel"] = "pass"
 		tgChID, _ := a.tgChannelID(ctx)
+		// One-message page: proves td scan can page the channel history
+		// without walking it.
+		if _, err := a.TG.History(ctx, tgChID, 0, 1); err != nil {
+			checks["history_read"] = "fail"
+			hints["history_read"] = "cannot read channel history, so td scan cannot rebuild the index: " + telegram.MapError(err).Error()
+		} else {
+			checks["history_read"] = "pass"
+		}
 		caps, err := a.TG.Doctor(ctx, tgChID)
 		if err != nil {
 			checks["upload"] = "unknown"
@@ -325,11 +365,8 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 			out["saved_history_ok"] = caps.SavedHistoryOK
 			out["saved_delete_ok"] = caps.SavedDeleteOK
 			switch {
-			case caps.MaxUploadBytes >= a.Cfg.Limits.PremiumUploadBytes:
-				checks["file_size_limit"] = "pass"
 			case caps.MaxUploadBytes >= a.Cfg.Limits.FreeUploadBytes:
-				checks["file_size_limit"] = "warn"
-				hints["file_size_limit"] = fmt.Sprintf("free-tier upload limit (%d bytes); Telegram Premium raises it", caps.MaxUploadBytes)
+				checks["file_size_limit"] = "pass"
 			default:
 				checks["file_size_limit"] = "fail"
 				hints["file_size_limit"] = "upload limit below the expected free tier; check account status"
@@ -342,6 +379,25 @@ func (a *App) Doctor(ctx context.Context) (map[string]any, error) {
 		out["hints"] = hints
 	}
 	return out, nil
+}
+
+// loosePrivateFiles lists td's private files that other users can read,
+// in display form.
+func (a *App) loosePrivateFiles() []string {
+	paths := []string{a.ConfigPath, a.Cfg.Storage.SessionPath, a.Cfg.Storage.DBPath}
+	if p := a.Cfg.Storage.DBPath; p != "" {
+		paths = append(paths, p+"-wal", p+"-shm")
+	}
+	var loose []string
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if ok, err := fileperm.IsPrivate(p); err == nil && !ok {
+			loose = append(loose, config.DisplayPath(p))
+		}
+	}
+	return loose
 }
 
 func boolCheck(ok bool) string {

@@ -149,10 +149,13 @@ func NewAuthCmd(rt Runtime) *cobra.Command {
 			if rt.JSON() {
 				return r.Success(data)
 			}
-			if data["authenticated"] == true {
+			switch {
+			case data["authenticated"] == true:
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "logged in as %v (%v)\n", data["display_name"], data["phone"])
-			} else {
+			case app.Cfg.Telegram.APIID == 0 || app.Cfg.Telegram.APIHash == "":
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "not logged in; run: td auth setup, then td auth login")
+			default:
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "not logged in; run: td auth login")
 			}
 			return nil
 		},
@@ -227,8 +230,7 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 					return r.Error(apperr.New(apperr.ErrChannelNotFound, "select a channel").WithDetails(map[string]any{"channels": channelsToMap(chs)}))
 				}
 				if len(chs) == 0 {
-					_, _ = fmt.Fprintln(os.Stderr, "no existing channels; use --create-channel or --bind-channel")
-					return r.Error(apperr.New(apperr.ErrChannelNotFound, "no existing channels"))
+					return r.Error(apperr.New(apperr.ErrChannelNotFound, "no existing channels to bind; create one with: td init "+args[0]+" --create-channel"))
 				}
 				selected, err := selectChannelInteractively(bufio.NewReader(os.Stdin), chs)
 				if err != nil {
@@ -253,7 +255,13 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 				_, _ = fmt.Fprintf(out, "already initialized: %v is bound to channel %q (id %v)\n", data["local_root"], data["channel_title"], data["channel_id"])
 				_, _ = fmt.Fprintln(out, "use --bind-channel to rebind, or init a different directory")
 			} else {
-				_, _ = fmt.Fprintf(out, "initialized %v -> channel %q (id %v)\n", data["local_root"], data["channel_title"], data["channel_id"])
+				_, _ = fmt.Fprintf(out, "initialized %v -> channel %q (id %v)\n", config.DisplayPath(fmt.Sprint(data["local_root"])), data["channel_title"], data["channel_id"])
+				if msg, ok := data["scan_error"].(string); ok {
+					_, _ = fmt.Fprintf(os.Stderr, "warning: initial scan failed (%s); run: td scan --full\n", msg)
+				} else if n, _ := data["indexed_files"].(int); n > 0 {
+					_, _ = fmt.Fprintf(out, "indexed %d existing files from Telegram; next: td tree /\n", n)
+					return nil
+				}
 				_, _ = fmt.Fprintln(out, "next: td cp <local-file> /<remote-path>")
 			}
 			return nil

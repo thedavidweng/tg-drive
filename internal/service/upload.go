@@ -29,10 +29,12 @@ import (
 
 // App is the main application service.
 type App struct {
-	Cfg     config.Config
-	DB      *sqlitestore.DB
-	TG      telegram.Client
-	Runtime *drive.Runtime
+	Cfg config.Config
+	// ConfigPath is the resolved config file, checked by td doctor.
+	ConfigPath string
+	DB         *sqlitestore.DB
+	TG         telegram.Client
+	Runtime    *drive.Runtime
 	// Channel optionally selects a configured channel by title or Telegram ID
 	// (from --channel / TD_CHANNEL). Empty selects the first configured one.
 	Channel string
@@ -117,7 +119,8 @@ func (a *App) channelID(ctx context.Context) (int64, string, error) {
 	} else {
 		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, title from channels limit 1`).Scan(&id, &tgID, &title)
 		if err == sql.ErrNoRows {
-			return 0, "", apperr.New(apperr.ErrChannelNotFound, "no channel configured; run: td init <local-root> --create-channel")
+			return 0, "", apperr.New(apperr.ErrChannelNotFound,
+				"no channel bound in this database; run: td init <local-root> --create-channel (new drive) or --bind-channel (existing drive, rebuilds the index)")
 		}
 	}
 	return id, tgID, err

@@ -19,7 +19,7 @@ without changing anything.
 td doctor
 ```
 
-Captured from a real run (free-tier account):
+Example (free-tier account):
 
 ```text
 auth               pass
@@ -27,18 +27,30 @@ caption_counter    pass
 channel            pass
 config             pass
 db                 pass
+db_wal             pass
 delete             pass
+discussion         pass
 edit_old_caption   pass
-file_size_limit    warn — free-tier upload limit (2147483648 bytes); Telegram Premium raises it
+file_permissions   pass
+file_size_limit    pass
+history_read       pass
 invite_link        pass
 path_codec         pass
+saved_delete       pass
+saved_history      pass
 session_file       pass
 upload             pass
-max_upload         2.0 GB
+max_upload         2.0 GB per file
+
+18 passed, 0 warnings, 0 failed
 ```
 
 Read it as: every row must `pass` for that capability to be assumed. A `warn`
-is informational; a `fail` is your problem. Notably, `edit_old_caption` can
+comes with a fix after the dash; a `fail` blocks that feature. `unknown`
+means the check could not run, usually because an earlier one (auth, channel)
+failed. `history_read` failing means `td scan` cannot rebuild the index;
+`file_permissions` warns when your config, session, or database is readable
+by other users. Notably, `edit_old_caption` can
 flip to fail at any time — Telegram refuses edits on old messages
 (`ERR_MESSAGE_NOT_EDITABLE`), so never build logic that assumes edits work.
 
@@ -68,26 +80,21 @@ behind.
 td status
 ```
 
-Captured from a real run (identifiers masked):
+Example (identifiers masked):
 
 ```text
-authenticated: true
-channel_id: <channel-id>
-db_path: /Users/<you>/.local/share/tg-drive-cli/local_cache.db
-files: none
-last_full_scan_at: 2026-08-14T22:17:54Z
-last_scan_at: 2026-08-14T22:17:54Z
-last_scanned_message_id: 16
-orphaned: 0
-scan_errors_pending: 0
-stale_locks: 0
-stale_pending: 0
-upload_limit_bytes: 2147483648
-upload_states: 0
-user_id: <user-id>
+account        logged in as <name> (user <user-id>)
+channel        Pictures [TD] (id <channel-id>)
+local root     ~/Pictures
+files          12 active
+last scan      2026-08-14T22:17:54Z (last full: 2026-08-14T22:17:54Z)
+upload limit   2.0 GB per file
+database       ~/.local/share/tg-drive-cli/local_cache.db
+health         ok
 ```
 
-What to look for:
+`health` lists anything that needs attention together with the command that
+fixes it. The same counters are in `td status --json`:
 
 | Field | Suspicious when | Fix |
 | --- | --- | --- |
@@ -96,6 +103,24 @@ What to look for:
 | `stale_locks` | > 0 after a killed process | `td repair --pending` clears locks |
 | `scan_errors_pending` | > 0 | `td repair --scan-errors` |
 | `files` | empty but the channel has media | [adopt](adopt-an-existing-channel.md) or `td scan --full` |
+
+## Verbose diagnostics
+
+**Scenario:** a command is slow or fails with a Telegram error and you want
+to see what it did. Add `--verbose` (or set `TD_VERBOSE=1`):
+
+```text
+$ td --verbose ls /
+debug: config ~/.config/tg-drive-cli/config.toml (found)
+debug: db ~/.local/share/tg-drive-cli/local_cache.db
+debug: session ~/.config/tg-drive-cli/session.json
+DIR  Pictures/
+```
+
+Commands that talk to Telegram also log the connection and each RPC with its
+latency, retries of transient server errors, and flood-wait sleeps.
+Diagnostics go to stderr, so `--json` output stays parseable, and they never
+include credentials, your phone number, or file contents.
 
 ## Rate limits (flood waits)
 
@@ -139,6 +164,7 @@ code and only asks for a fresh one with `--resend`.
 | `ERR_OPERATION_LOCKED` | another process holds the path lock | wait, or clear stale locks via `td repair --pending` |
 | `ERR_ORPHANED_UPLOAD` | crash between media accept and index write | `td repair --orphaned` |
 | `ERR_AUTH_REQUIRED` | no session | `td auth setup`, then `td auth login` |
+| `ERR_CHANNEL_NOT_FOUND` | no channel bound in this database (new machine, deleted DB) | `td init <root> --bind-channel` for an existing drive, `--create-channel` for a new one |
 
 Exit codes map error categories: 1 general, 2 usage/path, 3 auth/config,
 4 telegram/platform, 5 db/repair, 10 confirmation. The authoritative table is

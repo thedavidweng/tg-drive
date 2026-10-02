@@ -3,6 +3,7 @@ package telegramgotd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,11 +27,18 @@ import (
 //   - FLOOD_WAIT is handled reactively: the middleware sleeps the requested
 //     duration and retries the same request, unless the wait would exceed the
 //     configured maximum.
+//   - Transient server errors (5xx, timeouts) are retried with bounded
+//     exponential backoff, but only for idempotent methods: a send or edit
+//     that failed server-side may still have been applied, and replaying it
+//     could duplicate a post.
 type RateLimiter struct {
 	waitFlood  bool
 	maxWait    time.Duration
 	maxRetries int
 	clock      func() time.Time
+
+	transientBase time.Duration
+	logf          func(format string, args ...any)
 
 	mu      sync.Mutex
 	methods map[methodKey]*methodState
@@ -64,6 +72,21 @@ func NewRateLimiter(waitFlood bool, maxWait time.Duration) *RateLimiter {
 		maxRetries: 10,
 		clock:      time.Now,
 		methods:    make(map[methodKey]*methodState),
+
+		transientBase: 500 * time.Millisecond,
+	}
+}
+
+// maxTransientRetries bounds retries of one idempotent RPC after transient
+// server errors (0.5s, 1s, 2s with the default base).
+const maxTransientRetries = 3
+
+// SetLogger routes per-RPC diagnostics (method, latency, retries) to logf.
+func (rl *RateLimiter) SetLogger(logf func(format string, args ...any)) { rl.logf = logf }
+
+func (rl *RateLimiter) debugf(format string, args ...any) {
+	if rl.logf != nil {
+		rl.logf(format, args...)
 	}
 }
 
@@ -96,11 +119,28 @@ func (rl *RateLimiter) invoke(next tg.Invoker) telegram.InvokeFunc {
 		}
 
 		totalWaited := time.Duration(0)
+		transientRetries := 0
 		for attempt := 0; attempt <= rl.maxRetries; attempt++ {
+			started := time.Now()
 			err := next.Invoke(ctx, input, output)
+			elapsed := time.Since(started).Round(time.Millisecond)
 			if err == nil {
+				rl.debugf("rpc %s ok in %s", shortMethod(method), elapsed)
 				state.recordSuccess(base)
 				return nil
+			}
+			rl.debugf("rpc %s failed in %s: %v", shortMethod(method), elapsed, err)
+
+			if transientRetries < maxTransientRetries && idempotentMethod(method) && isTransient(err) {
+				delay := rl.transientBase << transientRetries
+				transientRetries++
+				rl.debugf("rpc %s: transient error, retry %d/%d in %s", shortMethod(method), transientRetries, maxTransientRetries, delay)
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				continue
 			}
 
 			wait, ok := tgerr.AsFloodWait(err)
@@ -112,6 +152,7 @@ func (rl *RateLimiter) invoke(next tg.Invoker) telegram.InvokeFunc {
 			if !rl.waitFlood || totalWaited+wait > rl.maxWait {
 				return &tgtelegram.FloodWaitError{Seconds: int(wait.Seconds())}
 			}
+			rl.debugf("rpc %s: flood wait, sleeping %s", shortMethod(method), wait)
 
 			select {
 			case <-time.After(wait):
@@ -201,6 +242,46 @@ func (s *methodState) recordFlood(wait, maxInterval time.Duration) {
 		s.interval = maxInterval
 	}
 	s.nextAllowed = time.Now().Add(s.interval)
+}
+
+func shortMethod(method string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(method, "*tg."), "Request")
+}
+
+// isTransient reports server-side failures that are expected to clear on
+// their own: 5xx RPC errors and MTProto timeouts (code -503).
+func isTransient(err error) bool {
+	rpcErr, ok := tgerr.As(err)
+	if !ok {
+		return false
+	}
+	return rpcErr.Code >= 500 || rpcErr.Code == -503 || rpcErr.Code == -500 || rpcErr.IsType("TIMEOUT")
+}
+
+// idempotentMethod lists RPCs that are safe to replay: reads, plus file part
+// uploads, which are keyed by (file_id, part) and overwrite on replay.
+func idempotentMethod(method string) bool {
+	switch method {
+	case "*tg.MessagesGetHistoryRequest",
+		"*tg.MessagesGetRepliesRequest",
+		"*tg.MessagesGetDiscussionMessageRequest",
+		"*tg.MessagesGetDialogsRequest",
+		"*tg.MessagesGetSavedHistoryRequest",
+		"*tg.MessagesGetSavedDialogsRequest",
+		"*tg.MessagesGetMessagesRequest",
+		"*tg.ChannelsGetMessagesRequest",
+		"*tg.ChannelsGetChannelsRequest",
+		"*tg.ChannelsGetFullChannelRequest",
+		"*tg.UsersGetUsersRequest",
+		"*tg.UsersGetFullUserRequest",
+		"*tg.HelpGetConfigRequest",
+		"*tg.UploadGetFileRequest",
+		"*tg.UploadGetFileHashesRequest",
+		"*tg.UploadSaveFilePartRequest",
+		"*tg.UploadSaveBigFilePartRequest":
+		return true
+	}
+	return false
 }
 
 // methodBaseInterval returns the per-chat interval and whether this method

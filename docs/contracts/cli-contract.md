@@ -33,6 +33,7 @@ td init <local-root>
   # init always ensures a linked discussion group for the channel
   # (created on demand); machine records live in its comment threads
 td status
+  # succeeds before init (data.initialized=false); lists bound channels
 td doctor
   td doctor path-codec
 td scan [remote-root]
@@ -43,7 +44,7 @@ td tree [remote-path]
 td completion [bash|zsh|fish|powershell]
 td cp <local> [local...] <remote-path>
   [--replace] [--skip-existing] [--auto-rename] [--no-hash]
-  [--recursive] [--continue-on-error] [--include-empty-dirs]
+  [-r|--recursive] [--continue-on-error] [--include-empty-dirs]
   [--upload-threads <n>] [--upload-part-size-kb <n>]
   [--confirm] [--dry-run] [--events]
   # typed uploads (single-file and multi-file; rejected with --recursive)
@@ -85,7 +86,7 @@ forms.
 
 ```text
 td get <remote-path> <local-dest>
-  [--recursive] [--replace] [--skip-existing] [--auto-rename] [--continue-on-error]
+  [-r|--recursive] [--replace] [--skip-existing] [--auto-rename] [--continue-on-error]
 td mv <remote-from> <remote-to>
   [--confirm] [--dry-run]
 td rm <remote-path>
@@ -129,8 +130,15 @@ td repair --captions [path]
   # manifests. Legacy td:v1 caption carriers are skipped.
 td config get [key]
   [--show-secrets] [--confirm]
+  # --show-secrets without --confirm prompts on a terminal and fails with
+  # ERR_CONFIRMATION_REQUIRED in --json mode or without a terminal
 td config set <key> <value>
 ```
+
+`--verbose` (or `TD_VERBOSE=1`) writes `debug:` diagnostics to stderr:
+resolved paths, connection setup, per-RPC latency, retries, and flood waits.
+It never prints credentials, phone numbers, or file contents, and does not
+change stdout.
 
 `--confirm` is required for `td rm`, `td mv`, `td cp --replace`, `td adopt`,
 `td import saved` (unless `--dry-run`), and `td repair --delete-orphaned`.

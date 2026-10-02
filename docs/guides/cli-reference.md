@@ -25,6 +25,13 @@ Environment:
   TD_CHANNEL              channel title or ID (same as --channel)
   TD_JSON                 set to 1 for JSON output (same as --json)
   TD_WAIT                 set to 1 to wait through safe flood waits (same as --wait)
+  TD_VERBOSE              set to 1 for diagnostics on stderr (same as --verbose)
+
+Get started:
+  td auth setup && td auth login
+  td init ~/Pictures --create-channel
+  td cp ~/Pictures/beach.jpg /2024/beach.jpg
+  td tree /
 
 Usage:
   td [command]
@@ -44,7 +51,7 @@ Channels
 
 Files
   adopt       Adopt existing Telegram messages into the virtual file tree
-  cp          Upload local file or directory
+  cp          Upload local file, directory, or multi-file album
   get         Download remote file or directory
   import      Import content from an external Telegram chat into the drive
   init        Initialize a local root
@@ -70,7 +77,7 @@ Flags:
       --no-wait          fail immediately on Telegram flood waits
       --quiet            suppress non-essential output
       --session string   Telegram session path
-      --verbose          enable verbose diagnostics
+      --verbose          write diagnostics (paths, Telegram RPC timing, retries) to stderr
   -v, --version          version for td
       --wait             wait through safe Telegram flood waits
 
@@ -191,8 +198,8 @@ Flags:
       --height int                video height in pixels (with --as video)
       --include-empty-dirs        include empty directories (unsupported in V1)
       --no-hash                   skip content hash
-      --recursive                 upload directory recursively
-      --replace                   replace existing remote file (single-file form only)
+  -r, --recursive                 upload directory recursively
+      --replace                   replace existing remote file
       --skip-existing             skip existing remote file
       --streaming                 mark the video as streamable (with --as video)
       --thumb string              JPEG file to attach as the upload thumbnail
@@ -231,7 +238,7 @@ Usage:
 Flags:
       --auto-rename         auto rename on conflict
       --continue-on-error   continue on download errors
-      --recursive           download directory recursively
+  -r, --recursive           download directory recursively
       --replace             replace existing local file
       --skip-existing       skip existing local file
 ```
@@ -375,10 +382,17 @@ Repair index inconsistencies.
 ```text
 Usage:
   td repair [path] [flags]
-      --hash              download files missing a content hash and backfill it into the index and machine records
-      --orphaned          repair orphaned messages
-      --pending           repair pending uploads
-      --scan-errors       repair scan errors
+
+Flags:
+      --captions            remove td's old parent-path and path-hashtag caption scaffold
+      --confirm             confirm deleting orphaned Telegram messages
+      --continue-on-error   continue caption cleanup after an individual error
+      --delete-orphaned     delete orphaned Telegram messages instead of completing them
+      --dry-run             report caption changes without editing Telegram (requires --captions)
+      --hash                download files missing a content hash and backfill it into the index and machine records
+      --orphaned            repair orphaned messages
+      --pending             repair pending uploads
+      --scan-errors         repair scan errors
 ```
 
 `--hash` streams each active file under `[path]` (default: the whole
@@ -406,6 +420,10 @@ Check local and Telegram capabilities.
 ```text
 Usage:
   td doctor [flags]
+  td doctor [command]
+
+Available Commands:
+  path-codec  Run path codec self-test and verify stored slug mappings
 ```
 
 Subcommand:
@@ -426,7 +444,7 @@ Usage:
   td config get [key] [flags]
 
 Flags:
-      --confirm        confirm showing secrets in JSON mode
+      --confirm        confirm showing secrets without a prompt
       --show-secrets   show secret values
 ```
 

@@ -397,6 +397,9 @@ func (e *FloodWaitError) Error() string {
 type CodeInvalidError struct{ Attempts int }
 
 func (e *CodeInvalidError) Error() string {
+	if e.Attempts == 1 {
+		return "login code invalid"
+	}
 	return fmt.Sprintf("login code invalid after %d attempts", e.Attempts)
 }
 

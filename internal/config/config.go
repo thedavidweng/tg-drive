@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/fileperm"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 )
 
@@ -218,6 +219,8 @@ func Save(path string, cfg Config) error {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
 	}
+	// WriteFile keeps the mode of an existing file.
+	_ = fileperm.Restrict(path)
 	return nil
 }
 
@@ -248,6 +251,18 @@ func GetValue(cfg Config, key string) (any, error) {
 		return cfg.Upload.Threads, nil
 	case "upload.part_size_kb":
 		return cfg.Upload.PartSizeKB, nil
+	case "caption.safe_media_caption_utf16_units":
+		return cfg.Caption.SafeMediaCaptionUTF16Units, nil
+	case "caption.safe_text_message_utf16_units":
+		return cfg.Caption.SafeTextMessageUTF16Units, nil
+	case "caption.margin_utf16_units":
+		return cfg.Caption.MarginUTF16Units, nil
+	case "limits.free_upload_bytes":
+		return cfg.Limits.FreeUploadBytes, nil
+	case "limits.premium_upload_bytes":
+		return cfg.Limits.PremiumUploadBytes, nil
+	case "locks.ttl_seconds":
+		return cfg.Locks.TTLSeconds, nil
 	default:
 		return nil, apperr.New(apperr.ErrUsage, fmt.Sprintf("unknown config key: %s", key))
 	}
@@ -305,10 +320,57 @@ func SetValue(cfg *Config, key, value string) error {
 			return apperr.New(apperr.ErrConfigInvalid, "upload.part_size_kb must be a non-negative integer")
 		}
 		cfg.Upload.PartSizeKB = n
+	case "caption.safe_media_caption_utf16_units":
+		return setPositiveInt(&cfg.Caption.SafeMediaCaptionUTF16Units, key, value)
+	case "caption.safe_text_message_utf16_units":
+		return setPositiveInt(&cfg.Caption.SafeTextMessageUTF16Units, key, value)
+	case "caption.margin_utf16_units":
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return apperr.New(apperr.ErrConfigInvalid, key+" must be a non-negative integer")
+		}
+		cfg.Caption.MarginUTF16Units = n
+	case "limits.free_upload_bytes":
+		return setPositiveInt64(&cfg.Limits.FreeUploadBytes, key, value)
+	case "limits.premium_upload_bytes":
+		return setPositiveInt64(&cfg.Limits.PremiumUploadBytes, key, value)
+	case "locks.ttl_seconds":
+		return setPositiveInt(&cfg.Locks.TTLSeconds, key, value)
 	default:
 		return apperr.New(apperr.ErrUsage, fmt.Sprintf("unknown config key: %s", key))
 	}
 	return nil
+}
+
+func setPositiveInt(dst *int, key, value string) error {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 1 {
+		return apperr.New(apperr.ErrConfigInvalid, key+" must be a positive integer")
+	}
+	*dst = n
+	return nil
+}
+
+func setPositiveInt64(dst *int64, key, value string) error {
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n < 1 {
+		return apperr.New(apperr.ErrConfigInvalid, key+" must be a positive integer")
+	}
+	*dst = n
+	return nil
+}
+
+// Keys lists every key accepted by GetValue, in config-file order.
+var Keys = []string{
+	"telegram.api_id", "telegram.api_hash", "telegram.phone",
+	"storage.db_path", "storage.session_path",
+	"caption.safe_media_caption_utf16_units", "caption.safe_text_message_utf16_units", "caption.margin_utf16_units",
+	"hash.enabled", "hash.algorithm",
+	"delete.mode",
+	"limits.free_upload_bytes", "limits.premium_upload_bytes",
+	"upload.threads", "upload.part_size_kb",
+	"locks.ttl_seconds",
+	"rate_limit.default_wait", "rate_limit.max_wait_seconds",
 }
 
 // RedactValue returns a display-safe config value.
@@ -330,14 +392,8 @@ func RedactValue(key string, value any, showSecrets bool) any {
 
 // RedactConfigMap returns all config values with secrets redacted.
 func RedactConfigMap(cfg Config, showSecrets bool) map[string]any {
-	keys := []string{
-		"telegram.api_id", "telegram.api_hash", "telegram.phone",
-		"storage.db_path", "storage.session_path", "delete.mode",
-		"hash.enabled", "hash.algorithm",
-		"rate_limit.default_wait", "rate_limit.max_wait_seconds",
-	}
-	out := make(map[string]any, len(keys))
-	for _, k := range keys {
+	out := make(map[string]any, len(Keys))
+	for _, k := range Keys {
 		v, err := GetValue(cfg, k)
 		if err != nil {
 			continue
@@ -358,9 +414,11 @@ func EnsureSessionFile(sessionPath string) error {
 		return err
 	}
 	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
-		return os.WriteFile(sessionPath, []byte("{}"), 0o600)
+		if err := os.WriteFile(sessionPath, []byte("{}"), 0o600); err != nil {
+			return err
+		}
 	}
-	return nil
+	return fileperm.Restrict(sessionPath)
 }
 
 func ensureDir(path string, perm os.FileMode) error {
@@ -370,9 +428,7 @@ func ensureDir(path string, perm os.FileMode) error {
 	if err := os.MkdirAll(path, perm); err != nil {
 		return apperr.Wrap(apperr.ErrConfigInvalid, "create directory", err)
 	}
-	if runtime.GOOS != "windows" {
-		_ = os.Chmod(path, perm)
-	}
+	_ = fileperm.Restrict(path)
 	return nil
 }
 
@@ -383,6 +439,22 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// DisplayPath abbreviates the home directory to "~" for human output, which
+// users paste into bug reports; JSON output keeps absolute paths.
+func DisplayPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || home == "/" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+		return "~" + string(filepath.Separator) + rest
+	}
+	return path
 }
 
 func expandHome(path string) string {

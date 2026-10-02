@@ -29,6 +29,7 @@ type Client struct {
 	sessionPath string
 	waitFlood   bool
 	maxWait     time.Duration
+	logf        func(format string, args ...any)
 
 	mu            sync.Mutex
 	channelHash   map[int64]int64  // channel ID -> access hash
@@ -75,6 +76,16 @@ func New(apiID int64, apiHash, sessionPath string, waitFlood bool, maxWait time.
 	}
 }
 
+// SetLogger routes connection and per-RPC diagnostics to logf (--verbose).
+// Messages carry method names, latencies, and RPC error types only.
+func (c *Client) SetLogger(logf func(format string, args ...any)) { c.logf = logf }
+
+func (c *Client) debugf(format string, args ...any) {
+	if c.logf != nil {
+		c.logf(format, args...)
+	}
+}
+
 func (c *Client) ensureSessionDir() error {
 	dir := filepath.Dir(c.sessionPath)
 	if dir == "" || dir == "." {
@@ -104,11 +115,15 @@ func (c *Client) ensureConn(ctx context.Context) (*conn, error) {
 	if err := c.ensureSessionDir(); err != nil {
 		return nil, err
 	}
+	limiter := NewRateLimiter(c.waitFlood, c.maxWait)
+	limiter.SetLogger(c.logf)
 	opts := telegram.Options{
 		SessionStorage: &telegram.FileSessionStorage{Path: c.sessionPath},
 		NoUpdates:      true,
-		Middlewares:    []telegram.Middleware{NewRateLimiter(c.waitFlood, c.maxWait).Middleware()},
+		Middlewares:    []telegram.Middleware{limiter.Middleware()},
 	}
+	c.debugf("telegram: connecting")
+	dialStart := time.Now()
 	client := telegram.NewClient(c.apiID, c.apiHash, opts)
 	runCtx, cancel := context.WithCancel(context.Background())
 	cn := &conn{
@@ -127,6 +142,7 @@ func (c *Client) ensureConn(ctx context.Context) (*conn, error) {
 	}()
 	select {
 	case <-cn.ready:
+		c.debugf("telegram: connected in %s", time.Since(dialStart).Round(time.Millisecond))
 		c.conn = cn
 		return cn, nil
 	case <-cn.done:

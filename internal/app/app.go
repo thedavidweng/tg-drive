@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -71,7 +72,14 @@ Environment:
   TD_DB                   local cache DB path     (default ~/.local/share/tg-drive-cli/local_cache.db)
   TD_CHANNEL              channel title or ID (same as --channel)
   TD_JSON                 set to 1 for JSON output (same as --json)
-  TD_WAIT                 set to 1 to wait through safe flood waits (same as --wait)`,
+  TD_WAIT                 set to 1 to wait through safe flood waits (same as --wait)
+  TD_VERBOSE              set to 1 for diagnostics on stderr (same as --verbose)
+
+Get started:
+  td auth setup && td auth login
+  td init ~/Pictures --create-channel
+  td cp ~/Pictures/beach.jpg /2024/beach.jpg
+  td tree /`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version.Version,
@@ -83,7 +91,7 @@ Environment:
 	cmd.PersistentFlags().StringVar(&opts.dbPath, "db", "", "SQLite database path")
 	cmd.PersistentFlags().StringVar(&opts.sessionPath, "session", "", "Telegram session path")
 	cmd.PersistentFlags().BoolVar(&opts.quiet, "quiet", false, "suppress non-essential output")
-	cmd.PersistentFlags().BoolVar(&opts.verbose, "verbose", false, "enable verbose diagnostics")
+	cmd.PersistentFlags().BoolVar(&opts.verbose, "verbose", false, "write diagnostics (paths, Telegram RPC timing, retries) to stderr")
 	cmd.PersistentFlags().StringVar(&opts.channel, "channel", "", "channel title or ID")
 	cmd.PersistentFlags().BoolVar(&opts.wait, "wait", false, "wait through safe Telegram flood waits")
 	cmd.PersistentFlags().BoolVar(&opts.noWait, "no-wait", false, "fail immediately on Telegram flood waits")
@@ -93,6 +101,9 @@ Environment:
 		opts.command = c.CommandPath()
 		if !c.Flags().Changed("json") && envBool("TD_JSON") {
 			opts.json = true
+		}
+		if !c.Flags().Changed("verbose") && envBool("TD_VERBOSE") {
+			opts.verbose = true
 		}
 		if opts.wait && opts.noWait {
 			// Render here: errors returned from PersistentPreRunE bypass the
@@ -199,15 +210,37 @@ func (o *runtimeOpts) overrides() config.Overrides {
 	}
 }
 
+// debugf writes a --verbose diagnostic to stderr. Callers must not pass
+// secrets; paths go through config.DisplayPath.
+func (o *runtimeOpts) debugf(format string, args ...any) {
+	if !o.verbose {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "debug: "+format+"\n", args...)
+}
+
 func (o *runtimeOpts) LoadConfig() (config.Config, string, error) {
-	return config.Load(o.overrides())
+	cfg, path, err := config.Load(o.overrides())
+	if o.verbose {
+		state := "found"
+		if _, statErr := os.Stat(path); statErr != nil {
+			state = "missing, using defaults"
+		}
+		o.debugf("config %s (%s)", config.DisplayPath(path), state)
+		o.debugf("db %s", config.DisplayPath(cfg.Storage.DBPath))
+		o.debugf("session %s", config.DisplayPath(cfg.Storage.SessionPath))
+		if o.channel != "" {
+			o.debugf("channel selector %q", o.channel)
+		}
+	}
+	return cfg, path, err
 }
 
 func (o *runtimeOpts) OpenApp(cmd *cobra.Command) (*service.App, func(), error) {
 	if isLightweight(cmd) {
 		return nil, func() {}, apperr.New(apperr.ErrUsage, "command does not use app context")
 	}
-	cfg, _, err := o.LoadConfig()
+	cfg, cfgPath, err := o.LoadConfig()
 	if err != nil {
 		return nil, func() {}, err
 	}
@@ -221,11 +254,12 @@ func (o *runtimeOpts) OpenApp(cmd *cobra.Command) (*service.App, func(), error) 
 		return nil, func() {}, err
 	}
 	app := &service.App{
-		Cfg:     cfg,
-		DB:      database,
-		TG:      tg,
-		Channel: o.channel,
-		Runtime: drive.NewRuntime(database, localfs.FS{}, tg),
+		Cfg:        cfg,
+		ConfigPath: cfgPath,
+		DB:         database,
+		TG:         tg,
+		Channel:    o.channel,
+		Runtime:    drive.NewRuntime(database, localfs.FS{}, tg),
 	}
 	cleanup := func() {
 		if closer, ok := tg.(interface{ Close() error }); ok {
@@ -238,6 +272,7 @@ func (o *runtimeOpts) OpenApp(cmd *cobra.Command) (*service.App, func(), error) 
 
 func (o *runtimeOpts) telegramClient(cfg config.Config, database *sqlitestore.DB) (telegram.Client, error) {
 	if os.Getenv("TD_FAKE_TELEGRAM") == "1" {
+		o.debugf("telegram: offline fake client (TD_FAKE_TELEGRAM=1)")
 		if p := os.Getenv("TD_FAKE_TELEGRAM_STATE"); p != "" {
 			return fake.NewPersistent(p), nil
 		}
@@ -251,6 +286,10 @@ func (o *runtimeOpts) telegramClient(cfg config.Config, database *sqlitestore.DB
 	}
 	client := telegramgotd.New(cfg.Telegram.APIID, cfg.Telegram.APIHash, cfg.Storage.SessionPath,
 		o.effectiveWait(cfg), time.Duration(cfg.RateLimit.MaxWaitSeconds)*time.Second)
+	if o.verbose {
+		client.SetLogger(o.debugf)
+		o.debugf("telegram: flood wait=%t max_wait=%ds", o.effectiveWait(cfg), cfg.RateLimit.MaxWaitSeconds)
+	}
 	rows, err := database.Raw().Query(`select tg_channel_id, access_hash, title from channels where access_hash is not null and access_hash != ''`)
 	if err == nil {
 		defer func() { _ = rows.Close() }()

@@ -14,7 +14,23 @@ are masked). Blocks that depend on your own data are prefixed *Illustrative*.
 `td ls` no longer knows your files. Telegram messages are the source of
 truth; the database is only a cache.
 
-Point `td` at the same root and channel, then run a full scan:
+A fresh database does not know which channel is your drive, so bind it
+again. `td init` runs a full scan of the channel it binds:
+
+```sh
+td init ~/Pictures --bind-channel            # pick from a list
+td init ~/Pictures --bind-channel="Pictures [TD]"
+```
+
+*Illustrative:*
+
+```text
+initialized ~/Pictures -> channel "Pictures [TD]" (id <channel-id>)
+indexed 1240 existing files from Telegram; next: td tree /
+```
+
+If the database still knows the channel (for example the index only looks
+stale), rebuild it in place:
 
 ```sh
 td scan --full
@@ -43,23 +59,17 @@ Verify the result:
 td status
 ```
 
-Captured from a real run (identifiers masked):
+Example (identifiers masked):
 
 ```text
-authenticated: true
-channel_id: <channel-id>
-db_path: /Users/<you>/.local/share/tg-drive-cli/local_cache.db
-files: none
-last_full_scan_at: 2026-08-14T22:17:54Z
-last_scan_at: 2026-08-14T22:17:54Z
-last_scanned_message_id: 16
-orphaned: 0
-scan_errors_pending: 0
-stale_locks: 0
-stale_pending: 0
-upload_limit_bytes: 2147483648
-upload_states: 0
-user_id: <user-id>
+account        logged in as <name> (user <user-id>)
+channel        Pictures [TD] (id <channel-id>)
+local root     ~/Pictures
+files          12 active
+last scan      2026-08-14T22:17:54Z (last full: 2026-08-14T22:17:54Z)
+upload limit   2.0 GB per file
+database       ~/.local/share/tg-drive-cli/local_cache.db
+health         ok
 ```
 
 **Next step:** browse with `td tree /` or download with `td get`.

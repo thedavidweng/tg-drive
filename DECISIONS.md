@@ -28,6 +28,8 @@ This document exists to prevent implementation drift. Do not replace these choic
 - Logs and prompts go to stderr.
 - JSON output goes to stdout.
 - Environment prefix is `TD_` only.
+- `--verbose` diagnostics go to stderr and never include secrets (ADR 0023).
+- Config, session, and database files are owner-only (ADR 0023).
 
 ## Telegram
 
@@ -37,6 +39,8 @@ This document exists to prevent implementation drift. Do not replace these choic
 - Treat Telegram behavior as capability-based.
 - `td doctor` reports edit/delete/upload/invite capabilities.
 - Caption edit on old messages is not assumed.
+- Only idempotent RPCs are retried after transient server errors; sends,
+  edits, and deletes are never replayed (ADR 0023).
 - File upload limit is 2 GB by default and 4 GB only when Premium capability is detected or configured.
 
 ## Storage

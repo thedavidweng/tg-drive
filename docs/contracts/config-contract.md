@@ -35,12 +35,23 @@ part_size_kb = 0
 [locks]
 ttl_seconds = 900
 
+[rate_limit]
+default_wait = false
+max_wait_seconds = 300
+
 [[roots]]
 local_path = "~/Pictures"
 remote_path = "/"
 channel_title = "Pictures [TD]"
 strategy = "single"
 ```
+
+Every key above except `[[roots]]` is readable with `td config get <section.key>`
+and writable with `td config set`, except `hash.algorithm` (always `blake3`). Integer limits must be positive
+(`caption.margin_utf16_units` and `upload.part_size_kb` may be 0).
+
+Config, session, and database files are kept readable by the current user
+only (0600 on POSIX, an owner-only DACL on Windows).
 
 Precedence:
 

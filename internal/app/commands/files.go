@@ -195,7 +195,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 			return r.Success(data)
 		},
 	}
-	c.Flags().BoolVar(&recursive, "recursive", false, "upload directory recursively")
+	c.Flags().BoolVarP(&recursive, "recursive", "r", false, "upload directory recursively")
 	c.Flags().BoolVar(&replace, "replace", false, "replace existing remote file")
 	c.Flags().BoolVar(&skip, "skip-existing", false, "skip existing remote file")
 	c.Flags().BoolVar(&autoRename, "auto-rename", false, "auto rename on conflict")
@@ -257,7 +257,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 			return r.Success(res)
 		},
 	}
-	c.Flags().BoolVar(&recursive, "recursive", false, "download directory recursively")
+	c.Flags().BoolVarP(&recursive, "recursive", "r", false, "download directory recursively")
 	c.Flags().BoolVar(&replace, "replace", false, "replace existing local file")
 	c.Flags().BoolVar(&skip, "skip-existing", false, "skip existing local file")
 	c.Flags().BoolVar(&autoRename, "auto-rename", false, "auto rename on conflict")
@@ -327,6 +327,9 @@ func NewRmCmd(rt Runtime) *cobra.Command {
 			if !rt.JSON() {
 				if data["stale_manifest"] == true {
 					fmt.Fprintln(os.Stderr, "warning: manifest reply could not be redacted and remains on Telegram")
+				}
+				if data["mode"] == "tombstone" {
+					return r.SuccessLine("tombstoned %s (hidden from td ls; the Telegram message is kept with a tombstone caption)", args[0])
 				}
 				return r.SuccessLine("deleted %s", args[0])
 			}

@@ -57,6 +57,9 @@ All JSON command output uses an envelope.
 }
 ```
 
+`ERR_DIRECTORY_MOVE_UNSUPPORTED` and `ERR_DIRECTORY_DELETE_UNSUPPORTED` carry
+the offending remote directory in `details.path`.
+
 ## Version
 
 ```json
@@ -98,7 +101,69 @@ A retry that adopted a pending upload and sent only its unconfirmed parts adds
 `"resumed": true` (files above 10 MB; the identity — size and content hash —
 must match the interrupted attempt).
 
+## Status
+
+`td status` succeeds before `td init`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "initialized": false,
+    "authenticated": true,
+    "user_id": 42,
+    "display_name": "Test User",
+    "channels": [],
+    "db_path": "/home/you/.local/share/tg-drive-cli/local_cache.db"
+  }
+}
+```
+
+Once a channel is bound it adds the selected channel and index counters:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "initialized": true,
+    "channel_id": "1001",
+    "channel": {"channel_id": "1001", "title": "Pictures [TD]", "local_root": "/home/you/Pictures"},
+    "channels": [{"channel_id": "1001", "title": "Pictures [TD]", "local_root": "/home/you/Pictures"}],
+    "files": {"active": 12, "deleted": 1},
+    "last_scan_at": "2026-08-14T22:17:54Z",
+    "last_full_scan_at": "2026-08-14T22:17:54Z",
+    "last_scanned_message_id": 16,
+    "scan_errors_pending": 0,
+    "orphaned": 0,
+    "stale_pending": 0,
+    "stale_locks": 0,
+    "upload_states": 0,
+    "upload_limit_bytes": 2147483648,
+    "db_path": "/home/you/.local/share/tg-drive-cli/local_cache.db"
+  }
+}
+```
+
+`authenticated`, `user_id`, and `display_name` are omitted when Telegram is
+unreachable. JSON paths are absolute; human output abbreviates the home
+directory to `~`.
+
+## Init
+
+`td init` reports the bound channel and the result of its initial full scan:
+`indexed_files` (active files found in the channel) on success, or
+`scan_error` (message) when the scan failed and `td scan --full` should be
+rerun. A re-run on an already bound root returns `already_initialized: true`
+instead.
+
 ## Doctor
+
+Every check is `pass`, `warn`, `fail`, or `unknown` (not checked, usually
+because an earlier check failed). `hints` carries a fix for non-passing
+checks. Checks: `config`, `session_file`, `file_permissions`, `auth`, `db`,
+`db_wal`, `channel`, `history_read`, `upload`, `delete`, `invite_link`,
+`edit_old_caption`, `discussion`, `file_size_limit`, `caption_counter`,
+`path_codec`, `saved_history`, `saved_delete`.
 
 `td doctor` includes the Saved Messages capabilities in both the human checks
 and JSON data:

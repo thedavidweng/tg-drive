@@ -153,7 +153,15 @@ func parseMessageIDs(args []string) ([]int, error) {
 // stdinIsInteractive reports whether a human can answer a prompt.
 func stdinIsInteractive() bool {
 	info, err := os.Stdin.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	// /dev/null is a character device too; `cmd </dev/null` is the usual
+	// way scripts and CI close stdin.
+	if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(info, null) {
+		return false
+	}
+	return true
 }
 
 // promptPhotosAs asks how photo messages should be republished. Prompts go to

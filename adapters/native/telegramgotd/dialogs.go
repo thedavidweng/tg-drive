@@ -51,6 +51,11 @@ func (c *Client) ListChannels(ctx context.Context, opts tgtelegram.ListChannelsO
 			title := ""
 			if ch, ok := elem.Entities.Channel(pch.ChannelID); ok {
 				title = ch.Title
+				// Supergroups (including td's own discussion groups) share
+				// the channel peer type but can never be a drive.
+				if !ch.Broadcast {
+					return nil
+				}
 			}
 			c.rememberChannelTitle(pch.ChannelID, title)
 			if opts.OnlyDrive && !strings.Contains(strings.ToLower(title), "[td]") {

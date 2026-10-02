@@ -43,7 +43,9 @@ func NewDoctorCmd(rt Runtime) *cobra.Command {
 				names = append(names, k)
 			}
 			sort.Strings(names)
+			tally := map[string]int{}
 			for _, name := range names {
+				tally[checks[name]]++
 				line := fmt.Sprintf("%-18s %s", name, checks[name])
 				if hint := hints[name]; hint != "" {
 					line += " — " + hint
@@ -51,8 +53,13 @@ func NewDoctorCmd(rt Runtime) *cobra.Command {
 				_, _ = fmt.Fprintln(out, line)
 			}
 			if maxBytes, ok := data["max_upload_bytes"].(int64); ok {
-				_, _ = fmt.Fprintf(out, "%-18s %s\n", "max_upload", humanSize(maxBytes))
+				_, _ = fmt.Fprintf(out, "%-18s %s per file\n", "max_upload", humanSize(maxBytes))
 			}
+			summary := fmt.Sprintf("\n%d passed, %s, %d failed", tally["pass"], plural(tally["warn"], "warning"), tally["fail"])
+			if n := tally["unknown"]; n > 0 {
+				summary += fmt.Sprintf(", %d not checked", n)
+			}
+			_, _ = fmt.Fprintln(out, summary)
 			return nil
 		},
 	}
@@ -106,7 +113,10 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 			if err != nil {
 				return r.Error(err)
 			}
-			if showSecrets && !rt.JSON() {
+			if showSecrets && !confirm {
+				if rt.JSON() || !stdinIsInteractive() {
+					return r.Error(apperr.New(apperr.ErrConfirmationRequired, "--show-secrets requires --confirm when not running interactively"))
+				}
 				fmt.Fprint(os.Stderr, "show secrets? [y/N] ")
 				var ans string
 				_, _ = fmt.Scanln(&ans)
@@ -114,15 +124,17 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 					showSecrets = false
 				}
 			}
-			if showSecrets && rt.JSON() && !confirm {
-				return r.Error(apperr.New(apperr.ErrUsage, "--confirm required with --json --show-secrets"))
-			}
 			if len(args) == 0 {
 				all := config.RedactConfigMap(cfg, showSecrets)
 				if rt.JSON() {
 					return r.Success(all)
 				}
-				PrintKV(cmd.OutOrStdout(), all)
+				out := cmd.OutOrStdout()
+				for _, k := range config.Keys {
+					if v, ok := all[k]; ok {
+						_, _ = fmt.Fprintf(out, "%s: %v\n", k, humanConfigValue(k, v))
+					}
+				}
 				return nil
 			}
 			v, err := config.GetValue(cfg, args[0])
@@ -132,12 +144,12 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 			if rt.JSON() {
 				return r.Success(map[string]any{args[0]: config.RedactValue(args[0], v, showSecrets), "config_path": configPath})
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", config.RedactValue(args[0], v, showSecrets))
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", humanConfigValue(args[0], config.RedactValue(args[0], v, showSecrets)))
 			return nil
 		},
 	}
 	get.Flags().BoolVar(&showSecrets, "show-secrets", false, "show secret values")
-	get.Flags().BoolVar(&confirm, "confirm", false, "confirm showing secrets in JSON mode")
+	get.Flags().BoolVar(&confirm, "confirm", false, "confirm showing secrets without a prompt")
 	set := &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set config value",
@@ -163,4 +175,18 @@ func NewConfigCmd(rt Runtime) *cobra.Command {
 	}
 	c.AddCommand(get, set)
 	return c
+}
+
+func humanConfigValue(key string, v any) any {
+	if p, ok := v.(string); ok && strings.HasPrefix(key, "storage.") {
+		return config.DisplayPath(p)
+	}
+	return v
+}
+
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

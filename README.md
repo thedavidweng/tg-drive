@@ -144,10 +144,11 @@ media message caption:          discussion thread comment:
   first member's thread.
 - Directories are derived from file paths. They are not stored on Telegram.
 
-After database loss:
+After database loss, or on a new machine, bind the same channel again; init
+rescans it and rebuilds the index:
 
 ```sh
-td scan --full
+td init ~/Pictures --bind-channel
 ```
 
 ## Usage
@@ -253,7 +254,9 @@ See [SECURITY.md](SECURITY.md).
 ```sh
 td doctor              # config, session, auth, channel, permissions, limits
 td status              # roots, last scan, pending and orphaned counts
-td scan --full         # rebuild after DB loss or old-message drift
+td init <root> --bind-channel  # rebuild after DB loss or on a new machine
+td scan --full         # refresh after old-message drift
+td --verbose <cmd>     # diagnostics on stderr: paths, RPC timing, retries
 td repair --pending    # stale pending uploads / expired locks
 td repair --orphaned   # uploads that only partially landed on Telegram
 ```

@@ -194,23 +194,17 @@ the honest empty state. Check the index health at any time:
 td status
 ```
 
-Captured from a real run (identifiers masked):
+Example (identifiers masked):
 
 ```text
-authenticated: true
-channel_id: <channel-id>
-db_path: /Users/<you>/.local/share/tg-drive-cli/local_cache.db
-files: none
-last_full_scan_at: 2026-08-14T22:17:54Z
-last_scan_at: 2026-08-14T22:17:54Z
-last_scanned_message_id: 16
-orphaned: 0
-scan_errors_pending: 0
-stale_locks: 0
-stale_pending: 0
-upload_limit_bytes: 2147483648
-upload_states: 0
-user_id: <user-id>
+account        logged in as <name> (user <user-id>)
+channel        Pictures [TD] (id <channel-id>)
+local root     ~/Pictures
+files          12 active
+last scan      2026-08-14T22:17:54Z (last full: 2026-08-14T22:17:54Z)
+upload limit   2.0 GB per file
+database       ~/.local/share/tg-drive-cli/local_cache.db
+health         ok
 ```
 
 **Next step:** download a file back.

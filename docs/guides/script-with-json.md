@@ -129,8 +129,9 @@ redacted
 +1********92
 ```
 
-`--show-secrets` prints real values but gates interactively on stderr in text
-mode; in JSON mode it additionally requires `--confirm`.
+`--show-secrets` prints real values. On a terminal it asks for confirmation on
+stderr; `--confirm` skips the prompt, and it is required in JSON mode or when
+stdin is not a terminal (otherwise `ERR_CONFIRMATION_REQUIRED`, exit 10).
 
 ## Next steps
 

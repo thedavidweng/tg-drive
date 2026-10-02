@@ -200,8 +200,24 @@ func (a *App) Tree(ctx context.Context, remotePath string, maxDepth int) ([]Tree
 
 // Status returns index statistics.
 func (a *App) Status(ctx context.Context) (map[string]any, error) {
+	channels, err := a.boundChannels(ctx)
+	if err != nil {
+		return nil, err
+	}
 	channelID, tgID, err := a.channelID(ctx)
 	if err != nil {
+		// Before init there is nothing to count, but auth and paths are
+		// still worth reporting; an explicit --channel that matches nothing
+		// stays an error.
+		if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrChannelNotFound && a.Channel == "" {
+			out := map[string]any{
+				"initialized": false,
+				"channels":    channels,
+				"db_path":     a.Cfg.Storage.DBPath,
+			}
+			a.statusAuth(ctx, out)
+			return out, nil
+		}
 		return nil, err
 	}
 	counts := map[string]int{}
@@ -217,17 +233,18 @@ func (a *App) Status(ctx context.Context) (map[string]any, error) {
 		counts[status] = n
 	}
 	out := map[string]any{
-		"channel_id": tgID,
-		"files":      counts,
-		"db_path":    a.Cfg.Storage.DBPath,
+		"initialized": true,
+		"channel_id":  tgID,
+		"channels":    channels,
+		"files":       counts,
+		"db_path":     a.Cfg.Storage.DBPath,
 	}
-	user, ok, err := a.TG.Status(ctx)
-	if err == nil {
-		out["authenticated"] = ok
-		if ok && user != nil {
-			out["user_id"] = user.ID
+	for _, ch := range channels {
+		if ch.ChannelID == tgID {
+			out["channel"] = ch
 		}
 	}
+	a.statusAuth(ctx, out)
 	var lastScan, lastFull string
 	var lastMsgID int
 	_ = a.DB.Raw().QueryRowContext(ctx, `
@@ -255,6 +272,42 @@ func (a *App) Status(ctx context.Context) (map[string]any, error) {
 	out["orphaned"] = counts["orphaned"]
 	out["upload_limit_bytes"] = a.uploadLimit(ctx)
 	return out, nil
+}
+
+// BoundChannel is one channel bound to a local root by td init.
+type BoundChannel struct {
+	ChannelID string `json:"channel_id"`
+	Title     string `json:"title"`
+	LocalRoot string `json:"local_root"`
+}
+
+func (a *App) boundChannels(ctx context.Context) ([]BoundChannel, error) {
+	rows, err := a.DB.Raw().QueryContext(ctx, `select tg_channel_id, title, coalesce(root_local_path,'') from channels order by id`)
+	if err != nil {
+		return nil, apperr.Wrap(apperr.ErrDB, "list channels", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := []BoundChannel{}
+	for rows.Next() {
+		var ch BoundChannel
+		if err := rows.Scan(&ch.ChannelID, &ch.Title, &ch.LocalRoot); err != nil {
+			return nil, apperr.Wrap(apperr.ErrDB, "list channels", err)
+		}
+		out = append(out, ch)
+	}
+	return out, rows.Err()
+}
+
+func (a *App) statusAuth(ctx context.Context, out map[string]any) {
+	user, ok, err := a.TG.Status(ctx)
+	if err != nil {
+		return
+	}
+	out["authenticated"] = ok
+	if ok && user != nil {
+		out["user_id"] = user.ID
+		out["display_name"] = user.DisplayName
+	}
 }
 
 // DownloadResult reports what DownloadFile actually did.
@@ -416,7 +469,9 @@ func (a *App) MoveFile(ctx context.Context, from, to string) error {
 		return err
 	}
 	if fsmodel.IsDirectorySource(src, active) {
-		return apperr.New(apperr.ErrDirectoryMoveUnsupported, src)
+		return apperr.New(apperr.ErrDirectoryMoveUnsupported,
+			fmt.Sprintf("%s is a directory; td mv moves single files (move each file, e.g. td mv %s/<file> <dest>/)", src, src)).
+			WithDetails(map[string]any{"path": src})
 	}
 	dst, err := fsmodel.MoveDestination(src, to, active)
 	if err != nil {
@@ -550,7 +605,9 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	}
 	for _, ap := range active {
 		if ap.IsDir && ap.Canonical == p {
-			return nil, apperr.New(apperr.ErrDirectoryDeleteUnsupported, p)
+			return nil, apperr.New(apperr.ErrDirectoryDeleteUnsupported,
+				fmt.Sprintf("%s is a directory; td rm deletes single files (list them with td ls %s)", p, p)).
+				WithDetails(map[string]any{"path": p})
 		}
 	}
 	var fileID int64

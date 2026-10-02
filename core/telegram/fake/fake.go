@@ -217,8 +217,15 @@ func (c *Client) ListChannels(ctx context.Context, opts telegram.ListChannelsOpt
 	if !c.loggedIn {
 		return nil, &telegram.AuthRequiredError{}
 	}
+	groups := map[int64]bool{}
+	for _, gid := range c.discussion {
+		groups[gid] = true
+	}
 	var out []telegram.Channel
 	for _, ch := range c.channels {
+		if groups[ch.ID] {
+			continue
+		}
 		if !opts.OnlyDrive || strings.Contains(ch.Title, "[TD]") {
 			out = append(out, *ch)
 		}
