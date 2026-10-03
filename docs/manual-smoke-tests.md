@@ -73,3 +73,59 @@ td doctor --json
 
 Doctor must report whether old media caption edit is supported, unsupported,
 or unknown for the current account and channel.
+
+## Desktop app (td-gui)
+
+The UI preview (`ui-preview/run.sh`) covers every screen in server mode,
+which has no tray, no window hooks, no single-instance lock, and no native
+dialogs. Check those on each desktop OS against a release package
+(`make gui-package-<os> GUI_VERSION=<version>`), logged in to a test
+channel. Record the OS version, the package version, and pass/fail per item.
+
+Release stamp:
+
+- `td-gui --version` prints the packaged version, not `dev`.
+- Settings → About shows the same td-gui version, and the installed `td`
+  version (or "Not installed" when no `td` is on PATH, in `TD_INSTALL_DIR`,
+  or in the installer's default directory).
+
+Window and tray:
+
+- The titlebar fits the platform: on macOS the traffic lights sit inset in
+  the header; on Windows the system title bar takes the page's light or
+  dark colours and follows a theme switch. Dragging the header moves the
+  window.
+- Start a large upload, then close the window. The window hides, the tray
+  icon stays, and the tray menu lists the running Transfer with live
+  progress. The Transfer keeps running (`td transfers list --json` from a
+  terminal shows its bytes growing).
+- Click the tray icon or its Transfer row: the window comes back, focused,
+  on the same screen. On macOS, clicking the dock icon does the same.
+- Launch td-gui a second time: no second window opens; the running window
+  comes forward.
+
+Quit:
+
+- With no Transfer running, Quit from the tray (and Cmd+Q on macOS) exits
+  at once.
+- With a Transfer running, Quit asks first. "Keep Running" leaves it
+  running; "Quit" exits, and the Transfer shows as interrupted in
+  `td transfers list --all --json`, retryable with `td transfers retry <id>`
+  or from the GUI's Transfers tab after a relaunch.
+
+Native dialogs and drop:
+
+- Upload files / Upload folder / the download destination / the thumbnail
+  "Choose…" open the system file dialogs, and a cancelled dialog changes
+  nothing.
+- Dropping files from the system file manager onto the Drive view opens the
+  upload sheet with them.
+
+Live settings and channels:
+
+- Change `transfers.concurrency` in Settings while uploads are queued: the
+  number running at once follows the new value without a restart.
+- With the window open, run `td init <root> --create-channel=Other` in a
+  terminal: the drive switcher lists "Other" within a few seconds.
+- Switch drives while an upload runs: it finishes, and the Transfers tab
+  keeps showing it.

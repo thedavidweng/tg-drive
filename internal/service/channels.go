@@ -41,6 +41,34 @@ func (a *App) DiscussionGroup(ctx context.Context) (*LinkDiscussionResult, error
 	return &LinkDiscussionResult{DiscussionChannelID: id, DiscussionTitle: title}, nil
 }
 
+// ChannelPermissions is what the account may do on the bound channel, from
+// the same Telegram capability check td doctor reports.
+type ChannelPermissions struct {
+	Upload       bool
+	Delete       bool
+	EditCaptions bool
+	InviteLink   bool
+}
+
+// ChannelPermissions checks the account's permissions on the bound channel
+// through the Telegram capability layer.
+func (a *App) ChannelPermissions(ctx context.Context) (*ChannelPermissions, error) {
+	ch, err := a.channel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caps, err := a.TG.Doctor(ctx, ch.tgID)
+	if err != nil {
+		return nil, telegram.MapError(err)
+	}
+	return &ChannelPermissions{
+		Upload:       caps.UploadOK,
+		Delete:       caps.DeleteOK,
+		EditCaptions: caps.EditOldCaptionOK,
+		InviteLink:   caps.InviteLinkOK,
+	}, nil
+}
+
 // LinkDiscussionResult identifies the discussion group linked to the bound
 // channel.
 type LinkDiscussionResult struct {

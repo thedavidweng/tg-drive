@@ -180,6 +180,32 @@ export interface CaptionsRepairOutcome {
 }
 
 /**
+ * ChannelCapabilities are the account's permissions on a channel, from the
+ * Telegram capability layer td doctor checks. A drive needs all four.
+ */
+export interface ChannelCapabilities {
+    /**
+     * CanUpload is posting files to the channel.
+     */
+    "can_upload": boolean;
+
+    /**
+     * CanDelete is deleting the channel's messages (td rm).
+     */
+    "can_delete": boolean;
+
+    /**
+     * CanEditCaptions is editing old messages' captions (td mv, repair).
+     */
+    "can_edit_captions": boolean;
+
+    /**
+     * CanInvite is exporting the channel's invite link (td share).
+     */
+    "can_invite": boolean;
+}
+
+/**
  * ChannelChoice is one Telegram channel the bind dialog offers, marked when
  * it is already bound as a drive.
  */
@@ -243,12 +269,25 @@ export interface ChannelStatus {
     "upload_limit_bytes": number;
 
     /**
+     * Capabilities is what the account may do on the channel.
+     */
+    "capabilities": ChannelCapabilities;
+
+    /**
      * LastScanAt is the RFC3339 time the index last changed from a scan,
      * empty when the channel was never scanned; LastFullScanAt is the last
      * completed full scan.
      */
     "last_scan_at"?: string;
     "last_full_scan_at"?: string;
+}
+
+/**
+ * ChannelsChanged is the payload of EventChannelsChanged: the fresh channel
+ * list, as Channels.List returns it.
+ */
+export interface ChannelsChanged {
+    "channels": ChannelInfo[] | null;
 }
 
 /**
@@ -329,14 +368,21 @@ export interface DoctorReport {
 }
 
 /**
- * DownloadOptions are the download sheet's choices.
+ * DownloadOptions are the download sheet's choices, the options of td get.
  */
 export interface DownloadOptions {
     /**
-     * Policy is the local conflict policy: "skip", "replace", or "fail"
-     * (the zero value, matching get without flags).
+     * Policy is the local conflict policy: "skip", "replace", "rename"
+     * (get --auto-rename), or "fail" (the zero value, matching get without
+     * flags).
      */
     "policy": string;
+
+    /**
+     * ContinueOnError lets a folder download continue past failed files
+     * (get -r --continue-on-error).
+     */
+    "continue_on_error"?: boolean;
 }
 
 /**
@@ -739,16 +785,16 @@ export interface TreeNode {
 
 /**
  * UploadOptions are the upload sheet's choices. They map one-to-one onto
- * the service's upload options: the conflict policy and the replace
- * confirmation (service.UploadOptions.Validate), the presentation kind and
- * caption (service.Presentation, UploadOptions.Caption), and the recursive
- * switches of td cp --recursive.
+ * the options of td cp: the conflict policy and the replace confirmation
+ * (service.UploadOptions.Validate), the presentation and caption
+ * (service.Presentation, UploadOptions.Caption), the per-call upload
+ * tuning, and the recursive switches of td cp --recursive.
  */
 export interface UploadOptions {
     /**
-     * Policy is the remote conflict policy: "skip", "replace", or "fail"
-     * (the zero value, matching cp without flags). The CLI-only rename
-     * policy is not offered.
+     * Policy is the remote conflict policy: "skip", "replace", "rename"
+     * (cp --auto-rename), or "fail" (the zero value, matching cp without
+     * flags).
      */
     "policy": string;
 
@@ -763,6 +809,30 @@ export interface UploadOptions {
      * ("" is the document default). Folder uploads take no presentation.
      */
     "kind"?: string;
+
+    /**
+     * DurationSeconds, Width, Height, and SupportsStreaming are the video
+     * attributes (cp --duration, --width, --height, --streaming); they
+     * need Kind "video".
+     */
+    "duration_seconds"?: number;
+    "width"?: number;
+    "height"?: number;
+    "supports_streaming"?: boolean;
+
+    /**
+     * ThumbPath is a local JPEG attached as the preview thumbnail (cp
+     * --thumb); photos take none.
+     */
+    "thumb_path"?: string;
+
+    /**
+     * UploadThreads and UploadPartSizeKB override upload.threads and
+     * upload.part_size_kb for this upload (cp --upload-threads,
+     * --upload-part-size-kb); 0 uses the config.
+     */
+    "upload_threads"?: number;
+    "upload_part_size_kb"?: number;
 
     /**
      * Caption is human text rendered above the caption block: on the file's

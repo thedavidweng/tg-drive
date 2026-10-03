@@ -126,3 +126,44 @@ test("the switcher and sheets are translated", async () => {
   await within(dialog).findByText("讨论组")
   expect(within(dialog).getByRole("button", { name: "绑定或创建云盘" })).toBeTruthy()
 })
+
+test("the channel status reports the account's permissions", async () => {
+  const backend = memoryBackend({}, { channels: twoChannels })
+  backend.putFileForTest("/notes.txt", 5, "2026-01-01T00:00:00Z")
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Switch drive" }))
+  const dialog = await screen.findByRole("dialog", { name: "Drives" })
+  await within(dialog).findByText("Permissions")
+  expect(within(dialog).getByText("All granted")).toBeTruthy()
+})
+
+test("the channel status names the missing permissions", async () => {
+  const backend = memoryBackend(
+    {},
+    { channels: [{ id: "1001", title: "Drive", discussion: "Drive Discussion", denied: ["delete", "invite"] }] },
+  )
+  backend.putFileForTest("/notes.txt", 5, "2026-01-01T00:00:00Z")
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Switch drive" }))
+  const dialog = await screen.findByRole("dialog", { name: "Drives" })
+  await within(dialog).findByText("Missing: delete messages, invite links")
+})
+
+test("a channel bound by another front end appears without a reload", async () => {
+  const backend = memoryBackend({}, { channels: [{ id: "1001", title: "Drive" }] })
+  backend.putFileForTest("/notes.txt", 5, "2026-01-01T00:00:00Z")
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "Switch drive" }))
+  const dialog = await screen.findByRole("dialog", { name: "Drives" })
+  expect(within(dialog).queryByRole("button", { name: "Switch to Archive" })).toBeNull()
+
+  // td init --bind-channel in a terminal: index sync emits channels-changed.
+  await backend.bindExternally({ id: "2002", title: "Archive" })
+  await within(dialog).findByRole("button", { name: "Switch to Archive" })
+})

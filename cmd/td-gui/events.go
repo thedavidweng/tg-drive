@@ -28,4 +28,5 @@ func init() {
 	application.RegisterEvent[gui.ImportPrompt](gui.EventImportPrompt)
 	application.RegisterEvent[gui.ItemEvent](gui.EventImportItem)
 	application.RegisterEvent[gui.ItemEvent](gui.EventRepairItem)
+	application.RegisterEvent[gui.ChannelsChanged](gui.EventChannelsChanged)
 }

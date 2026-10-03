@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useId, useState } from "react"
 import { File, Folder } from "lucide-react"
 
 import type { Backend, BackendError, UploadPlan } from "@/backend"
@@ -18,6 +18,15 @@ type PlanState =
   | { state: "loading" }
   | { state: "ready"; plan: UploadPlan }
   | { state: "failed"; error: BackendError }
+
+/** A conflict policy choice; "" is fail, the CLI default without flags. */
+type Policy = "" | "skip" | "rename" | "replace"
+
+/** A number field's value; unset, unparsable, or negative input is 0 (use the default). */
+function numberOf(value: string): number {
+  const n = Number(value.trim())
+  return value.trim() === "" || !Number.isFinite(n) || n < 0 ? 0 : n
+}
 
 function baseName(path: string): string {
   return path.slice(path.replace(/\/+$/, "").lastIndexOf("/") + 1)
@@ -40,10 +49,19 @@ export function UploadSheet({
 }) {
   const { t } = useI18n()
   // The conflict policy: "" is fail, the CLI default without flags.
-  const [policy, setPolicy] = useState<"" | "skip" | "replace">("")
+  const [policy, setPolicy] = useState<Policy>("")
   const [confirmReplace, setConfirmReplace] = useState(false)
   const [kind, setKind] = useState("")
   const [caption, setCaption] = useState("")
+  // The video attributes and thumbnail of td cp --as video; the numbers
+  // stay strings while edited, "" meaning unset.
+  const [duration, setDuration] = useState("")
+  const [width, setWidth] = useState("")
+  const [height, setHeight] = useState("")
+  const [streaming, setStreaming] = useState(false)
+  const [thumb, setThumb] = useState("")
+  const [threads, setThreads] = useState("")
+  const [partSizeKB, setPartSizeKB] = useState("")
   const [noHash, setNoHash] = useState(false)
   const [continueOnError, setContinueOnError] = useState(false)
   const [includeEmptyDirs, setIncludeEmptyDirs] = useState(false)
@@ -77,12 +95,20 @@ export function UploadSheet({
     if (startDisabled) return
     setBusy(true)
     setError(null)
+    const video = !hasDirs && kind === "video"
     try {
       await backend.transfers.upload(paths, dest, {
         policy,
         confirm_replace: confirmReplace,
         kind,
         caption,
+        duration_seconds: video ? numberOf(duration) : 0,
+        width: video ? numberOf(width) : 0,
+        height: video ? numberOf(height) : 0,
+        supports_streaming: video && streaming,
+        thumb_path: !hasDirs && kind !== "photo" ? thumb.trim() : "",
+        upload_threads: numberOf(threads),
+        upload_part_size_kb: numberOf(partSizeKB),
         no_hash: noHash,
         continue_on_error: continueOnError,
         include_empty_dirs: includeEmptyDirs,
@@ -114,24 +140,44 @@ export function UploadSheet({
                   { value: "video", label: t("upload.kind.video") },
                 ]}
               />
-              <label className="mt-3 block text-[12px] text-muted-foreground">
-                {t("upload.caption")}
-                <input
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  className="mt-1 h-8 w-full rounded-control border border-line bg-background px-2 text-[13px] text-fg outline-none focus:border-ring"
+              {kind === "video" && (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <NumberField label={t("upload.duration")} value={duration} onChange={setDuration} step="any" />
+                  <NumberField label={t("upload.width")} value={width} onChange={setWidth} />
+                  <NumberField label={t("upload.height")} value={height} onChange={setHeight} />
+                </div>
+              )}
+              {kind === "video" && <Check label={t("upload.streaming")} checked={streaming} onChange={setStreaming} />}
+              {kind !== "photo" && (
+                <TextField
+                  label={t("upload.thumb")}
+                  value={thumb}
+                  onChange={setThumb}
+                  action={{
+                    label: t("upload.thumbChoose"),
+                    onClick: async () => {
+                      try {
+                        const [picked] = await backend.transfers.pickFiles()
+                        if (picked) setThumb(picked)
+                      } catch (err) {
+                        setError(err as BackendError)
+                      }
+                    },
+                  }}
                 />
-              </label>
+              )}
+              <TextField label={t("upload.caption")} value={caption} onChange={setCaption} />
             </>
           )}
           <RadioGroup
             label={t("upload.conflict")}
             name="policy"
             value={policy}
-            onChange={(v) => setPolicy(v as "" | "skip" | "replace")}
+            onChange={(v) => setPolicy(v as Policy)}
             options={[
               { value: "", label: t("upload.conflict.fail") },
               { value: "skip", label: t("upload.conflict.skip") },
+              { value: "rename", label: t("upload.conflict.rename") },
               { value: "replace", label: t("upload.conflict.replace"), disabled: album },
             ]}
           />
@@ -151,6 +197,10 @@ export function UploadSheet({
             </>
           )}
           <Check label={t("upload.noHash")} checked={noHash} onChange={setNoHash} />
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <NumberField label={t("upload.threads")} value={threads} onChange={setThreads} />
+            <NumberField label={t("upload.partSize")} value={partSizeKB} onChange={setPartSizeKB} />
+          </div>
         </>
       )}
       <SheetError error={error} />
@@ -212,6 +262,7 @@ function PlanSummary({ plan, t }: { plan: UploadPlan; t: Translate }) {
 export function DownloadSheet({
   backend,
   remotePath,
+  folder,
   destDir,
   onStarted,
   onClose,
@@ -219,13 +270,16 @@ export function DownloadSheet({
   backend: Backend
   /** The remote file or folder being downloaded. */
   remotePath: string
+  /** The download is a folder (td get -r). */
+  folder: boolean
   /** The local directory the download lands in. */
   destDir: string
   onStarted: () => void
   onClose: () => void
 }) {
   const { t } = useI18n()
-  const [policy, setPolicy] = useState<"" | "skip" | "replace">("")
+  const [policy, setPolicy] = useState<Policy>("")
+  const [continueOnError, setContinueOnError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<BackendError | null>(null)
 
@@ -234,7 +288,10 @@ export function DownloadSheet({
     setBusy(true)
     setError(null)
     try {
-      await backend.transfers.download(remotePath, destDir, { policy })
+      await backend.transfers.download(remotePath, destDir, {
+        policy,
+        continue_on_error: folder && continueOnError,
+      })
       onStarted()
     } catch (err) {
       setError(err as BackendError)
@@ -252,13 +309,17 @@ export function DownloadSheet({
         label={t("download.conflict")}
         name="policy"
         value={policy}
-        onChange={(v) => setPolicy(v as "" | "skip" | "replace")}
+        onChange={(v) => setPolicy(v as Policy)}
         options={[
           { value: "", label: t("upload.conflict.fail") },
           { value: "skip", label: t("upload.conflict.skip") },
+          { value: "rename", label: t("upload.conflict.rename") },
           { value: "replace", label: t("upload.conflict.replace") },
         ]}
       />
+      {folder && (
+        <Check label={t("upload.continueOnError")} checked={continueOnError} onChange={setContinueOnError} />
+      )}
       <SheetError error={error} />
       <SheetButtons
         confirmLabel={t("download.start")}
@@ -327,6 +388,67 @@ function Check({
         className="accent-primary"
       />
       {label}
+    </label>
+  )
+}
+
+const fieldClass =
+  "mt-1 h-8 w-full rounded-control border border-line bg-background px-2 text-[13px] text-fg outline-none focus:border-ring"
+
+function TextField({
+  label,
+  value,
+  onChange,
+  action,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  action?: { label: string; onClick: () => void }
+}) {
+  const id = useId()
+  return (
+    <div className="mt-3 text-[12px] text-muted-foreground">
+      <label htmlFor={id}>{label}</label>
+      <div className="flex items-center gap-2">
+        <input id={id} value={value} onChange={(e) => onChange(e.target.value)} className={fieldClass} />
+        {action && (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="mt-1 h-8 shrink-0 rounded-control border border-line px-2.5 text-[12.5px] text-fg-2 transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+          >
+            {action.label}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+  step = "1",
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  step?: string
+}) {
+  return (
+    <label className="block text-[12px] text-muted-foreground">
+      {label}
+      <input
+        type="number"
+        min="0"
+        step={step}
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={fieldClass}
+      />
     </label>
   )
 }

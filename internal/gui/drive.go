@@ -49,7 +49,7 @@ func (d *Drive) List(ctx context.Context, path string) ([]Entry, error) {
 }
 
 func (d *Drive) list(ctx context.Context, path string) ([]Entry, error) {
-	rows, err := d.state.current().ListDir(ctx, path)
+	rows, err := d.state.current().ListDir(d.state.scoped(ctx), path)
 	if err != nil {
 		return nil, toError(err)
 	}
@@ -84,7 +84,7 @@ func (d *Drive) resetView() {
 // Mkdir creates an empty directory in the virtual tree. Telegram cannot
 // store empty directories, so it is local-only until a file lands in it.
 func (d *Drive) Mkdir(ctx context.Context, path string) error {
-	return toError(d.state.current().Mkdir(ctx, path))
+	return toError(d.state.current().Mkdir(d.state.scoped(ctx), path))
 }
 
 // MoveOptions carries the move's typed confirmation (ADR 0003). An
@@ -96,7 +96,7 @@ type MoveOptions struct {
 // Move renames a remote file or moves it into another directory of the
 // bound channel. Directories cannot move (file-level moves only).
 func (d *Drive) Move(ctx context.Context, from, to string, opts MoveOptions) error {
-	return toError(d.state.current().MoveFile(ctx, from, to, service.MoveOptions{Confirm: opts.Confirm}))
+	return toError(d.state.current().MoveFile(d.state.scoped(ctx), from, to, service.MoveOptions{Confirm: opts.Confirm}))
 }
 
 // DeleteOptions carries the delete's typed confirmation (ADR 0003). An
@@ -116,7 +116,7 @@ type DeleteOutcome struct {
 // Delete removes a remote file from Telegram and the index. Directories
 // cannot be deleted (file-level deletes only).
 func (d *Drive) Delete(ctx context.Context, path string, opts DeleteOptions) (*DeleteOutcome, error) {
-	res, err := d.state.current().DeleteFile(ctx, path, service.DeleteOptions{Confirm: opts.Confirm})
+	res, err := d.state.current().DeleteFile(d.state.scoped(ctx), path, service.DeleteOptions{Confirm: opts.Confirm})
 	if err != nil {
 		return nil, toError(err)
 	}
@@ -135,7 +135,7 @@ type ShareLink struct {
 
 // Share returns the invite link and legacy hashtag for a remote path.
 func (d *Drive) Share(ctx context.Context, path string) (*ShareLink, error) {
-	res, err := d.state.current().Share(ctx, path)
+	res, err := d.state.current().Share(d.state.scoped(ctx), path)
 	if err != nil {
 		return nil, toError(err)
 	}
@@ -153,7 +153,7 @@ type TreeNode struct {
 // Tree returns the directory tree below a remote path, up to maxDepth
 // levels (0 for the service default).
 func (d *Drive) Tree(ctx context.Context, path string, maxDepth int) ([]TreeNode, error) {
-	nodes, err := d.state.current().Tree(ctx, path, maxDepth)
+	nodes, err := d.state.current().Tree(d.state.scoped(ctx), path, maxDepth)
 	if err != nil {
 		return nil, toError(err)
 	}
@@ -174,7 +174,7 @@ type ScanOutcome struct {
 // carries the completed counts.
 func (d *Drive) Scan(ctx context.Context) (*ScanOutcome, error) {
 	prog := &scanProgress{emit: d.emitEvent}
-	res, err := d.state.current().Scan(ctx, service.ScanOptions{Full: true, Observer: prog.observer()})
+	res, err := d.state.current().Scan(d.state.scoped(ctx), service.ScanOptions{Full: true, Observer: prog.observer()})
 	if err != nil {
 		return nil, toError(err)
 	}

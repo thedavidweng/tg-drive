@@ -88,7 +88,7 @@ export function Sheet({
         aria-label={title}
         tabIndex={-1}
         onKeyDown={trapTab}
-        className="relative w-[380px] rounded-card border border-line bg-popover p-4 shadow-pop"
+        className="relative max-h-[76vh] w-[380px] overflow-y-auto overscroll-contain rounded-card border border-line bg-popover p-4 shadow-pop"
       >
         <h2 className="mb-3 text-[13px] font-semibold">{title}</h2>
         {children}

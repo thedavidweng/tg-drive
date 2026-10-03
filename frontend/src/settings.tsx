@@ -277,7 +277,7 @@ function About({ backend }: { backend: Backend }) {
       </li>
       <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5">
         <span className="flex-1">td</span>
-        <span className="font-mono text-[12px] text-muted-foreground">{versions?.cli ?? "…"}</span>
+        <span className="font-mono text-[12px] text-muted-foreground">{versions ? versions.cli || t("settings.cliMissing") : "…"}</span>
       </li>
     </Card>
   )

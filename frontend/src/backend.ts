@@ -10,6 +10,7 @@ import type {
   BindResult,
   ChannelChoice,
   ChannelInfo,
+  ChannelsChanged,
   ChannelStatus,
   ConfigEntry,
   DeleteOutcome,
@@ -57,6 +58,7 @@ export type {
   BindResult,
   ChannelChoice,
   ChannelInfo,
+  ChannelsChanged,
   ChannelStatus,
   ConfigEntry,
   DeleteOutcome,
@@ -134,6 +136,8 @@ export interface Backend {
     onTransferRemoved(cb: (e: TransferRemoved) => void): () => void
     /** Files were dropped onto a drop-target element of the window. */
     onFilesDropped(cb: (e: FilesDropped) => void): () => void
+    /** The bound channels changed in the shared index (any front end's binding). */
+    onChannelsChanged(cb: (e: ChannelsChanged) => void): () => void
   }
   transfers: {
     /** Every Transfer in the index: active above the 30-day history. */

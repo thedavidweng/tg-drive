@@ -77,7 +77,7 @@ func (m *Maintenance) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptOutco
 }
 
 func (m *Maintenance) adopt(ctx context.Context, opts AdoptOptions, dryRun bool) (*AdoptOutcome, error) {
-	res, err := m.state.current().Adopt(ctx, service.AdoptOptions{
+	res, err := m.state.current().Adopt(m.state.scoped(ctx), service.AdoptOptions{
 		// The GUI adopts the whole unmanaged backlog; single-message adopt
 		// stays a CLI form.
 		Unmanaged:       !opts.RewriteCaptions,
@@ -233,7 +233,7 @@ func (m *Maintenance) Repair(ctx context.Context, opts RepairOptions) (*RepairOu
 			svcOpts.Path = &p
 		}
 	}
-	res, err := m.state.current().Repair(ctx, svcOpts)
+	res, err := m.state.current().Repair(m.state.scoped(ctx), svcOpts)
 	if err != nil {
 		return nil, toError(err)
 	}
@@ -293,7 +293,7 @@ type DoctorReport struct {
 // Telegram probes (edit, delete, upload, invite, Saved Messages) — the
 // facade never reimplements a check.
 func (m *Maintenance) Doctor(ctx context.Context) (*DoctorReport, error) {
-	res, err := m.state.current().Doctor(ctx)
+	res, err := m.state.current().Doctor(m.state.scoped(ctx))
 	if err != nil {
 		return nil, toError(err)
 	}
@@ -320,7 +320,7 @@ type PathCodecReport struct {
 // PathCodecDoctor runs the path codec self-test and verifies the stored
 // slug mappings against the database.
 func (m *Maintenance) PathCodecDoctor(ctx context.Context) (*PathCodecReport, error) {
-	res, err := m.state.current().PathCodecDoctor(ctx)
+	res, err := m.state.current().PathCodecDoctor(m.state.scoped(ctx))
 	if err != nil {
 		return nil, toError(err)
 	}

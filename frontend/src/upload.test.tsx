@@ -136,6 +136,83 @@ test("the download sheet applies the chosen local conflict policy", async () => 
   expect(backend.downloads[0].opts).toMatchObject({ policy: "replace" })
 })
 
+test("a video upload carries the attributes, thumbnail, and upload tuning td cp takes", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { files: ["/home/me/clip.mp4"] } } })
+  await openDrive(backend)
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  const dialog = await screen.findByRole("dialog", { name: "Upload to /" })
+  await within(dialog).findByRole("list", { name: "Files to upload" })
+
+  // The video attributes only show for the video kind.
+  expect(within(dialog).queryByRole("spinbutton", { name: "Duration (seconds)" })).toBeNull()
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Video" }))
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Duration (seconds)" }), { target: { value: "12.5" } })
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Width (px)" }), { target: { value: "1920" } })
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Height (px)" }), { target: { value: "1080" } })
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: "Streamable" }))
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Thumbnail (JPEG)" }), {
+    target: { value: "/home/me/thumb.jpg" },
+  })
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Upload threads" }), { target: { value: "3" } })
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Part size (KB)" }), { target: { value: "256" } })
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Rename the new file" }))
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Start upload" }))
+  await screen.findByText("Upload started — watch it in Transfers.")
+  expect(backend.uploads[0].opts).toMatchObject({
+    policy: "rename",
+    kind: "video",
+    duration_seconds: 12.5,
+    width: 1920,
+    height: 1080,
+    supports_streaming: true,
+    thumb_path: "/home/me/thumb.jpg",
+    upload_threads: 3,
+    upload_part_size_kb: 256,
+  })
+})
+
+test("a photo upload offers no thumbnail", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { files: ["/home/me/kyoto.jpg"] } } })
+  await openDrive(backend)
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  const dialog = await screen.findByRole("dialog", { name: "Upload to /" })
+  await within(dialog).findByRole("list", { name: "Files to upload" })
+  expect(within(dialog).getByRole("textbox", { name: "Thumbnail (JPEG)" })).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Photo" }))
+  expect(within(dialog).queryByRole("textbox", { name: "Thumbnail (JPEG)" })).toBeNull()
+})
+
+test("a folder download offers auto-rename and continuing past failures", async () => {
+  const backend = memoryBackend(
+    {
+      "/": [{ name: "photos", path: "/photos", type: "dir", size: 0, date: "2026-01-02T10:30:00Z" }],
+      "/photos": [{ name: "a.jpg", path: "/photos/a.jpg", type: "file", size: 3, date: "2026-01-02T10:30:00Z" }],
+    },
+    { transfers: { picks: { dir: "/home/me/Downloads" } } },
+  )
+  await openDrive(backend)
+
+  fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Download" }))
+  const dialog = await screen.findByRole("dialog", { name: "Download" })
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Rename the new file" }))
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: "Continue past failed files" }))
+  fireEvent.click(within(dialog).getByRole("button", { name: "Start download" }))
+  await screen.findByText("Download started — watch it in Transfers.")
+  expect(backend.downloads[0].opts).toMatchObject({ policy: "rename", continue_on_error: true })
+})
+
+test("a file download does not offer continuing past failures", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { dir: "/home/me/Downloads" } } })
+  await openDrive(backend)
+
+  fireEvent.click(within(screen.getByRole("listitem")).getByRole("button", { name: "Download" }))
+  const dialog = await screen.findByRole("dialog", { name: "Download" })
+  expect(within(dialog).queryByRole("checkbox", { name: "Continue past failed files" })).toBeNull()
+})
+
 test("a submission failure shows in the sheet and keeps it open", async () => {
   const backend = memoryBackend(seed, {
     transfers: {

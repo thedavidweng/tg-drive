@@ -2,14 +2,17 @@
 // video, driven by Playwright against a td-gui server-mode build
 // (go build -tags gui,server) backed by the fake Telegram.
 //
-//   node record.mjs --url http://127.0.0.1:3209 --out out [--setup-url http://127.0.0.1:3210]
+//   node record.mjs --url http://127.0.0.1:3209 --out out \
+//     [--setup-url http://127.0.0.1:3210] [--omarchy-url http://127.0.0.1:3211]
 //
 // A scene is one entry in the list below; adding one is a new entry (plus
 // whatever state run.sh seeds for it). Each scene renders in its own
 // browser context at 2x device scale, the window size the desktop app opens
 // with, and produces one PNG in the output directory next to manifest.json
 // and preview.mp4. Scenes marked setup record against --setup-url, the
-// second, credential-free server run.sh launches.
+// second, credential-free server run.sh launches; scenes marked omarchy
+// against --omarchy-url, a third server on the seeded drive that detects a
+// seeded Omarchy theme.
 import fs from "node:fs/promises"
 import path from "node:path"
 import { spawn } from "node:child_process"
@@ -23,7 +26,8 @@ const VIEWPORT = { width: 960, height: 640 }
 // the browser locale the i18n catalogues resolve from. open replaces the
 // default navigation (openDrive); settle is optional extra interaction
 // before the shot; leave runs after it, to hand the next scene a clean
-// state. setup selects the credential-free server. spawn names an
+// state. setup selects the credential-free server, omarchy the Omarchy
+// one. spawn names an
 // environment variable holding a shell command (run.sh exports them) to
 // start once the scene's page has loaded — how a scene runs a CLI upload
 // against the same fake Telegram.
@@ -194,6 +198,79 @@ const scenes = [
       await page.getByRole("list", { name: "Capability checks" }).waitFor()
     },
   },
+  // The Settings tab: appearance, the td config keys, and the About rows
+  // (run.sh puts the preview's td on the server's PATH, so the CLI row
+  // shows the probed version).
+  {
+    name: "settings-light",
+    title: "Settings — light",
+    colorScheme: "light",
+    open: openSettings,
+  },
+  {
+    name: "settings-dark-about",
+    title: "Settings — dark, About with the probed versions",
+    colorScheme: "dark",
+    open: openSettings,
+    settle: (page) => page.getByRole("region", { name: "About" }).scrollIntoViewIfNeeded(),
+  },
+  {
+    name: "settings-zh-CN",
+    title: "Settings — 简体中文",
+    colorScheme: "light",
+    locale: "zh-CN",
+    open: (page, base) => openSettings(page, base, "设置", "配置", "关于"),
+  },
+  // Omarchy, against the server that detects the seeded theme: the Drive
+  // drawn in the theme, the Settings row that names it, the switch turned
+  // off (a per-context localStorage preference, so it does not leak), and
+  // a theme change on disk reaching the open window.
+  {
+    name: "omarchy-drive",
+    title: "Omarchy — Drive in the seeded theme",
+    colorScheme: "light",
+    omarchy: true,
+    settle: (page) => page.locator("html.omarchy").waitFor({ state: "attached" }),
+  },
+  {
+    name: "omarchy-settings",
+    title: "Omarchy — Settings follows the theme",
+    colorScheme: "light",
+    omarchy: true,
+    open: openSettings,
+    settle: async (page) => {
+      await page.getByText("Follows the Omarchy theme preview-night.").waitFor()
+      await page.getByRole("switch", { name: "Omarchy mode", checked: true }).waitFor()
+    },
+  },
+  {
+    name: "omarchy-off",
+    title: "Omarchy — switched off",
+    colorScheme: "light",
+    omarchy: true,
+    open: openSettings,
+    settle: async (page) => {
+      await page.getByRole("switch", { name: "Omarchy mode" }).click()
+      await page.getByRole("switch", { name: "Omarchy mode", checked: false }).waitFor()
+      await page.locator("html:not(.omarchy)").waitFor({ state: "attached" })
+      // The manual theme control is back.
+      await page.getByRole("group", { name: "Theme" }).waitFor()
+    },
+  },
+  {
+    name: "omarchy-theme-change",
+    title: "Omarchy — theme changed while open",
+    colorScheme: "light",
+    omarchy: true,
+    open: openSettings,
+    settle: async (page) => {
+      await page.getByText("Follows the Omarchy theme preview-night.").waitFor()
+      await writeOmarchyTheme("preview-day", omarchyDay)
+      await page.getByText("Follows the Omarchy theme preview-day.").waitFor({ timeout: 15_000 })
+      await page.locator('html[data-omarchy-mode="light"]').waitFor({ state: "attached" })
+    },
+    leave: () => writeOmarchyTheme("preview-night", omarchyNight),
+  },
   // First-run setup and login, against the credential-free server. They
   // chain through the facade's real state: auth-login saves credentials,
   // auth-code starts a login (and cancels it after the shot), so each
@@ -337,14 +414,39 @@ const scenes = [
   },
 ]
 
+// The Omarchy palettes the omarchy scenes switch between; run.sh seeds the
+// night one. Same colors.toml keys an Omarchy theme ships.
+const omarchyNight = `mode = "dark"
+background = "#1a1b26"
+foreground = "#c0caf5"
+accent = "#7aa2f7"
+`
+const omarchyDay = `mode = "light"
+background = "#f5f0e6"
+foreground = "#3b3a36"
+accent = "#b4637a"
+`
+
+// writeOmarchyTheme replaces the seeded current theme the way switching
+// themes in Omarchy does: new colors.toml, new theme.name beside it.
+async function writeOmarchyTheme(name, colors) {
+  const dir = process.env.TD_PREVIEW_OMARCHY_THEME
+  if (!dir) throw new Error("omarchy scenes want $TD_PREVIEW_OMARCHY_THEME; run.sh exports it")
+  await fs.writeFile(path.join(dir, "colors.toml"), colors)
+  await fs.writeFile(path.join(path.dirname(dir), "theme.name"), name + "\n")
+}
+
 function parseArgs(argv) {
-  const args = { url: "", out: "", "setup-url": "" }
+  const args = { url: "", out: "", "setup-url": "", "omarchy-url": "" }
   for (let i = 2; i < argv.length; i += 2) {
     args[argv[i].replace(/^--/, "")] = argv[i + 1]
   }
   if (!args.url || !args.out) throw new Error("usage: record.mjs --url <base> --out <dir> [--setup-url <base>]")
   if (scenes.some((s) => s.setup) && !args["setup-url"]) {
     throw new Error("scenes marked setup need --setup-url (run.sh launches the second server)")
+  }
+  if (scenes.some((s) => s.omarchy) && !args["omarchy-url"]) {
+    throw new Error("scenes marked omarchy need --omarchy-url (run.sh launches the third server)")
   }
   return args
 }
@@ -363,6 +465,16 @@ async function openDrive(page, base) {
 async function openAuth(page, base, role, name) {
   await page.goto(base + "/", { waitUntil: "load" })
   await page.getByRole(role, { name }).waitFor({ timeout: 30_000 })
+}
+
+// openSettings navigates to the Settings tab and waits for the facade's
+// answers: the config keys and the probed versions.
+async function openSettings(page, base, tab = "Settings", config = "Configuration", about = "About") {
+  await page.goto(base + "/", { waitUntil: "load" })
+  await page.getByRole("tab", { name: tab }).click()
+  await page.getByRole("region", { name: config }).getByText("transfers.concurrency").waitFor({ timeout: 30_000 })
+  // "…" holds both About rows until the version probe answers.
+  await page.getByRole("region", { name: about }).getByText("…", { exact: true }).first().waitFor({ state: "detached" })
 }
 
 // openTransfers navigates straight to the Transfers tab: the CLI scenes
@@ -436,7 +548,7 @@ async function shootVideo(browser, base, out) {
   return webm
 }
 
-const { url, out, "setup-url": setupUrl } = parseArgs(process.argv)
+const { url, out, "setup-url": setupUrl, "omarchy-url": omarchyUrl } = parseArgs(process.argv)
 await fs.mkdir(out, { recursive: true })
 const browser = await chromium.launch()
 const errors = []
@@ -448,7 +560,8 @@ let video = ""
 try {
   for (const scene of scenes) {
     try {
-      shots.push(await shootScene(browser, scene.setup ? setupUrl : url, out, scene))
+      const base = scene.setup ? setupUrl : scene.omarchy ? omarchyUrl : url
+      shots.push(await shootScene(browser, base, out, scene))
     } catch (err) {
       errors.push(`${scene.name}: ${err.message.split("\n")[0]}`)
     }

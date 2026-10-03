@@ -68,6 +68,10 @@ type Client struct {
 	// saved chat unreadable, failSavedDelete rejects saved deletes.
 	savedUnavailable bool
 	failSavedDelete  bool
+
+	// deniedCaps names the channel permissions Doctor reports missing:
+	// "upload", "delete", "edit", "invite".
+	deniedCaps map[string]bool
 }
 
 // New creates a fake client.
@@ -647,10 +651,10 @@ func (c *Client) Doctor(ctx context.Context, channelID int64) (*telegram.Capabil
 	return &telegram.Capabilities{
 		AuthOK:           c.loggedIn,
 		ChannelOK:        true,
-		UploadOK:         true,
-		DeleteOK:         true,
-		InviteLinkOK:     true,
-		EditOldCaptionOK: true,
+		UploadOK:         !c.deniedCaps["upload"],
+		DeleteOK:         !c.deniedCaps["delete"],
+		InviteLinkOK:     !c.deniedCaps["invite"],
+		EditOldCaptionOK: !c.deniedCaps["edit"],
 		DiscussionOK:     c.discussion[channelID] != 0,
 		SavedHistoryOK:   !c.savedUnavailable,
 		SavedDeleteOK:    !c.savedUnavailable && !c.failSavedDelete,

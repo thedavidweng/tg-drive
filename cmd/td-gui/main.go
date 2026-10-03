@@ -14,9 +14,16 @@ import (
 
 	"github.com/thedavidweng/tg-drive/frontend"
 	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/version"
 )
 
 func main() {
+	// --version answers before any window or display exists, so the
+	// packaging scripts can check a release binary's stamp headless.
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(version.Version)
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "td-gui:", err)
 		os.Exit(1)
@@ -123,6 +130,9 @@ func run() error {
 		app.Event.Emit(name, data)
 	})
 	svc.SetMaintenanceEmitter(func(name string, data any) {
+		app.Event.Emit(name, data)
+	})
+	svc.SetChannelsEmitter(func(name string, data any) {
 		app.Event.Emit(name, data)
 	})
 	syncCtx, stopSync := context.WithCancel(context.Background())

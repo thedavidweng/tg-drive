@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/thedavidweng/tg-drive/core/telegram"
@@ -42,6 +43,9 @@ type persistedState struct {
 //     asks for this password after the code.
 //   - TD_FAKE_LOGIN_FLOOD_WAIT: login fails with a flood wait of this many
 //     seconds before any code is sent.
+//   - TD_FAKE_DENY_CAPABILITIES: a comma-separated list of channel
+//     permissions (upload, delete, edit, invite) the capability check
+//     reports missing; the operations themselves still succeed.
 func NewPersistent(path string) *Client {
 	c := New()
 	c.statePath = path
@@ -66,6 +70,12 @@ func NewPersistent(path string) *Client {
 	if v := os.Getenv("TD_FAKE_FAIL_UPLOAD_AFTER_PARTS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.failUploadAfterParts = n
+		}
+	}
+	if v := os.Getenv("TD_FAKE_DENY_CAPABILITIES"); v != "" {
+		c.deniedCaps = map[string]bool{}
+		for _, name := range strings.Split(v, ",") {
+			c.deniedCaps[strings.TrimSpace(name)] = true
 		}
 	}
 	c.load()

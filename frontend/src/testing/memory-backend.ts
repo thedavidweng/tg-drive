@@ -7,6 +7,7 @@ import type {
   BackendError,
   BindResult,
   ChannelChoice,
+  ChannelsChanged,
   ChannelStatus,
   ConfigEntry,
   DirectoryChanged,
@@ -284,6 +285,8 @@ export interface MemoryChannel {
   title: string
   /** The linked discussion group's title; absent means not linked. */
   discussion?: string
+  /** The permissions the account lacks on the channel. */
+  denied?: ("upload" | "delete" | "edit" | "invite")[]
 }
 
 /** How the in-memory Transfers service answers. */
@@ -525,6 +528,7 @@ export class MemoryBackend implements Backend {
   private transferProgressCbs = new Set<(t: Transfer) => void>()
   private transferRemovedCbs = new Set<(e: TransferRemoved) => void>()
   private filesDroppedCbs = new Set<(e: FilesDropped) => void>()
+  private channelsChangedCbs = new Set<(e: ChannelsChanged) => void>()
 
   /** Test-visible record of the transfers calls the screens made. */
   readonly uploads: { paths: string[]; dest: string; opts: UploadOptions }[] = []
@@ -780,6 +784,10 @@ export class MemoryBackend implements Backend {
       this.filesDroppedCbs.add(cb)
       return () => this.filesDroppedCbs.delete(cb)
     },
+    onChannelsChanged: (cb) => {
+      this.channelsChangedCbs.add(cb)
+      return () => this.channelsChangedCbs.delete(cb)
+    },
   }
 
   readonly transfers: Backend["transfers"] = {
@@ -795,8 +803,8 @@ export class MemoryBackend implements Backend {
     upload: async (paths, dest, opts) => {
       if (this.opts.transfers?.submitError) throw this.opts.transfers.submitError
       const policy = opts.policy || "fail"
-      if (policy !== "fail" && policy !== "skip" && policy !== "replace") {
-        throw backendError("ERR_USAGE", `unknown conflict policy "${opts.policy}" (want skip, replace, or fail)`)
+      if (!["fail", "skip", "replace", "rename"].includes(policy)) {
+        throw backendError("ERR_USAGE", `unknown conflict policy "${opts.policy}" (want skip, replace, rename, or fail)`)
       }
       // The replace gate, mirroring the facade's fail-fast Validate.
       if (policy === "replace" && !opts.confirm_replace) {
@@ -820,8 +828,8 @@ export class MemoryBackend implements Backend {
     download: async (remotePath, destDir, opts) => {
       if (this.opts.transfers?.submitError) throw this.opts.transfers.submitError
       const policy = opts.policy || "fail"
-      if (policy !== "fail" && policy !== "skip" && policy !== "replace") {
-        throw backendError("ERR_USAGE", `unknown conflict policy "${opts.policy}" (want skip, replace, or fail)`)
+      if (!["fail", "skip", "replace", "rename"].includes(policy)) {
+        throw backendError("ERR_USAGE", `unknown conflict policy "${opts.policy}" (want skip, replace, rename, or fail)`)
       }
       const tree = this.tree()
       if (!tree.files.has(remotePath) && !tree.dirs.has(remotePath)) {
@@ -836,8 +844,8 @@ export class MemoryBackend implements Backend {
     planUpload: async (paths, dest, policy) => {
       if (paths.length === 0) throw backendError("ERR_USAGE", "nothing to upload")
       const p = policy || "fail"
-      if (p !== "fail" && p !== "skip" && p !== "replace") {
-        throw backendError("ERR_USAGE", `unknown conflict policy "${policy}" (want skip, replace, or fail)`)
+      if (!["fail", "skip", "replace", "rename"].includes(p)) {
+        throw backendError("ERR_USAGE", `unknown conflict policy "${policy}" (want skip, replace, rename, or fail)`)
       }
       const limit = this.opts.transfers?.uploadLimitBytes ?? 2147483648
       const dirs = new Set(this.opts.transfers?.dirs ?? [])
@@ -1017,6 +1025,17 @@ export class MemoryBackend implements Backend {
     this.scanResolve?.()
   }
 
+  /**
+   * Test helper: binds a channel the way another front end (td init) would,
+   * and emits the channels-changed event index sync reports it with.
+   */
+  async bindExternally(ch: MemoryChannel): Promise<void> {
+    this.bound.push({ ...ch })
+    this.trees.set(ch.id, emptyTree())
+    const channels = await this.channels.list()
+    for (const cb of this.channelsChangedCbs) cb({ channels })
+  }
+
   /** Test helper: emits a directory-changed event as index sync would. */
   emitDirectoryChanged(e: DirectoryChanged): void {
     for (const cb of this.dirChangedCbs) cb(e)
@@ -1107,6 +1126,12 @@ export class MemoryBackend implements Backend {
       discussion_linked: ch.discussion !== undefined,
       ...(ch.discussion !== undefined ? { discussion_title: ch.discussion } : {}),
       upload_limit_bytes: 2147483648,
+      capabilities: {
+        can_upload: !ch.denied?.includes("upload"),
+        can_delete: !ch.denied?.includes("delete"),
+        can_edit_captions: !ch.denied?.includes("edit"),
+        can_invite: !ch.denied?.includes("invite"),
+      },
       last_scan_at: "2026-01-05T09:00:00Z",
       last_full_scan_at: "2026-01-05T09:00:00Z",
     }
@@ -1148,6 +1173,7 @@ export function failingBackend(err: BackendError): Backend {
       onTransferProgress: () => () => {},
       onTransferRemoved: () => () => {},
       onFilesDropped: () => () => {},
+      onChannelsChanged: () => () => {},
     },
     transfers: {
       list: fail,

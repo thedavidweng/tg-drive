@@ -153,6 +153,7 @@ func TestTransfersPlanUploadMatchesTheCpDryRun(t *testing.T) {
 		{"fail", service.ConflictFail},
 		{"skip", service.ConflictSkip},
 		{"replace", service.ConflictReplace},
+		{"rename", service.ConflictRename},
 	} {
 		plan, err := svc.Transfers.PlanUpload(ctx, paths, "/docs", tc.guiPolicy)
 		if err != nil {
@@ -165,12 +166,12 @@ func TestTransfersPlanUploadMatchesTheCpDryRun(t *testing.T) {
 		}
 	}
 
-	if _, err := svc.Transfers.PlanUpload(ctx, paths, "/docs", "rename"); err == nil {
-		t.Fatal("PlanUpload with a policy the sheet does not offer succeeded, want ERR_USAGE")
+	if _, err := svc.Transfers.PlanUpload(ctx, paths, "/docs", "bogus"); err == nil {
+		t.Fatal("PlanUpload with an unknown policy succeeded, want ERR_USAGE")
 	} else {
 		var guiErr *gui.Error
 		if !errors.As(err, &guiErr) || guiErr.Code != "ERR_USAGE" {
-			t.Fatalf("PlanUpload(rename) error = %v, want ERR_USAGE", err)
+			t.Fatalf("PlanUpload(bogus) error = %v, want ERR_USAGE", err)
 		}
 	}
 	if _, err := svc.Transfers.PlanUpload(ctx, nil, "/docs", ""); err == nil {
@@ -265,13 +266,13 @@ func TestTransfersDownloadHonoursTheLocalConflictPolicy(t *testing.T) {
 		t.Fatalf("replaced download left %q, want the remote content", body)
 	}
 
-	// A policy the sheet does not offer fails before anything starts.
-	if _, err := svc.Transfers.Download(ctx, "/notes.txt", dest, gui.DownloadOptions{Policy: "rename"}); err == nil {
+	// An unknown policy fails before anything starts.
+	if _, err := svc.Transfers.Download(ctx, "/notes.txt", dest, gui.DownloadOptions{Policy: "bogus"}); err == nil {
 		t.Fatal("Download with an unknown policy succeeded, want ERR_USAGE")
 	} else {
 		var guiErr *gui.Error
 		if !errors.As(err, &guiErr) || guiErr.Code != "ERR_USAGE" {
-			t.Fatalf("Download(rename) error = %v, want ERR_USAGE", err)
+			t.Fatalf("Download(bogus) error = %v, want ERR_USAGE", err)
 		}
 	}
 }

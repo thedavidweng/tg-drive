@@ -290,6 +290,7 @@ export function DriveScreen({ backend }: { backend: Backend }) {
         <DownloadSheet
           backend={backend}
           remotePath={sheet.entry.path}
+          folder={sheet.entry.type === "dir"}
           destDir={sheet.destDir}
           onStarted={() => {
             setSheet(null)
