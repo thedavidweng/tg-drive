@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // ListChannels returns channels visible to the logged-in user.

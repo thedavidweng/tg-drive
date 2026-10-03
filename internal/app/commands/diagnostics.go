@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/config"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // Doctor, doctor path-codec, and config commands.

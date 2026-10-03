@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // An import reports reading the saved chat, then each saved message once:

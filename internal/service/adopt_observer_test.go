@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 func seedUnmanaged(t *testing.T, app *App, tg interface {

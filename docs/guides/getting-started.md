@@ -37,7 +37,7 @@ td auth setup
 Create a Telegram app at https://my.telegram.org/apps
 api_id: 1234567
 api_hash: 0123456789abcdef0123456789abcdef
-saved Telegram API credentials to /Users/<you>/.config/tg-drive-cli/config.toml
+saved Telegram API credentials to /Users/<you>/.config/tg-drive/config.toml
 next: td auth login
 ```
 
@@ -61,7 +61,7 @@ td auth login
 phone (international, e.g. +1234567890): +1234567890
 Telegram sent a login code to your phone.
 code: 54321
-logged in as <display name>; session saved to /Users/<you>/.config/tg-drive-cli/session.json
+logged in as <display name>; session saved to /Users/<you>/.config/tg-drive/session.json
 other td commands now reuse this session; next: td init <local-root> --create-channel
 ```
 
@@ -203,7 +203,7 @@ local root     ~/Pictures
 files          12 active
 last scan      2026-08-14T22:17:54Z (last full: 2026-08-14T22:17:54Z)
 upload limit   2.0 GB per file
-database       ~/.local/share/tg-drive-cli/local_cache.db
+database       ~/.local/share/tg-drive/local_cache.db
 health         ok
 ```
 

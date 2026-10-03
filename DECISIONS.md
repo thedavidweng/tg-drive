@@ -1,23 +1,23 @@
-# tg-drive-cli Decisions
+# tg-drive Decisions
 
 This document exists to prevent implementation drift. Do not replace these choices without opening a decision-changing issue.
 
 ## Product
 
-- Build a CLI-first Telegram-backed file tree.
-- Binary name is `td`.
+- Build a CLI-first Telegram-backed file tree, with a desktop front end in the same module.
+- Binary names are `td` and `td-gui`.
 - One Telegram channel per initialized root.
 - File-level move and rename only.
-- Directory move/delete, multi-channel storage, forum topics, watch mode, WebDAV/FUSE, dedupe, encryption, and multi-account switching are out of scope ([issues](https://github.com/thedavidweng/tg-drive-cli/issues)).
+- Directory move/delete, multi-channel storage, forum topics, watch mode, WebDAV/FUSE, dedupe, encryption, and multi-account switching are out of scope ([issues](https://github.com/thedavidweng/tg-drive/issues)).
 - Empty directories are local-only and disappear after a full scan.
 
 ## Repository
 
-- Module path: `github.com/thedavidweng/tg-drive-cli`.
+- Module path: `github.com/thedavidweng/tg-drive`.
 - Main package: `./cmd/td`.
 - License: Apache-2.0.
 - Go version: 1.26.
-- Package layout is `cmd/td` + `internal/{app,service,config,output}` + `core/*` + `adapters/*`.
+- Package layout is `cmd/td`, `cmd/td-gui`, `frontend/`, `internal/{app,gui,service,transfer,config,output}`, `core/*`, and `adapters/*`.
 
 ## CLI
 

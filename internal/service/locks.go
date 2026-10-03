@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 )
 
 // defaultLockTTL applies when locks.ttl_seconds is unset.

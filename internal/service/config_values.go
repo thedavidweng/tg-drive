@@ -1,8 +1,8 @@
 package service
 
 import (
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/config"
 )
 
 // ConfigGetOptions selects what GetConfig reads.

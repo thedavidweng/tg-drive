@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // Client wraps a Telegram client so every call first holds the Session

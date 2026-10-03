@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // MapError classifies a Telegram-layer error into the stable application

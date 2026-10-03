@@ -3,8 +3,8 @@ package ports
 import (
 	"context"
 
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
+	"github.com/thedavidweng/tg-drive/core/manifest"
+	"github.com/thedavidweng/tg-drive/core/pathcodec"
 )
 
 // FileIndex is the repository seam for the file index. It persists the file

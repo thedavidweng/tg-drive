@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/fsmodel"
 )
 
 const (

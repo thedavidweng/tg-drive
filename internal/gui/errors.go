@@ -2,7 +2,7 @@
 
 package gui
 
-import apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+import apperr "github.com/thedavidweng/tg-drive/core/errors"
 
 // Error is the error every facade method returns. Its code and category are
 // those of the JSON contract's error envelope, so the frontend handles a

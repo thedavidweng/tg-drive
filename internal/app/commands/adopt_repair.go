@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strconv"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // Adopt (in-place claim, ADR 0019) and repair commands. The `import` name is

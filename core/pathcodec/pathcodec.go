@@ -9,7 +9,7 @@ import (
 
 	"github.com/mozillazg/go-pinyin"
 	"github.com/mozillazg/go-unidecode"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"golang.org/x/text/unicode/norm"
 	"lukechampine.com/blake3"
 )

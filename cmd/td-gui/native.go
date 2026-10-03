@@ -9,8 +9,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
-	"github.com/thedavidweng/tg-drive-cli/assets"
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
+	"github.com/thedavidweng/tg-drive/assets"
+	"github.com/thedavidweng/tg-drive/internal/gui"
 )
 
 // desktop owns the native behaviours the headless server build stubs out

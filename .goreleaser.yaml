@@ -25,10 +25,10 @@ builds:
     binary: td
     ldflags:
       - -s -w
-      - -X github.com/thedavidweng/tg-drive-cli/internal/version.Version={{.Version}}
-      - -X github.com/thedavidweng/tg-drive-cli/internal/version.Commit={{.Commit}}
-      - -X github.com/thedavidweng/tg-drive-cli/internal/version.Date={{.Date}}
-      - -X github.com/thedavidweng/tg-drive-cli/internal/version.BuiltBy=goreleaser
+      - -X github.com/thedavidweng/tg-drive/internal/version.Version={{.Version}}
+      - -X github.com/thedavidweng/tg-drive/internal/version.Commit={{.Commit}}
+      - -X github.com/thedavidweng/tg-drive/internal/version.Date={{.Date}}
+      - -X github.com/thedavidweng/tg-drive/internal/version.BuiltBy=goreleaser
 
 universal_binaries:
   - replace: true
@@ -79,7 +79,7 @@ changelog:
 release:
   github:
     owner: thedavidweng
-    name: tg-drive-cli
+    name: tg-drive
   mode: append
   draft: false
   prerelease: auto
@@ -91,14 +91,14 @@ release:
     ---
     **Install:**
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/thedavidweng/tg-drive-cli/main/install.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.sh | sh
     ```
 
 nfpms:
   - package_name: td
     vendor: thedavidweng
     maintainer: thedavidweng <noreply@github.com>
-    homepage: https://github.com/thedavidweng/tg-drive-cli
+    homepage: https://github.com/thedavidweng/tg-drive
     description: Telegram-backed virtual file tree CLI
     license: Apache-2.0
     formats:
@@ -108,5 +108,5 @@ nfpms:
     bindir: /usr/bin
 
 # The Homebrew cask is maintained pull-based: the tap repository's Sync
-# Releases workflow updates Casks/tg-drive-cli.rb from the published release
+# Releases workflow updates Casks/tg-drive.rb from the published release
 # assets, so this pipeline needs no cross-repository token.

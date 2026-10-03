@@ -12,8 +12,8 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
-	"github.com/thedavidweng/tg-drive-cli/frontend"
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
+	"github.com/thedavidweng/tg-drive/frontend"
+	"github.com/thedavidweng/tg-drive/internal/gui"
 )
 
 func main() {

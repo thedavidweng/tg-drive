@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="assets/icon.png" alt="tg-drive-cli" width="160" />
+  <img src="assets/icon.png" alt="tg-drive" width="160" />
 </p>
 
-<h1 align="center">tg-drive-cli (td)</h1>
+<h1 align="center">tg-drive (td)</h1>
 
 <p align="center">
   Turn a Telegram channel into a recoverable, scriptable file tree.
 </p>
 
 <p align="center">
-  <a href="https://github.com/thedavidweng/tg-drive-cli/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/thedavidweng/tg-drive-cli/ci.yml?branch=main&style=flat-square&label=ci" alt="CI"></a>
-  <a href="https://github.com/thedavidweng/tg-drive-cli/releases"><img src="https://img.shields.io/github/v/release/thedavidweng/tg-drive-cli?style=flat-square" alt="Release"></a>
-  <a href="https://github.com/thedavidweng/tg-drive-cli/blob/main/LICENSE"><img src="https://img.shields.io/github/license/thedavidweng/tg-drive-cli?style=flat-square" alt="License"></a>
+  <a href="https://github.com/thedavidweng/tg-drive/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/thedavidweng/tg-drive/ci.yml?branch=main&style=flat-square&label=ci" alt="CI"></a>
+  <a href="https://github.com/thedavidweng/tg-drive/releases"><img src="https://img.shields.io/github/v/release/thedavidweng/tg-drive?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/thedavidweng/tg-drive/blob/main/LICENSE"><img src="https://img.shields.io/github/license/thedavidweng/tg-drive?style=flat-square" alt="License"></a>
   <img src="https://img.shields.io/badge/go-%3E%3D1.26-blue?style=flat-square" alt="Go">
 </p>
 
@@ -40,7 +40,7 @@ download, and filter folders by hashtag.
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/thedavidweng/tg-drive-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.sh | sh
 ```
 
 Installs into `~/.local/bin` by default (`TD_INSTALL_DIR` overrides). If
@@ -50,23 +50,23 @@ Homebrew is present, the script uses the cask instead. Uninstall with
 ### Windows
 
 ```powershell
-irm https://raw.githubusercontent.com/thedavidweng/tg-drive-cli/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.ps1 | iex
 ```
 
-Installs `td.exe` into `%LOCALAPPDATA%\tg-drive-cli\bin` (`$env:TD_INSTALL_DIR`
+Installs `td.exe` into `%LOCALAPPDATA%\tg-drive\bin` (`$env:TD_INSTALL_DIR`
 overrides) and adds it to the user `PATH`.
 
 ### Homebrew
 
 ```sh
 brew tap thedavidweng/tap
-brew install --cask tg-drive-cli
+brew install --cask tg-drive
 ```
 
 ### go install
 
 ```sh
-go install github.com/thedavidweng/tg-drive-cli/cmd/td@latest
+go install github.com/thedavidweng/tg-drive/cmd/td@latest
 ```
 
 Requires Go 1.26 or newer.
@@ -74,8 +74,8 @@ Requires Go 1.26 or newer.
 ### From source
 
 ```sh
-git clone https://github.com/thedavidweng/tg-drive-cli.git
-cd tg-drive-cli
+git clone https://github.com/thedavidweng/tg-drive.git
+cd tg-drive
 make build          # ./dist/td
 ```
 
@@ -219,9 +219,12 @@ Precedence: CLI flags > `TD_*` environment variables > config file > defaults.
 
 | Purpose | Default |
 | --- | --- |
-| Config | `~/.config/tg-drive-cli/config.toml` |
-| Session | `~/.config/tg-drive-cli/session.json` |
-| Cache DB | `~/.local/share/tg-drive-cli/local_cache.db` |
+| Config | `~/.config/tg-drive/config.toml` |
+| Session | `~/.config/tg-drive/session.json` |
+| Cache DB | `~/.local/share/tg-drive/local_cache.db` |
+
+A machine that already has these files under `tg-drive-cli` keeps using that
+directory. Moving it is optional.
 
 Overrides: `TD_CONFIG`, `TD_SESSION`, `TD_DB`, or `--config` / `--session` /
 `--db`. Credentials can also come from `TD_API_ID` and `TD_API_HASH`.
@@ -259,7 +262,7 @@ chat** tab. Public channels can use `#tag@username`; private channels cannot.
   accepted the media but before the index was written, the retry points you
   at `td repair --orphaned` instead of silently duplicating the message.
 
-Later work is tracked in [GitHub Issues](https://github.com/thedavidweng/tg-drive-cli/issues).
+Later work is tracked in [GitHub Issues](https://github.com/thedavidweng/tg-drive/issues).
 
 ## Privacy
 

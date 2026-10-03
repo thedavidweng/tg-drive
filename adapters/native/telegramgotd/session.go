@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/gotd/td/session"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/fileperm"
+	"github.com/thedavidweng/tg-drive/adapters/native/fileperm"
 )
 
 // sessionStorage is gotd session storage that replaces the session file

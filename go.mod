@@ -1,4 +1,4 @@
-module github.com/thedavidweng/tg-drive-cli
+module github.com/thedavidweng/tg-drive
 
 go 1.26.0
 

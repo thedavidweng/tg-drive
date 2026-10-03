@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
-	"github.com/thedavidweng/tg-drive-cli/internal/version"
+	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/version"
 )
 
 // seedConfig points every path at a temp dir and writes known config values

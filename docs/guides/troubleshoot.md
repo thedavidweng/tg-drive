@@ -89,7 +89,7 @@ local root     ~/Pictures
 files          12 active
 last scan      2026-08-14T22:17:54Z (last full: 2026-08-14T22:17:54Z)
 upload limit   2.0 GB per file
-database       ~/.local/share/tg-drive-cli/local_cache.db
+database       ~/.local/share/tg-drive/local_cache.db
 health         ok
 ```
 
@@ -111,9 +111,9 @@ to see what it did. Add `--verbose` (or set `TD_VERBOSE=1`):
 
 ```text
 $ td --verbose ls /
-debug: config ~/.config/tg-drive-cli/config.toml (found)
-debug: db ~/.local/share/tg-drive-cli/local_cache.db
-debug: session ~/.config/tg-drive-cli/session.json
+debug: config ~/.config/tg-drive/config.toml (found)
+debug: db ~/.local/share/tg-drive/local_cache.db
+debug: session ~/.config/tg-drive/session.json
 DIR  Pictures/
 ```
 

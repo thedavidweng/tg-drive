@@ -68,7 +68,7 @@ local root     ~/Pictures
 files          12 active
 last scan      2026-08-14T22:17:54Z (last full: 2026-08-14T22:17:54Z)
 upload limit   2.0 GB per file
-database       ~/.local/share/tg-drive-cli/local_cache.db
+database       ~/.local/share/tg-drive/local_cache.db
 health         ok
 ```
 

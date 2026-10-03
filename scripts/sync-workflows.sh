@@ -5,7 +5,8 @@ set -euo pipefail
 DEV_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CURRENT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Managed sibling repositories
+# Managed sibling repositories. tg-drive-cli is the checkout name from
+# before the repository rename; either directory is this project.
 REPOS=(
   "canvas-cli"
   "flickr-cli"
@@ -13,8 +14,13 @@ REPOS=(
   "money"
   "qualtrics-cli"
   "zenodo-cli"
+  "tg-drive"
   "tg-drive-cli"
 )
+
+is_tg_drive() {
+  [ "$1" = "tg-drive" ] || [ "$1" = "tg-drive-cli" ]
+}
 
 # Common workflows to keep identical
 SYNC_WORKFLOWS=(
@@ -40,12 +46,12 @@ if [ "$MODE" = "check" ]; then
       continue
     fi
     for wf in "${SYNC_WORKFLOWS[@]}"; do
-      # tg-drive-cli has customized flags for release.yml (parallelism)
-      if { [ "$repo" = "tg-drive-cli" ] || [ "${CURRENT_REPO##*/}" = "tg-drive-cli" ]; } && [ "$wf" = "release.yml" ]; then
+      # tg-drive has customized flags for release.yml (parallelism)
+      if { is_tg_drive "$repo" || is_tg_drive "${CURRENT_REPO##*/}"; } && [ "$wf" = "release.yml" ]; then
         continue
       fi
-      # tg-drive-cli and qualtrics-cli have customized CI pipelines
-      if { [ "$repo" = "tg-drive-cli" ] || [ "$repo" = "qualtrics-cli" ] || [ "${CURRENT_REPO##*/}" = "tg-drive-cli" ] || [ "${CURRENT_REPO##*/}" = "qualtrics-cli" ]; } && [ "$wf" = "ci.yml" ]; then
+      # tg-drive and qualtrics-cli have customized CI pipelines
+      if { is_tg_drive "$repo" || [ "$repo" = "qualtrics-cli" ] || is_tg_drive "${CURRENT_REPO##*/}" || [ "${CURRENT_REPO##*/}" = "qualtrics-cli" ]; } && [ "$wf" = "ci.yml" ]; then
         continue
       fi
       # Only verify codeql.yml if it exists in target or source
@@ -75,10 +81,10 @@ for repo in "${REPOS[@]}"; do
     continue
   fi
   for wf in "${SYNC_WORKFLOWS[@]}"; do
-    if [ "$repo" = "tg-drive-cli" ] && [ "$wf" = "release.yml" ]; then
+    if is_tg_drive "$repo" && [ "$wf" = "release.yml" ]; then
       continue
     fi
-    if { [ "$repo" = "tg-drive-cli" ] || [ "$repo" = "qualtrics-cli" ]; } && [ "$wf" = "ci.yml" ]; then
+    if { is_tg_drive "$repo" || [ "$repo" = "qualtrics-cli" ]; } && [ "$wf" = "ci.yml" ]; then
       continue
     fi
     if [ "$wf" = "codeql.yml" ] && [ ! -f "${target_dir}/${wf}" ]; then

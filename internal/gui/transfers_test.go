@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
-	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
+	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
 
 // transferEvents is the test Emitter for the transfer events: it records

@@ -32,7 +32,7 @@ None are required. The pipeline runs end to end on the built-in
   to trigger), because tags created with the built-in token do not fire
   the tag trigger.
 - The Homebrew cask is not pushed from this repo. The tap repository's
-  own Sync Releases workflow updates `Casks/tg-drive-cli.rb` from the
+  own Sync Releases workflow updates `Casks/tg-drive.rb` from the
   published release assets (daily cron or manual dispatch).
 
 `RELEASE_PLEASE_TOKEN` is an optional override. `CODECOV_TOKEN` is only

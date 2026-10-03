@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // promptRecorder wires the facade's prompt emitter the way cmd/td-gui does,

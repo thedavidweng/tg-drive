@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 )
 
 // transferTime formats a moment in the fixed-width UTC layout the storage

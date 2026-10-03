@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // Channels is the facade service for the drives (Telegram channels) bound in

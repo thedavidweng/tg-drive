@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // seedLogin points td at a temp machine and logs the fake account in through

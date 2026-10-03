@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // persistedState is the JSON image of a persistent fake client.

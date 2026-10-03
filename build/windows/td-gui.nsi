@@ -25,7 +25,7 @@ Unicode true
 !define PRODUCT_NAME "td"
 !define PRODUCT_BINARY "td-gui.exe"
 !define PRODUCT_PUBLISHER "thedavidweng"
-!define PRODUCT_URL "https://github.com/thedavidweng/tg-drive-cli"
+!define PRODUCT_URL "https://github.com/thedavidweng/tg-drive"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\td-gui"
 ; WebView2 evergreen runtime client ID used by EdgeUpdate.
 !define WEBVIEW2_CLIENT "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"

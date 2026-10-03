@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
 
 // Desktop-lifecycle decisions for cmd/td-gui: the tray menu built from the

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 func configuredOptions(t *testing.T) Options {

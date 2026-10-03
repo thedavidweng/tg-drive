@@ -7,7 +7,7 @@ import type { Events } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import type * as gui$0 from "../../../../thedavidweng/tg-drive-cli/internal/gui/models.js";
+import type * as gui$0 from "../../../../thedavidweng/tg-drive/internal/gui/models.js";
 
 declare module "@wailsio/runtime" {
     namespace Events {

@@ -5,7 +5,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // Saved Messages support for the fake client (td import saved).

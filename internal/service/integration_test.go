@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/ports"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/ports"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 type failIndex struct {

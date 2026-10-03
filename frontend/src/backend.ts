@@ -43,7 +43,7 @@ import type {
   UploadPlan,
   UploadPlanFile,
   Versions,
-} from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui/models"
+} from "../bindings/github.com/thedavidweng/tg-drive/internal/gui/models"
 
 export type {
   AdoptItem,

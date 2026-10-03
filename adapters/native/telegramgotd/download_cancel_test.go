@@ -8,8 +8,8 @@ import (
 
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/tg"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // The fake Telegram client used by the E2E suite replaces the whole adapter,

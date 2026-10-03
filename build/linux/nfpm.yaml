@@ -9,7 +9,7 @@ section: utils
 priority: optional
 maintainer: thedavidweng <noreply@github.com>
 vendor: thedavidweng
-homepage: https://github.com/thedavidweng/tg-drive-cli
+homepage: https://github.com/thedavidweng/tg-drive
 description: Desktop GUI for td, the Telegram-backed virtual file tree
 license: Apache-2.0
 contents:

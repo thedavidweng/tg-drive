@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/core/pathcodec"
+	"github.com/thedavidweng/tg-drive/core/pathcodec"
 )
 
 func oldRenderedCaption(t *testing.T, app *App, channelID int64, path, display, prefix string) string {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // transfersSQL adds the Transfer table (ADR 0033). Its own migration rather

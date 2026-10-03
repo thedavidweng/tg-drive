@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/config"
 )
 
 // TelegramField names one Telegram credential a front end may be asked for.

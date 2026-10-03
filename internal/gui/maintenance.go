@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // Maintenance is the facade service for adopting channel messages,

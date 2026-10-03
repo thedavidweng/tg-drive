@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // askFrom answers each asked field from answers and records the order asked.

@@ -1,14 +1,14 @@
 # Contributing
 
 Thanks for wanting to improve `td`. Please open or comment on a
-[GitHub Issue](https://github.com/thedavidweng/tg-drive-cli/issues) before
+[GitHub Issue](https://github.com/thedavidweng/tg-drive/issues) before
 starting large work.
 
 ## Setup
 
 ```sh
-git clone https://github.com/thedavidweng/tg-drive-cli.git
-cd tg-drive-cli
+git clone https://github.com/thedavidweng/tg-drive.git
+cd tg-drive
 make bootstrap
 make ci-local
 ```
