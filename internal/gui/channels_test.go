@@ -400,7 +400,7 @@ func TestChannelsStatusReportsTheChannelPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := gui.ChannelCapabilities{CanUpload: true, CanDelete: true, CanEditCaptions: true, CanInvite: true}
-	if st.Capabilities != want {
+	if st.Capabilities == nil || *st.Capabilities != want {
 		t.Fatalf("Status capabilities = %+v, want every permission of the channel's owner %+v", st.Capabilities, want)
 	}
 }
@@ -416,8 +416,22 @@ func TestChannelsStatusReportsMissingPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Capabilities != (gui.ChannelCapabilities{}) {
+	if st.Capabilities == nil || *st.Capabilities != (gui.ChannelCapabilities{}) {
 		t.Fatalf("Status capabilities = %+v, want every permission denied", st.Capabilities)
+	}
+}
+
+func TestChannelsStatusSurvivesCapabilityProbeFailure(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_FAIL_DOCTOR", "1")
+	svc := openGUI(t)
+
+	st, err := svc.Channels.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Title != "Drive" || st.Capabilities != nil {
+		t.Fatalf("Status = %+v, want Drive with unknown permissions", st)
 	}
 }
 

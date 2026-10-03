@@ -58,7 +58,8 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   the webview's local storage, next to the other GUI display preferences.
   The channel status carries the account's permissions on the channel
   (upload, delete messages, edit captions, export invite links) from the
-  same capability checks `td doctor` runs.
+  same capability checks `td doctor` runs. A failed capability probe
+  leaves permissions unavailable rather than hiding the channel status.
 - Long per-item service runs report through the Observer seam: the facade
   adapts it to typed `import.item` (Saved Messages import) and
   `repair.item` (repair runs) events, each carrying a running tally.

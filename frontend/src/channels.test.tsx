@@ -153,6 +153,21 @@ test("the channel status names the missing permissions", async () => {
   await within(dialog).findByText("Missing: delete messages, invite links")
 })
 
+test("a failed permission probe does not hide the channel status", async () => {
+  const backend = memoryBackend(
+    {},
+    { channels: [{ id: "1001", title: "Drive", discussion: "Drive Discussion", probeFailed: true }] },
+  )
+  backend.putFileForTest("/notes.txt", 5, "2026-01-01T00:00:00Z")
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+  fireEvent.click(screen.getByRole("button", { name: "Switch drive" }))
+  const dialog = await screen.findByRole("dialog", { name: "Drives" })
+  await within(dialog).findByText("Unavailable")
+  expect(within(dialog).getByText("Drive Discussion")).toBeTruthy()
+  expect(within(dialog).getByText("1 files indexed")).toBeTruthy()
+})
+
 test("a channel bound by another front end appears without a reload", async () => {
   const backend = memoryBackend({}, { channels: [{ id: "1001", title: "Drive" }] })
   backend.putFileForTest("/notes.txt", 5, "2026-01-01T00:00:00Z")

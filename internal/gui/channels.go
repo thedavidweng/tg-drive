@@ -118,7 +118,7 @@ type ChannelStatus struct {
 	// UploadLimitBytes is the account's per-file upload limit on Telegram.
 	UploadLimitBytes int64 `json:"upload_limit_bytes"`
 	// Capabilities is what the account may do on the channel.
-	Capabilities ChannelCapabilities `json:"capabilities"`
+	Capabilities *ChannelCapabilities `json:"capabilities,omitempty"`
 	// LastScanAt is the RFC3339 time the index last changed from a scan,
 	// empty when the channel was never scanned; LastFullScanAt is the last
 	// completed full scan.
@@ -143,6 +143,10 @@ type ChannelCapabilities struct {
 // fails with ERR_CHANNEL_NOT_FOUND.
 func (c *Channels) Status(ctx context.Context) (*ChannelStatus, error) {
 	app, ctx := c.state.use(ctx)
+	return c.statusFor(app, ctx)
+}
+
+func (c *Channels) statusFor(app *service.App, ctx context.Context) (*ChannelStatus, error) {
 	if app.TG == nil {
 		return nil, toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
 	}
@@ -169,12 +173,11 @@ func (c *Channels) Status(ctx context.Context) (*ChannelStatus, error) {
 		out.LastFullScanAt = *st.LastFullScanAt
 	}
 	perms, err := app.ChannelPermissions(ctx)
-	if err != nil {
-		return nil, toError(err)
-	}
-	out.Capabilities = ChannelCapabilities{
-		CanUpload: perms.Upload, CanDelete: perms.Delete,
-		CanEditCaptions: perms.EditCaptions, CanInvite: perms.InviteLink,
+	if err == nil {
+		out.Capabilities = &ChannelCapabilities{
+			CanUpload: perms.Upload, CanDelete: perms.Delete,
+			CanEditCaptions: perms.EditCaptions, CanInvite: perms.InviteLink,
+		}
 	}
 	discussion, err := app.DiscussionGroup(ctx)
 	if err != nil {
@@ -312,10 +315,19 @@ func (c *Channels) Bind(ctx context.Context, req BindRequest) (*BindResult, erro
 // bound in the index; an unknown ID fails with ERR_CHANNEL_NOT_FOUND and keeps the
 // current channel.
 func (c *Channels) Select(ctx context.Context, channelID string) (*ChannelStatus, error) {
-	if err := c.selectChannel(ctx, strings.TrimSpace(channelID)); err != nil {
+	channelID = strings.TrimSpace(channelID)
+	app, scoped := c.state.use(ctx)
+	// Read the target before changing the shared selector. A failed status
+	// read must not leave the frontend showing the previous drive while
+	// subsequent calls operate on the new one.
+	status, err := c.statusFor(app, service.WithChannel(scoped, channelID))
+	if err != nil {
 		return nil, err
 	}
-	return c.Status(ctx)
+	if err := c.selectChannel(ctx, channelID); err != nil {
+		return nil, err
+	}
+	return status, nil
 }
 
 // selectChannel makes channelID the active channel after checking it is

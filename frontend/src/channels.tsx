@@ -293,6 +293,7 @@ function ChannelsSheet({
 /** The account's permissions on the channel: all granted, or the missing ones named. */
 function permissionsText(status: ChannelStatus, t: Translate): string {
   const caps = status.capabilities
+  if (!caps) return t("channels.status.permissionsUnknown")
   const missing = [
     !caps?.can_upload && t("channels.permission.upload"),
     !caps?.can_delete && t("channels.permission.delete"),

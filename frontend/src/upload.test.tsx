@@ -173,6 +173,23 @@ test("a video upload carries the attributes, thumbnail, and upload tuning td cp 
   })
 })
 
+test("fractional upload tuning cannot be submitted as Go integer fields", async () => {
+  const backend = memoryBackend(seed, { transfers: { picks: { files: ["/home/me/clip.mp4"] } } })
+  await openDrive(backend)
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  const dialog = await screen.findByRole("dialog", { name: "Upload to /" })
+  await within(dialog).findByRole("list", { name: "Files to upload" })
+  fireEvent.click(within(dialog).getByRole("radio", { name: "Video" }))
+  const start = within(dialog).getByRole("button", { name: "Start upload" })
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Width (px)" }), { target: { value: "1920.5" } })
+  expect(start.hasAttribute("disabled")).toBe(true)
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Width (px)" }), { target: { value: "1920" } })
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Upload threads" }), { target: { value: "3.5" } })
+  expect(start.hasAttribute("disabled")).toBe(true)
+  fireEvent.change(within(dialog).getByRole("spinbutton", { name: "Upload threads" }), { target: { value: "3" } })
+  expect(start.hasAttribute("disabled")).toBe(false)
+})
+
 test("a photo upload offers no thumbnail", async () => {
   const backend = memoryBackend(seed, { transfers: { picks: { files: ["/home/me/kyoto.jpg"] } } })
   await openDrive(backend)

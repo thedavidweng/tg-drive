@@ -287,6 +287,7 @@ export interface MemoryChannel {
   discussion?: string
   /** The permissions the account lacks on the channel. */
   denied?: ("upload" | "delete" | "edit" | "invite")[]
+  probeFailed?: boolean
 }
 
 /** How the in-memory Transfers service answers. */
@@ -1126,12 +1127,12 @@ export class MemoryBackend implements Backend {
       discussion_linked: ch.discussion !== undefined,
       ...(ch.discussion !== undefined ? { discussion_title: ch.discussion } : {}),
       upload_limit_bytes: 2147483648,
-      capabilities: {
+      ...(!ch.probeFailed && { capabilities: {
         can_upload: !ch.denied?.includes("upload"),
         can_delete: !ch.denied?.includes("delete"),
         can_edit_captions: !ch.denied?.includes("edit"),
         can_invite: !ch.denied?.includes("invite"),
-      },
+      } }),
       last_scan_at: "2026-01-05T09:00:00Z",
       last_full_scan_at: "2026-01-05T09:00:00Z",
     }

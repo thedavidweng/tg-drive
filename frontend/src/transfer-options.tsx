@@ -89,7 +89,13 @@ export function UploadSheet({
   const hasDirs = files.some((f) => f.dir)
   // Several files together are one album, and albums cannot replace.
   const album = files.filter((f) => !f.dir).length > 1
-  const startDisabled = busy || !ready || (policy === "replace" && !confirmReplace)
+  const integerFields = [threads, partSizeKB, ...(!hasDirs && kind === "video" ? [width, height] : [])]
+  const invalidInteger = integerFields.some((value) => {
+    if (!value.trim()) return false
+    const n = Number(value)
+    return !Number.isSafeInteger(n) || n < 0
+  })
+  const startDisabled = busy || !ready || invalidInteger || (policy === "replace" && !confirmReplace)
 
   const start = async () => {
     if (startDisabled) return
@@ -204,6 +210,7 @@ export function UploadSheet({
         </>
       )}
       <SheetError error={error} />
+      {invalidInteger && <p role="alert" className="mt-2 text-[12px] text-red">{t("upload.wholeNumber")}</p>}
       <SheetButtons
         confirmLabel={t("upload.start")}
         busy={busy}

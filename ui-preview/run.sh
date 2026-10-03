@@ -42,6 +42,7 @@ cd "$ROOT"
 (cd frontend && bun install --frozen-lockfile && bun run build)
 go build -trimpath -o "$WORK/td" ./cmd/td
 CGO_ENABLED=0 go build -tags gui,server -trimpath -o "$WORK/td-gui" ./cmd/td-gui
+export TD_PREVIEW_CLI_VERSION=$("$WORK/td" version --json | node -e 'let s="";process.stdin.on("data",b=>s+=b).on("end",()=>console.log(JSON.parse(s).data.version))')
 
 # Seed the fake Telegram through the CLI, the same flow the binary E2E
 # tests use, so the GUI opens a drive it did not write.

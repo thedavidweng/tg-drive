@@ -72,6 +72,7 @@ type Client struct {
 	// deniedCaps names the channel permissions Doctor reports missing:
 	// "upload", "delete", "edit", "invite".
 	deniedCaps map[string]bool
+	failDoctor bool
 }
 
 // New creates a fake client.
@@ -648,6 +649,9 @@ func (c *Client) AddMessage(channelID int64, msg telegram.Message) telegram.Mess
 }
 
 func (c *Client) Doctor(ctx context.Context, channelID int64) (*telegram.Capabilities, error) {
+	if c.failDoctor {
+		return nil, fmt.Errorf("fake capability probe failed")
+	}
 	return &telegram.Capabilities{
 		AuthOK:           c.loggedIn,
 		ChannelOK:        true,

@@ -46,6 +46,8 @@ type persistedState struct {
 //   - TD_FAKE_DENY_CAPABILITIES: a comma-separated list of channel
 //     permissions (upload, delete, edit, invite) the capability check
 //     reports missing; the operations themselves still succeed.
+//   - TD_FAKE_FAIL_DOCTOR=1: capability probes fail, without blocking
+//     other Telegram operations.
 func NewPersistent(path string) *Client {
 	c := New()
 	c.statePath = path
@@ -78,6 +80,7 @@ func NewPersistent(path string) *Client {
 			c.deniedCaps[strings.TrimSpace(name)] = true
 		}
 	}
+	c.failDoctor = os.Getenv("TD_FAKE_FAIL_DOCTOR") == "1"
 	c.load()
 	return c
 }

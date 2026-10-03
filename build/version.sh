@@ -11,7 +11,10 @@ VERSION_LDFLAGS="-X $VERSION_PKG.Version=$VERSION -X $VERSION_PKG.Commit=$VERSIO
 # verify_version BINARY: fail unless `BINARY --version` prints $VERSION.
 verify_version() {
 	local got
-	got="$("$1" --version | tr -d '\r')"
+	if ! got="$("$1" --version | tr -d '\r')"; then
+		echo "package: cannot run $1 --version" >&2
+		return 1
+	fi
 	if [ "$got" != "$VERSION" ]; then
 		echo "package: $1 reports version '$got', want '$VERSION'" >&2
 		return 1

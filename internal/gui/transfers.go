@@ -379,7 +379,8 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	if err != nil {
 		return "", toError(err)
 	}
-	entries, err := t.state.current().ListDir(t.state.scoped(ctx), remotePath)
+	app, scoped := t.state.use(ctx)
+	entries, err := app.ListDir(scoped, remotePath)
 	if err != nil {
 		return "", toError(err)
 	}
@@ -388,7 +389,7 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	isFile := len(entries) == 1 && entries[0].Type == "file" &&
 		entries[0].Path == strings.TrimRight(remotePath, "/")
 	m := t.manager()
-	run := context.WithoutCancel(t.state.scoped(ctx))
+	run := context.WithoutCancel(scoped)
 	local := filepath.Join(destDir, path.Base(strings.TrimRight(remotePath, "/")))
 	if isFile {
 		h, err := m.SubmitDownload(run, transfer.Download{

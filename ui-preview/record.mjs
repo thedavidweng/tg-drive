@@ -470,11 +470,13 @@ async function openAuth(page, base, role, name) {
 // openSettings navigates to the Settings tab and waits for the facade's
 // answers: the config keys and the probed versions.
 async function openSettings(page, base, tab = "Settings", config = "Configuration", about = "About") {
+  const cliVersion = process.env.TD_PREVIEW_CLI_VERSION
+  if (!cliVersion) throw new Error("Settings scenes require $TD_PREVIEW_CLI_VERSION")
   await page.goto(base + "/", { waitUntil: "load" })
   await page.getByRole("tab", { name: tab }).click()
   await page.getByRole("region", { name: config }).getByText("transfers.concurrency").waitFor({ timeout: 30_000 })
-  // "…" holds both About rows until the version probe answers.
-  await page.getByRole("region", { name: about }).getByText("…", { exact: true }).first().waitFor({ state: "detached" })
+  await page.getByRole("region", { name: about }).getByText("td", { exact: true })
+    .locator("..").getByText(cliVersion, { exact: true }).waitFor()
 }
 
 // openTransfers navigates straight to the Transfers tab: the CLI scenes

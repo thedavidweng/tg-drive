@@ -271,7 +271,7 @@ export interface ChannelStatus {
     /**
      * Capabilities is what the account may do on the channel.
      */
-    "capabilities": ChannelCapabilities;
+    "capabilities"?: ChannelCapabilities | null;
 
     /**
      * LastScanAt is the RFC3339 time the index last changed from a scan,

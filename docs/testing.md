@@ -117,7 +117,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   and without a bound channel, linking a discussion group, and a
   `channels-changed` event when a CLI process binds another channel. The
   fake knob `TD_FAKE_DENY_CAPABILITIES=upload,delete,edit,invite` makes
-  the capability checks report those permissions missing.
+  the capability checks report those permissions missing;
+  `TD_FAKE_FAIL_DOCTOR=1` verifies a failed probe leaves the rest of the
+  channel status available.
   Auth is covered by setup on a credential-less machine, login with the
   code and 2FA prompts answered through the prompt-event seam, a rate
   limit mapping to its wait details, logout, and the GUI and CLI holding
