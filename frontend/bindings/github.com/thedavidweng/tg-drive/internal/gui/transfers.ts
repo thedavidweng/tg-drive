@@ -24,7 +24,7 @@ import * as $models from "./models.js";
  * heartbeat and ends the Transfer cancelled.
  */
 export function Cancel(id: string): $CancellablePromise<$models.Transfer | null> {
-    return $Call.ByID(3718778370, id);
+    return $Call.ByID(3416587417, id);
 }
 
 /**
@@ -32,7 +32,7 @@ export function Cancel(id: string): $CancellablePromise<$models.Transfer | null>
  * each removal as a transfer-removed event. It returns how many cleared.
  */
 export function ClearFinished(): $CancellablePromise<number> {
-    return $Call.ByID(3449147635);
+    return $Call.ByID(100009502);
 }
 
 /**
@@ -40,7 +40,7 @@ export function ClearFinished(): $CancellablePromise<number> {
  * destDir, under the remote name, and returns the new Transfer's ID.
  */
 export function Download(remotePath: string, destDir: string, opts: $models.DownloadOptions): $CancellablePromise<string> {
-    return $Call.ByID(3375799640, remotePath, destDir, opts);
+    return $Call.ByID(2886083403, remotePath, destDir, opts);
 }
 
 /**
@@ -49,7 +49,7 @@ export function Download(remotePath: string, destDir: string, opts: $models.Down
  * Manager reader does.
  */
 export function List(): $CancellablePromise<$models.TransferList | null> {
-    return $Call.ByID(1138066000);
+    return $Call.ByID(110427879);
 }
 
 /**
@@ -58,7 +58,7 @@ export function List(): $CancellablePromise<$models.TransferList | null> {
  * is ERR_USAGE.
  */
 export function PickDirectory(): $CancellablePromise<string> {
-    return $Call.ByID(3864435356);
+    return $Call.ByID(1198966929);
 }
 
 /**
@@ -66,7 +66,7 @@ export function PickDirectory(): $CancellablePromise<string> {
  * (a server-mode build without scripted answers) it is ERR_USAGE.
  */
 export function PickFiles(): $CancellablePromise<string[] | null> {
-    return $Call.ByID(1218515996);
+    return $Call.ByID(540984005);
 }
 
 /**
@@ -76,7 +76,7 @@ export function PickFiles(): $CancellablePromise<string[] | null> {
  * App for the limit, like the channel status does.
  */
 export function PlanUpload(paths: string[] | null, dest: string, policy: string): $CancellablePromise<$models.UploadPlan | null> {
-    return $Call.ByID(276795822, paths, dest, policy);
+    return $Call.ByID(1271895945, paths, dest, policy);
 }
 
 /**
@@ -87,7 +87,7 @@ export function PlanUpload(paths: string[] | null, dest: string, policy: string)
  * td transfers retry does.
  */
 export function Retry(id: string): $CancellablePromise<$models.Transfer | null> {
-    return $Call.ByID(1115016106, id);
+    return $Call.ByID(4173647135, id);
 }
 
 /**
@@ -104,5 +104,5 @@ export function Retry(id: string): $CancellablePromise<$models.Transfer | null> 
  * returns, so the Transfer runs under a ctx bounded only by the process.
  */
 export function Upload(paths: string[] | null, dest: string, opts: $models.UploadOptions): $CancellablePromise<string[] | null> {
-    return $Call.ByID(1508530233, paths, dest, opts);
+    return $Call.ByID(2783311970, paths, dest, opts);
 }

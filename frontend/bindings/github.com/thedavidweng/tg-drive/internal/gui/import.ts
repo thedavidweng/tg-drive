@@ -19,14 +19,14 @@ import * as $models from "./models.js";
  * "document" or "photo".
  */
 export function AnswerPrompt(id: string, choice: string): $CancellablePromise<void> {
-    return $Call.ByID(3030541379, id, choice);
+    return $Call.ByID(2723709946, id, choice);
 }
 
 /**
  * CancelPrompt aborts the pending prompt, cancelling the import that asked.
  */
 export function CancelPrompt(id: string): $CancellablePromise<void> {
-    return $Call.ByID(2144106131, id);
+    return $Call.ByID(2023143598, id);
 }
 
 /**
@@ -36,7 +36,7 @@ export function CancelPrompt(id: string): $CancellablePromise<void> {
  * presentation depends on the answer.
  */
 export function Preview(opts: $models.ImportOptions): $CancellablePromise<$models.ImportOutcome | null> {
-    return $Call.ByID(74832301, opts);
+    return $Call.ByID(2200977318, opts);
 }
 
 /**
@@ -47,5 +47,5 @@ export function Preview(opts: $models.ImportOptions): $CancellablePromise<$model
  * emits ItemEvent on EventImportItem.
  */
 export function Run(opts: $models.ImportOptions): $CancellablePromise<$models.ImportOutcome | null> {
-    return $Call.ByID(3136803932, opts);
+    return $Call.ByID(2728341611, opts);
 }

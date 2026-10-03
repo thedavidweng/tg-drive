@@ -18,7 +18,7 @@ import * as $models from "./models.js";
  * AnswerPrompt supplies the value for the pending prompt with the given ID.
  */
 export function AnswerPrompt(id: string, value: string): $CancellablePromise<void> {
-    return $Call.ByID(2364052570, id, value);
+    return $Call.ByID(3415606927, id, value);
 }
 
 /**
@@ -26,7 +26,7 @@ export function AnswerPrompt(id: string, value: string): $CancellablePromise<voi
  * login that asked.
  */
 export function CancelPrompt(id: string): $CancellablePromise<void> {
-    return $Call.ByID(1998721422, id);
+    return $Call.ByID(573068431, id);
 }
 
 /**
@@ -37,7 +37,7 @@ export function CancelPrompt(id: string): $CancellablePromise<void> {
  * answered with AnswerPrompt.
  */
 export function Login(phone: string, forceNewCode: boolean): $CancellablePromise<$models.LoginResult | null> {
-    return $Call.ByID(2896542783, phone, forceNewCode);
+    return $Call.ByID(2896932748, phone, forceNewCode);
 }
 
 /**
@@ -45,7 +45,7 @@ export function Login(phone: string, forceNewCode: boolean): $CancellablePromise
  * in again only needs a new code.
  */
 export function Logout(): $CancellablePromise<void> {
-    return $Call.ByID(2613621700);
+    return $Call.ByID(852546681);
 }
 
 /**
@@ -55,7 +55,7 @@ export function Logout(): $CancellablePromise<void> {
  * fields are required.
  */
 export function Setup(apiID: string, apiHash: string, phone: string): $CancellablePromise<$models.AuthStatus | null> {
-    return $Call.ByID(1345011335, apiID, apiHash, phone);
+    return $Call.ByID(3953799672, apiID, apiHash, phone);
 }
 
 /**
@@ -63,5 +63,5 @@ export function Setup(apiID: string, apiHash: string, phone: string): $Cancellab
  * (no credentials yet) is simply unauthenticated.
  */
 export function Status(): $CancellablePromise<$models.AuthStatus | null> {
-    return $Call.ByID(1701135668);
+    return $Call.ByID(1258278609);
 }

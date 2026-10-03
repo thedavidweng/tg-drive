@@ -18,7 +18,7 @@ import * as $models from "./models.js";
  * List returns every config key in config-file order, secrets redacted.
  */
 export function List(): $CancellablePromise<$models.ConfigEntry[] | null> {
-    return $Call.ByID(3640722555);
+    return $Call.ByID(3465956906);
 }
 
 /**
@@ -26,7 +26,7 @@ export function List(): $CancellablePromise<$models.ConfigEntry[] | null> {
  * adopt, and that theme.
  */
 export function Omarchy(): $CancellablePromise<$models.OmarchyState> {
-    return $Call.ByID(1427116634);
+    return $Call.ByID(3043176337);
 }
 
 /**
@@ -35,7 +35,7 @@ export function Omarchy(): $CancellablePromise<$models.OmarchyState> {
  * confirmation gate refuses, and the refusal reaches the frontend.
  */
 export function Reveal(key: string, confirmed: boolean): $CancellablePromise<$models.ConfigEntry> {
-    return $Call.ByID(169765862, key, confirmed);
+    return $Call.ByID(2177384963, key, confirmed);
 }
 
 /**
@@ -43,7 +43,7 @@ export function Reveal(key: string, confirmed: boolean): $CancellablePromise<$mo
  * displays (a secret stays redacted).
  */
 export function Set(key: string, value: string): $CancellablePromise<$models.ConfigEntry> {
-    return $Call.ByID(2872150865, key, value);
+    return $Call.ByID(596867238, key, value);
 }
 
 /**
@@ -52,5 +52,5 @@ export function Set(key: string, value: string): $CancellablePromise<$models.Con
  * stamp is the CLI's.
  */
 export function Versions(): $CancellablePromise<$models.Versions> {
-    return $Call.ByID(2711480090);
+    return $Call.ByID(926113187);
 }
