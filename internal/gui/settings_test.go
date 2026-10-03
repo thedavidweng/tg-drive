@@ -5,7 +5,9 @@ package gui_test
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/thedavidweng/tg-drive-cli/internal/gui"
@@ -114,12 +116,35 @@ func TestSettingsSetRoundTrips(t *testing.T) {
 	}
 }
 
-func TestSettingsVersionsReportsTheSharedModuleVersion(t *testing.T) {
+// The About rows report the td CLI the user actually has: td and td-gui
+// install separately, so the CLI's version is asked of the td binary found
+// on PATH, not assumed equal to the GUI's.
+func TestSettingsVersionsAsksTheInstalledCLI(t *testing.T) {
 	seedConfig(t, nil)
+	bin := t.TempDir()
+	name := "td"
+	if runtime.GOOS == "windows" {
+		name = "td.exe"
+	}
+	build := exec.Command("go", "build", "-o", filepath.Join(bin, name),
+		"-ldflags", "-X github.com/thedavidweng/tg-drive-cli/internal/version.Version=9.9.9-cli",
+		"github.com/thedavidweng/tg-drive-cli/cmd/td")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build td: %v\n%s", err, out)
+	}
+	// After the build, which needs the real HOME's module cache: the
+	// lookup also tries per-user install dirs under HOME.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", bin)
 	svc := openGUI(t)
 
 	v := svc.Settings.Versions(context.Background())
-	if v.GUI != version.Version || v.CLI != version.Version {
-		t.Fatalf("Versions = %+v, want both %q", v, version.Version)
+	if v.GUI != version.Version || v.CLI != "9.9.9-cli" {
+		t.Fatalf("Versions = %+v, want GUI %q and the installed CLI's 9.9.9-cli", v, version.Version)
+	}
+
+	t.Setenv("PATH", t.TempDir())
+	if v := svc.Settings.Versions(context.Background()); v.CLI != "" {
+		t.Fatalf("Versions without a td on PATH = %+v, want CLI empty (not installed)", v)
 	}
 }

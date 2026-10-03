@@ -372,6 +372,146 @@ func TestManagerRetryResumesAndClaimsOnce(t *testing.T) {
 	}
 }
 
+// TestManagerOwnerNeverRevivesAnEndedTransfer: an owner that stalled past
+// its lease (a suspended laptop) finds its Transfer marked interrupted by a
+// reader. Its later progress and ending writes must leave the interrupted
+// row as it is, and it must stop instead of uploading on unowned.
+func TestManagerOwnerNeverRevivesAnEndedTransfer(t *testing.T) {
+	app, tg := newApp(t)
+	app.Cfg.Locks.TTLSeconds = 3
+	tg.SetTransferDelay(50 * time.Millisecond)
+	ctx := context.Background()
+
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+	h, err := m.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "big.bin", 60*1024),
+		Dest:   "/big.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStage(t, m, h.ID(), transfer.StageUploading)
+	row, err := app.DB.GetTransfer(ctx, h.ID())
+	if err != nil || row == nil {
+		t.Fatalf("read transfer: %v", err)
+	}
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
+	if ok, err := app.DB.InterruptTransfer(ctx, h.ID(), row.LeaseExpiresAt, now); err != nil || !ok {
+		t.Fatalf("mark interrupted: ok=%v err=%v", ok, err)
+	}
+	if _, err := h.Wait(); err == nil {
+		t.Fatal("an owner whose Transfer was interrupted must stop, not complete")
+	}
+	got, err := m.Get(ctx, h.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Stage != transfer.StageInterrupted {
+		t.Fatalf("stage after the stalled owner wrote again = %s, want interrupted", got.Stage)
+	}
+}
+
+// TestManagerCancelFromAnotherProcessIsPrompt: at the default lock TTL (15
+// minutes, a 5-minute lease heartbeat) a cancel requested from another
+// process still stops the running Transfer within seconds.
+func TestManagerCancelFromAnotherProcessIsPrompt(t *testing.T) {
+	app, tg := newApp(t)
+	tg.SetTransferDelay(100 * time.Millisecond)
+	ctx := context.Background()
+
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+	h, err := m.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "big.bin", 200*1024),
+		Dest:   "/big.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStage(t, m, h.ID(), transfer.StageUploading)
+	if _, err := transfer.New(app, transfer.Options{}).Cancel(ctx, h.ID()); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := h.Wait(); done <- err }()
+	select {
+	case err := <-done:
+		if !apperr.IsCancelled(err) {
+			t.Fatalf("cancelled Transfer ended with %v, want ERR_CANCELLED", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Transfer still running 5s after another process requested its cancel")
+	}
+}
+
+// TestManagerRecursiveUploadShowsEachGroupsStage: a recursive upload runs
+// one upload per directory, so after the first directory publishes, the
+// next one's uploading is reported again rather than the Transfer sitting
+// at publishing while it still sends bytes.
+func TestManagerRecursiveUploadShowsEachGroupsStage(t *testing.T) {
+	app, _ := newApp(t)
+	root := t.TempDir()
+	for _, d := range []string{"a", "b"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, d, "f.bin"), make([]byte, 4*1024), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	var stages []transfer.Stage
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: transfer.Observer{
+		OnStage: func(tr transfer.Transfer) {
+			mu.Lock()
+			defer mu.Unlock()
+			stages = append(stages, tr.Stage)
+		},
+	}})
+	h, err := m.SubmitRecursiveUpload(context.Background(), transfer.RecursiveUpload{
+		Source: root, Dest: "/tree", Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	published := false
+	for _, s := range stages {
+		if s == transfer.StagePublishing {
+			published = true
+		}
+		if published && s == transfer.StageUploading {
+			if stages[len(stages)-1] != transfer.StageCompleted {
+				t.Fatalf("stages = %v, want completed last", stages)
+			}
+			return
+		}
+	}
+	t.Fatalf("stages = %v, want the second directory's uploading after the first one published", stages)
+}
+
+func waitStage(t *testing.T, m *transfer.Manager, id string, want transfer.Stage) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		got, err := m.Get(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Stage == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transfer never reached %s: %+v", want, got)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestManagerCancelQueuedNeverStarts: a queued Transfer cancelled through
 // another Manager — another process's view of the same index — ends
 // cancelled without its upload ever starting, while the Transfer ahead of

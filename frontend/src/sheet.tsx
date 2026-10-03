@@ -17,10 +17,17 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
 export function Sheet({
   title,
   onClose,
+  busy = false,
   children,
 }: {
   title: string
   onClose: () => void
+  /**
+   * The sheet's action is in flight: Escape and the backdrop stop closing
+   * it, the way its disabled Cancel button does, so the result has a place
+   * to land.
+   */
+  busy?: boolean
   children: ReactNode
 }) {
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -31,8 +38,10 @@ export function Sheet({
   // onClose changes identity every render; the keydown subscription below
   // subscribes once, so it calls through a ref kept current per commit.
   const onCloseRef = useRef(onClose)
+  const busyRef = useRef(busy)
   useEffect(() => {
     onCloseRef.current = onClose
+    busyRef.current = busy
   })
 
   useEffect(() => {
@@ -46,7 +55,7 @@ export function Sheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation()
-        onCloseRef.current()
+        if (!busyRef.current) onCloseRef.current()
       }
     }
     document.addEventListener("keydown", onKey)
@@ -80,7 +89,7 @@ export function Sheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[18vh]">
-      <div aria-hidden className="absolute inset-0 bg-black/25" onClick={onClose} />
+      <div aria-hidden className="absolute inset-0 bg-black/25" onClick={() => !busy && onClose()} />
       <div
         ref={dialogRef}
         role="dialog"
@@ -97,11 +106,26 @@ export function Sheet({
   )
 }
 
+/** An error's plain-language message followed by its machine-readable code. */
+export function ErrorText({ message, code }: { message?: string; code?: string }) {
+  return (
+    <>
+      {message}
+      {code && (
+        <>
+          {" "}
+          <code className="font-mono text-[11px] opacity-80">{code}</code>
+        </>
+      )}
+    </>
+  )
+}
+
 export function SheetError({ error }: { error: BackendError | null }) {
   if (!error) return null
   return (
     <p role="alert" className="mt-2 rounded-control bg-red-soft px-2 py-1.5 text-[12px] text-red">
-      {error.message}
+      <ErrorText message={error.message} code={error.code} />
     </p>
   )
 }

@@ -7,7 +7,9 @@ import type {
   BackendError,
   BindResult,
   ChannelChoice,
+  ChannelInfo,
   ChannelStatus,
+  ChannelsChanged,
   ConfigEntry,
   DirectoryChanged,
   DoctorReport,
@@ -525,12 +527,20 @@ export class MemoryBackend implements Backend {
   private transferProgressCbs = new Set<(t: Transfer) => void>()
   private transferRemovedCbs = new Set<(e: TransferRemoved) => void>()
   private filesDroppedCbs = new Set<(e: FilesDropped) => void>()
+  private channelsChangedCbs = new Set<(e: ChannelsChanged) => void>()
+  private repairItemCbs = new Set<(e: ItemEvent) => void>()
+  private deleteHeld = false
+  private deleteResolve: (() => void) | null = null
+  private repairHeld = false
+  private repairResolve: (() => void) | null = null
 
   /** Test-visible record of the transfers calls the screens made. */
   readonly uploads: { paths: string[]; dest: string; opts: UploadOptions }[] = []
   readonly downloads: { remotePath: string; destDir: string; opts: DownloadOptions }[] = []
   readonly cancelled: string[] = []
   readonly retried: string[] = []
+  /** Test-visible record of the URLs handed to the system browser. */
+  readonly openedURLs: string[] = []
 
   private readonly authFake: AuthFake
   private readonly importFake: ImportFake
@@ -582,7 +592,11 @@ export class MemoryBackend implements Backend {
   private entryOf(key: string): ConfigEntry {
     const secret = this.secrets.has(key)
     const value = this.store.get(key) ?? ""
-    return { key, value: secret ? "redacted" : value, secret }
+    // The keys td-gui reads only when it opens its Telegram client and
+    // database, as the Settings facade marks them.
+    const restart =
+      /^(telegram|storage|rate_limit)\./.test(key) || key === "locks.session_wait_seconds"
+    return { key, value: secret ? "redacted" : value, secret, ...(restart ? { restart_required: true } : {}) }
   }
 
   readonly drive: Backend["drive"] = {
@@ -663,6 +677,13 @@ export class MemoryBackend implements Backend {
     },
     delete: async (path, opts) => {
       if (!opts.confirm) throw confirmationRequired
+      if (this.deleteHeld) {
+        await new Promise<void>((resolve) => {
+          this.deleteResolve = resolve
+        })
+        this.deleteHeld = false
+        this.deleteResolve = null
+      }
       if (!this.tree().files.delete(path)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
       }
@@ -687,14 +708,17 @@ export class MemoryBackend implements Backend {
     },
   }
 
+  private channelList(): ChannelInfo[] {
+    return this.bound.map((ch) => ({
+      channel_id: ch.id,
+      title: ch.title,
+      local_root: `/data/drives/${ch.title}`,
+      active: ch.id === this.activeID,
+    }))
+  }
+
   readonly channels: Backend["channels"] = {
-    list: async () =>
-      this.bound.map((ch) => ({
-        channel_id: ch.id,
-        title: ch.title,
-        local_root: `/data/drives/${ch.title}`,
-        active: ch.id === this.activeID,
-      })),
+    list: async () => this.channelList(),
     status: async () => this.activeStatus(),
     choices: async () => {
       const seen = new Set<string>()
@@ -725,6 +749,7 @@ export class MemoryBackend implements Backend {
           this.trees.set(channelID, emptyTree())
         }
         this.activeID = channelID
+        this.emitChannelsChanged({ channels: this.channelList() })
         return { channel_id: channelID, title, created: false, already_initialized: false, indexed_files: 0 }
       }
       const title = req.title.trim() || "Drive"
@@ -739,6 +764,7 @@ export class MemoryBackend implements Backend {
       this.bound.push({ id, title, discussion: `${title} Discussion` })
       this.trees.set(id, emptyTree())
       this.activeID = id
+      this.emitChannelsChanged({ channels: this.channelList() })
       return { channel_id: id, title, created: true, already_initialized: false, indexed_files: 0 }
     },
     select: async (channelID) => {
@@ -779,6 +805,10 @@ export class MemoryBackend implements Backend {
     onFilesDropped: (cb) => {
       this.filesDroppedCbs.add(cb)
       return () => this.filesDroppedCbs.delete(cb)
+    },
+    onChannelsChanged: (cb) => {
+      this.channelsChangedCbs.add(cb)
+      return () => this.channelsChangedCbs.delete(cb)
     },
   }
 
@@ -1000,11 +1030,57 @@ export class MemoryBackend implements Backend {
         throw { code: "ERR_USAGE", category: "validation", message: `unknown repair mode "${opts.mode}"` } satisfies BackendError
       }
       if (opts.mode === "orphaned" && opts.delete_orphaned && !opts.confirm) throw confirmationRequired
+      if (this.repairHeld) {
+        await new Promise<void>((resolve) => {
+          this.repairResolve = resolve
+        })
+        this.repairHeld = false
+        this.repairResolve = null
+      }
       return this.opts.maintenance?.repair?.[opts.mode] ?? emptyRepairOutcome(opts.mode)
     },
     doctor: async () => this.opts.maintenance?.doctor ?? defaultDoctorReport,
     pathCodecDoctor: async () => this.opts.maintenance?.pathCodec ?? defaultPathCodecReport,
-    onRepairItem: () => () => {},
+    onRepairItem: (cb) => {
+      this.repairItemCbs.add(cb)
+      return () => this.repairItemCbs.delete(cb)
+    },
+  }
+
+  readonly system: Backend["system"] = {
+    openURL: async (url) => {
+      this.openedURLs.push(url)
+    },
+  }
+
+  /** Test helper: the next drive.delete() call stays open until finishDelete(). */
+  holdDelete(): void {
+    this.deleteHeld = true
+  }
+
+  /** Test helper: completes a delete started under holdDelete(). */
+  finishDelete(): void {
+    this.deleteResolve?.()
+  }
+
+  /** Test helper: the next repair() call stays open until finishRepair(). */
+  holdRepair(): void {
+    this.repairHeld = true
+  }
+
+  /** Test helper: completes a repair started under holdRepair(). */
+  finishRepair(): void {
+    this.repairResolve?.()
+  }
+
+  /** Test helper: emits a repair.item event as a running repair would. */
+  emitRepairItem(e: ItemEvent): void {
+    for (const cb of this.repairItemCbs) cb(e)
+  }
+
+  /** Test helper: emits channels-changed as a bind in any front end would. */
+  emitChannelsChanged(e: ChannelsChanged): void {
+    for (const cb of this.channelsChangedCbs) cb(e)
   }
 
   /** Test helper: the next scan() call stays open until finishScan(). */
@@ -1148,6 +1224,7 @@ export function failingBackend(err: BackendError): Backend {
       onTransferProgress: () => () => {},
       onTransferRemoved: () => () => {},
       onFilesDropped: () => () => {},
+      onChannelsChanged: () => () => {},
     },
     transfers: {
       list: fail,
@@ -1200,6 +1277,9 @@ export function failingBackend(err: BackendError): Backend {
       doctor: fail,
       pathCodecDoctor: fail,
       onRepairItem: () => () => {},
+    },
+    system: {
+      openURL: fail,
     },
   }
 }

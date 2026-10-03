@@ -242,10 +242,14 @@ them.
   `confirm_replace`, and `caption`; an album upload adds `sources`;
   recursive Transfers add `continue_on_error`, and a recursive upload
   `include_empty_dirs`. Unset and zero values are omitted.
-- `stage` moves forward only: `queued`, `hashing`, `uploading` /
-  `downloading`, `publishing`, then one terminal stage: `completed`,
-  `failed`, `cancelled`, or `interrupted`. A Transfer visits the stages its
-  kind has. A Transfer cancelled by its owner — Ctrl-C on the owning
+- `stage` runs `queued`, `hashing`, `uploading` / `downloading`,
+  `publishing`, then one terminal stage: `completed`, `failed`,
+  `cancelled`, or `interrupted`. A Transfer visits the stages its kind
+  has. A single-file Transfer moves forward only; an album or recursive
+  Transfer shows the stage of the item group in flight, so it may move
+  back to `hashing` or `uploading` / `downloading` for the next group. A
+  terminal stage is final: only a retry's claim moves the row out of it.
+  A Transfer cancelled by its owner — Ctrl-C on the owning
   command, or a cancel request from another process — ends `cancelled`.
   `interrupted` ends a Transfer whose owner vanished mid-run: see
   `owner_token` / `lease_expires_at` below.
@@ -271,6 +275,11 @@ them.
   set. The reader claims nothing: `owner_token` stays for a retry to take
   over. The marking compares and swaps on the lease value read, so a
   renewal that landed meanwhile turns it into a no-op.
+- Every write the owner makes — stage, progress, lease renewal, the end —
+  is conditional on its `owner_token` and an empty `finished_at`. A row
+  another process marked `interrupted`, or a retry claimed, refuses the
+  old owner's writes; the old owner then cancels its run instead of
+  continuing unowned.
 - A retry takes over with one conditional write: only a row in `failed`,
   `cancelled`, or `interrupted` can be claimed, so a running Transfer —
   whose fresh lease keeps it active — and a completed one reject the claim,
@@ -282,7 +291,8 @@ them.
   the new run. `id` and `created_at` stay: a retry is the same Transfer's
   history continuing, not a new one.
 - `cancel_requested` is set by `td transfers cancel` from any process. The
-  owner polls it on the same heartbeat and cancels the Transfer's context,
+  owner polls it, with its ownership, once a second (independent of the
+  lease heartbeat) and cancels the Transfer's context,
   which ends the Transfer `cancelled`; a `queued` Transfer is cancelled
   without starting. The flag stays set on the ended Transfer until a retry
   clears it.
@@ -292,7 +302,9 @@ them.
 - Retention: when a Transfer Manager starts (any command that submits or
   lists Transfers starts one), it deletes the rows in a terminal stage
   whose `finished_at` is more than 30 days old. Active Transfers and newer
-  history are kept.
+  history are kept. Pruning and the GUI's "clear finished" are one
+  conditional delete of terminal rows, so a Transfer a retry claimed
+  between listing and deleting is never removed.
 
 ## Operation locks
 
@@ -337,6 +349,12 @@ resolved CLI session path (so with the defaults,
 logs in on it independently and appears as its own device in Telegram (ADR
 0034): its device model is `td-gui`, while the CLI keeps the gotd default
 identity.
+
+A login waiting for its code keeps its pending state beside the session it
+logs into: `login_state.json` for a session file named `session.json`,
+`<name>.login_state.json` for any other (`gui-session.login_state.json`
+for the GUI), so two front ends logging in at once never consume each
+other's code.
 
 ## Directory GC
 

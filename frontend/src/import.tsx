@@ -12,7 +12,7 @@ import type {
 import { Button } from "@/components/ui/button"
 import { Segmented } from "@/card"
 import { Sheet, SheetButtons } from "@/sheet"
-import { useI18n, type Translate } from "@/i18n"
+import { isMessageKey, useI18n, type Translate } from "@/i18n"
 
 /** How photos are republished; "" asks through the import.prompt event. */
 type PhotosAs = "" | "document" | "photo"
@@ -21,7 +21,6 @@ type Phase =
   | { state: "idle" }
   | { state: "previewing" }
   | { state: "planned"; plan: ImportOutcome }
-  | { state: "confirming" }
   | { state: "running"; items: ItemEvent[] }
   | { state: "done"; outcome: ImportOutcome }
   | { state: "failed"; error: BackendError }
@@ -33,6 +32,9 @@ export function ImportScreen({ backend }: { backend: Backend }) {
   const [mergeCaptions, setMergeCaptions] = useState(false)
   const [deleteSource, setDeleteSource] = useState(false)
   const [phase, setPhase] = useState<Phase>({ state: "idle" })
+  // The confirmation sheet opens over the current phase, so a previewed
+  // plan stays readable while the user decides.
+  const [confirming, setConfirming] = useState(false)
   const [prompt, setPrompt] = useState<ImportPrompt | null>(null)
 
   // The facade asks for the photo presentation mid-plan; the sheet below
@@ -60,6 +62,7 @@ export function ImportScreen({ backend }: { backend: Backend }) {
   }
 
   const run = async () => {
+    setConfirming(false)
     setPhase({ state: "running", items: [] })
     // Subscribe for the run's duration: every imported item arrives here.
     const items: ItemEvent[] = []
@@ -115,7 +118,7 @@ export function ImportScreen({ backend }: { backend: Backend }) {
               <FileInput data-icon="inline-start" />
               {phase.state === "previewing" ? t("import.previewing") : t("import.preview")}
             </Button>
-            <Button size="sm" onClick={() => setPhase({ state: "confirming" })} disabled={busy}>
+            <Button size="sm" onClick={() => setConfirming(true)} disabled={busy}>
               <Download data-icon="inline-start" />
               {t("import.run")}
             </Button>
@@ -125,8 +128,8 @@ export function ImportScreen({ backend }: { backend: Backend }) {
 
       <ImportStatus phase={phase} />
 
-      {phase.state === "confirming" && (
-        <Sheet title={t("import.confirmTitle")} onClose={() => setPhase({ state: "idle" })}>
+      {confirming && (
+        <Sheet title={t("import.confirmTitle")} onClose={() => setConfirming(false)}>
           <p className="text-[12.5px] text-fg-2">{t("import.confirmBody", { into: into.trim() || "/saved" })}</p>
           {deleteSource && (
             <p className="mt-2 rounded-control bg-amber-soft px-2 py-1.5 text-[12px] text-amber">
@@ -138,7 +141,7 @@ export function ImportScreen({ backend }: { backend: Backend }) {
             destructive={deleteSource}
             busy={false}
             onConfirm={() => void run()}
-            onClose={() => setPhase({ state: "idle" })}
+            onClose={() => setConfirming(false)}
           />
         </Sheet>
       )}
@@ -214,7 +217,7 @@ function ImportStatus({ phase }: { phase: Phase }) {
       </div>
     )
   }
-  if (phase.state === "previewing" || phase.state === "confirming") {
+  if (phase.state === "previewing") {
     return <p role="status" className="px-1 text-[12px] text-muted-foreground">{t("import.previewing")}</p>
   }
   if (phase.state === "running") {
@@ -295,6 +298,12 @@ function actionLabel(action: string, t: Translate, planned: boolean): string {
   }
 }
 
+// A media kind a newer td adds shows as the service wrote it.
+function kindLabel(kind: string, t: Translate): string {
+  const key = `import.kind.${kind}`
+  return isMessageKey(key) ? t(key) : kind
+}
+
 function PlanItemRow({ item, planned }: { item: ImportItem; planned: boolean }) {
   const { t } = useI18n()
   return (
@@ -309,7 +318,7 @@ function PlanItemRow({ item, planned }: { item: ImportItem; planned: boolean }) 
           <span className="text-muted-foreground"> {t("import.duplicateOf", { path: item.duplicate_of })}</span>
         )}
       </span>
-      <span className="shrink-0 text-[11.5px] text-muted-foreground">{item.kind}</span>
+      <span className="shrink-0 text-[11.5px] text-muted-foreground">{kindLabel(item.kind, t)}</span>
     </li>
   )
 }

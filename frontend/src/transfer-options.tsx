@@ -71,7 +71,10 @@ export function UploadSheet({
   const hasDirs = files.some((f) => f.dir)
   // Several files together are one album, and albums cannot replace.
   const album = files.filter((f) => !f.dir).length > 1
-  const startDisabled = busy || !ready || (policy === "replace" && !confirmReplace)
+  // Telegram rejects a file over the account's limit; starting would only
+  // produce a failed Transfer.
+  const overLimit = files.some((f) => f.over_limit)
+  const startDisabled = busy || !ready || overLimit || (policy === "replace" && !confirmReplace)
 
   const start = async () => {
     if (startDisabled) return
@@ -95,7 +98,7 @@ export function UploadSheet({
   }
 
   return (
-    <Sheet title={t("upload.title", { path: dest })} onClose={onClose}>
+    <Sheet title={t("upload.title", { path: dest })} onClose={onClose} busy={busy}>
       {plan.state === "loading" && <p className="text-[12.5px] text-muted-foreground">{t("drive.loading")}</p>}
       {plan.state === "failed" && <SheetError error={plan.error} />}
       {ready && (
@@ -170,6 +173,7 @@ function PlanSummary({ plan, t }: { plan: UploadPlan; t: Translate }) {
   const limit = formatSize(plan.upload_limit_bytes, t)
   // The Go slice marshals as null when empty.
   const files = plan.files ?? []
+  const overLimit = files.some((f) => f.over_limit)
   return (
     <section aria-label={t("upload.planLabel")} className="mb-3">
       <ul
@@ -201,6 +205,11 @@ function PlanSummary({ plan, t }: { plan: UploadPlan; t: Translate }) {
             {t("upload.overLimit", { name: baseName(f.local), size: limit })}
           </p>
         ))}
+      {overLimit && (
+        <p className="mt-1 rounded-control bg-red-soft px-2 py-1.5 text-[12px] text-red">
+          {t("upload.overLimitBlocked", { size: limit })}
+        </p>
+      )}
       <p className="mt-1 text-[11.5px] text-muted-foreground">{t("upload.limit", { size: limit })}</p>
       {plan.would_replace && (
         <p className="mt-1 text-[11.5px] text-amber">{t("upload.wouldReplace", { path: plan.would_replace })}</p>
@@ -243,7 +252,7 @@ export function DownloadSheet({
   }
 
   return (
-    <Sheet title={t("download.title")} onClose={onClose}>
+    <Sheet title={t("download.title")} onClose={onClose} busy={busy}>
       <p className="mb-1 truncate text-[12.5px] font-medium">{remotePath}</p>
       <p className="mb-3 truncate text-[11.5px] text-muted-foreground">
         {t("download.destination")}: <code className="font-mono">{destDir}</code>

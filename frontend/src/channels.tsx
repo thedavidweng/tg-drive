@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Check, ChevronDown, HardDrive, Plus } from "lucide-react"
+import { Check, ChevronDown, HardDrive, Plus, Stethoscope } from "lucide-react"
 
-import type { Backend, BackendError, BindChoices, BindRequest, ChannelInfo, ChannelStatus } from "@/backend"
+import type { Backend, BackendError, BindChoices, BindRequest, ChannelInfo, ChannelStatus, DoctorReport } from "@/backend"
 import { Button } from "@/components/ui/button"
 import { formatDate, formatSize } from "@/format"
+import { DoctorCheckRow } from "@/maintenance"
 import { Sheet, SheetError } from "@/sheet"
 import { useI18n } from "@/i18n"
 
@@ -54,6 +55,10 @@ export function ChannelSwitcher({
     )
   }, [backend])
   useEffect(reload, [reload])
+
+  // A bind in any front end (td init in a terminal, this window's own
+  // bind sheet) announces the new list; it replaces the shown one.
+  useEffect(() => backend.events.onChannelsChanged((e) => setChannels(e.channels ?? [])), [backend])
 
   const active = channels?.find((c) => c.active)
 
@@ -166,6 +171,13 @@ function ChannelsSheet({
     error: BackendError | null
   } | null>(null)
   const [linking, setLinking] = useState(false)
+  // The capability probe, tagged with its channel like the status read.
+  const [checks, setChecks] = useState<{
+    channelID: string
+    state: "running" | "done" | "failed"
+    report?: DoctorReport
+    error?: BackendError
+  } | null>(null)
   const activeID = active?.channel_id
 
   useEffect(() => {
@@ -183,6 +195,19 @@ function ChannelsSheet({
   const current = statusResult && statusResult.channelID === activeID ? statusResult : null
   const status = current?.status ?? null
   const statusError = current?.error ?? null
+
+  const currentChecks = checks && checks.channelID === activeID ? checks : null
+
+  const checkCapabilities = async () => {
+    if (!activeID || currentChecks?.state === "running") return
+    setChecks({ channelID: activeID, state: "running" })
+    try {
+      const report = await backend.maintenance.doctor()
+      setChecks({ channelID: activeID, state: "done", report })
+    } catch (err) {
+      setChecks({ channelID: activeID, state: "failed", error: err as BackendError })
+    }
+  }
 
   const linkDiscussion = async () => {
     if (linking || !activeID) return
@@ -262,6 +287,12 @@ function ChannelsSheet({
                 value={status.last_scan_at ? formatDate(status.last_scan_at, locale) : t("channels.status.never")}
               />
               <StatusRow
+                label={t("channels.status.lastFullScan")}
+                value={
+                  status.last_full_scan_at ? formatDate(status.last_full_scan_at, locale) : t("channels.status.never")
+                }
+              />
+              <StatusRow
                 label={t("channels.status.filesLabel")}
                 value={t("channels.status.files", { count: status.files })}
               />
@@ -270,6 +301,32 @@ function ChannelsSheet({
             !statusError && <p className="text-[12px] text-muted-foreground">{t("drive.loading")}</p>
           )}
           <SheetError error={statusError} />
+          {status && (
+            <div className="mt-2.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void checkCapabilities()}
+                disabled={currentChecks?.state === "running"}
+              >
+                <Stethoscope data-icon="inline-start" />
+                {currentChecks?.state === "running"
+                  ? t("channels.status.checking")
+                  : t("channels.status.checkCapabilities")}
+              </Button>
+              {currentChecks?.state === "done" && (
+                <ul
+                  aria-label={t("maintenance.diagnosticsChecksLabel")}
+                  className="mt-2 max-h-48 divide-y divide-line-2 overflow-auto rounded-card border border-line bg-card-2"
+                >
+                  {(currentChecks.report?.checks ?? []).map((check) => (
+                    <DoctorCheckRow key={check.name} check={check} />
+                  ))}
+                </ul>
+              )}
+              <SheetError error={currentChecks?.error ?? null} />
+            </div>
+          )}
         </div>
       )}
 
@@ -339,7 +396,7 @@ function BindSheet({
   }
 
   return (
-    <Sheet title={t("channels.bind.title")} onClose={onClose}>
+    <Sheet title={t("channels.bind.title")} onClose={onClose} busy={busy}>
       <h3 className="mb-2 text-[11.5px] font-medium tracking-wide text-muted-foreground uppercase">
         {t("channels.bind.existing")}
       </h3>

@@ -19,6 +19,24 @@ func TestLoginStateFilePermissions(t *testing.T) {
 	}
 }
 
+// TestLoginStateIsPerSession: the CLI and GUI sessions share a directory
+// (ADR 0034). A code sent for one session's login is never offered to the
+// other, and finishing one login keeps the other's pending code.
+func TestLoginStateIsPerSession(t *testing.T) {
+	dir := t.TempDir()
+	cli, gui := filepath.Join(dir, "session.json"), filepath.Join(dir, "gui-session.json")
+	now := time.Now().UTC()
+	saveLoginState(gui, loginState{Phone: "+1000", PhoneCodeHash: "gui-hash", SentAt: now})
+	if _, ok := loadLoginState(cli, "+1000", now); ok {
+		t.Fatal("the CLI session must not reuse a code sent for the GUI session")
+	}
+	saveLoginState(cli, loginState{Phone: "+1000", PhoneCodeHash: "cli-hash", SentAt: now})
+	clearLoginState(cli)
+	if st, ok := loadLoginState(gui, "+1000", now); !ok || st.PhoneCodeHash != "gui-hash" {
+		t.Fatalf("GUI pending login after the CLI's finished = %+v ok=%v, want gui-hash kept", st, ok)
+	}
+}
+
 func TestLoginStateRejectsOtherPhone(t *testing.T) {
 	sessionPath := filepath.Join(t.TempDir(), "session.json")
 	saveLoginState(sessionPath, loginState{Phone: "+1000", PhoneCodeHash: "abc", SentAt: time.Now().UTC()})

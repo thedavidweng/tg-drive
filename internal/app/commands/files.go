@@ -128,6 +128,11 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 					})
 				}
 			}
+			// Every form streams its Transfer's stages under --events.
+			var observer transfer.Observer
+			if events {
+				observer.OnStage = func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) }
+			}
 			if len(args) > 2 {
 				if recursive {
 					return r.Error(apperr.New(apperr.ErrUsage, "--recursive accepts exactly one source directory"))
@@ -135,7 +140,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if includeEmptyDirs {
 					return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 				}
-				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
 				handle, err := manager.SubmitAlbumUpload(cmd.Context(), transfer.AlbumUpload{
 					Sources: args[:len(args)-1], Dest: args[len(args)-1],
 					Policy: policy, NoHash: noHash, Presentation: pres, Options: opts,
@@ -163,7 +168,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if presentationFlagsSet(cmd) {
 					return r.Error(apperr.New(apperr.ErrUsage, "presentation flags apply to single-file uploads only"))
 				}
-				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
 				handle, err := manager.SubmitRecursiveUpload(cmd.Context(), transfer.RecursiveUpload{
 					Source: args[0], Dest: args[1], Policy: policy,
 					ContinueOnError: continueOnError, NoHash: noHash, IncludeEmptyDirs: includeEmptyDirs, Options: opts,
@@ -189,10 +194,6 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 			}
 			if includeEmptyDirs {
 				return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
-			}
-			var observer transfer.Observer
-			if events {
-				observer.OnStage = func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) }
 			}
 			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
 			handle, err := manager.SubmitUpload(cmd.Context(), transfer.Upload{
@@ -247,7 +248,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 }
 
 func NewGetCmd(rt Runtime) *cobra.Command {
-	var recursive, replace, skip, autoRename, continueOnError bool
+	var recursive, replace, skip, autoRename, continueOnError, events bool
 	c := &cobra.Command{
 		Use:   "get <remote-path> <local-dest>",
 		Short: "Download remote file or directory",
@@ -263,8 +264,12 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 			if err != nil {
 				return r.Error(err)
 			}
+			var observer transfer.Observer
+			if events {
+				observer.OnStage = func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) }
+			}
+			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
 			if recursive {
-				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
 				handle, err := manager.SubmitRecursiveDownload(cmd.Context(), transfer.RecursiveDownload{
 					Source: args[0], Dest: args[1], Policy: policy, ContinueOnError: continueOnError,
 				})
@@ -275,13 +280,15 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				if err != nil {
 					return r.Error(err)
 				}
+				if events {
+					return r.Event("get", data)
+				}
 				if !rt.JSON() {
 					_ = r.SuccessLine("downloaded %s -> %s (%v files, %v skipped, %v failed)", args[0], args[1], data.Downloaded, data.Skipped, data.Failed)
 					return nil
 				}
 				return r.Success(data)
 			}
-			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
 			handle, err := manager.SubmitDownload(cmd.Context(), transfer.Download{
 				Source: args[0], Dest: args[1], Policy: policy,
 			})
@@ -291,6 +298,9 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 			res, err := handle.Wait()
 			if err != nil {
 				return r.Error(err)
+			}
+			if events {
+				return r.Event("get", res)
 			}
 			if !rt.JSON() {
 				if res.Skipped {
@@ -306,6 +316,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 	c.Flags().BoolVar(&skip, "skip-existing", false, "skip existing local file")
 	c.Flags().BoolVar(&autoRename, "auto-rename", false, "auto rename on conflict")
 	c.Flags().BoolVar(&continueOnError, "continue-on-error", false, "continue on download errors")
+	c.Flags().BoolVar(&events, "events", false, "emit NDJSON transfer.stage events during the download")
 	return c
 }
 

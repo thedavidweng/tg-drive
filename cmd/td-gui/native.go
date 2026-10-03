@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -121,12 +120,9 @@ func (d *desktop) requestQuit() {
 	if d.quitting.Load() {
 		return
 	}
-	// The index is the authority (a CLI front end's Transfers included);
-	// the tracker's snapshot is the fallback when the read fails.
-	active := d.tracker.ActiveCount()
-	if list, err := d.svc.Transfers.List(context.Background()); err == nil && list != nil {
-		active = len(list.Active)
-	}
+	// Only this GUI's own Transfers stop when it quits; a td process's keep
+	// running, so they never call for the confirmation.
+	active := d.svc.RunningTransfers()
 	if gui.DecideQuit(active) == gui.QuitImmediately {
 		d.quit()
 		return

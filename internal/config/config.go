@@ -218,6 +218,26 @@ func Load(ov Overrides) (Config, string, error) {
 	return cfg, configPath, nil
 }
 
+// LoadFile reads the config file at path over the defaults, without the
+// flag and environment overrides Load applies. Writers edit this, so a
+// value one run was given (a front end's own session path, a credential
+// from TD_API_HASH) is never saved for every later run. A missing file
+// reads as the defaults.
+func LoadFile(path string) (Config, error) {
+	cfg := Defaults()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return cfg, apperr.Wrap(apperr.ErrConfigInvalid, "read config", err)
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return cfg, apperr.Wrap(apperr.ErrConfigInvalid, "parse config", err)
+	}
+	return cfg, nil
+}
+
 // Save writes config to path, creating parent dir with secure permissions.
 func Save(path string, cfg Config) error {
 	if err := ensureDir(filepath.Dir(path), 0o700); err != nil {

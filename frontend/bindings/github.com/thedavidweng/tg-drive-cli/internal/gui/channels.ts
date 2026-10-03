@@ -6,10 +6,10 @@
  * the shared index: listing them, binding or creating one, switching the
  * active one, and reporting a channel's status.
  * 
- * The App's channel selector is fixed at Open (service.Options.Channel), so
- * switching the active channel reopens the App bound to the new channel
- * (appState.switchChannel). The selection survives Auth's reopen the same
- * way.
+ * Each bound channel has its own App over the one database and Telegram
+ * client, and switching only selects which App the views read
+ * (appState.switchChannel); Transfers already running keep their channel.
+ * The selection survives Auth's reopen.
  * @module
  */
 

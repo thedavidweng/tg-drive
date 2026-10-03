@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thedavidweng/tg-drive-cli/adapters/native/sessionlock"
 	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
@@ -224,10 +225,17 @@ type StatusResult struct {
 	UploadLimitBytes     *int64         `json:"upload_limit_bytes,omitempty"`
 	UploadStates         *int           `json:"upload_states,omitempty"`
 	UserID               int64          `json:"user_id,omitempty"`
+	// SessionBusy reports that auth is unknown because another process
+	// holds the Session lock, for human output; JSON keeps the contract's
+	// "authenticated omitted" shape.
+	SessionBusy bool `json:"-"`
 }
 
-// Status returns index statistics.
+// Status returns index statistics. Its Telegram part (auth, the upload
+// limit) never waits for another process's Session lock: status reports the
+// index, and an unreachable Telegram only leaves auth unknown.
 func (a *App) Status(ctx context.Context) (*StatusResult, error) {
+	tgCtx := sessionlock.WithoutWait(ctx)
 	channels, err := a.boundChannels(ctx)
 	if err != nil {
 		return nil, err
@@ -243,7 +251,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 				Channels:    channels,
 				DBPath:      a.Cfg.Storage.DBPath,
 			}
-			a.statusAuth(ctx, out)
+			a.statusAuth(tgCtx, out)
 			return out, nil
 		}
 		return nil, err
@@ -273,7 +281,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 			out.Channel = &ch
 		}
 	}
-	a.statusAuth(ctx, out)
+	a.statusAuth(tgCtx, out)
 	var lastScan, lastFull string
 	var lastMsgID int
 	_ = a.DB.Raw().QueryRowContext(ctx, `
@@ -298,7 +306,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 	var staleLocks int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from operation_locks where expires_at < ?`, nowT.Format(time.RFC3339)).Scan(&staleLocks)
 	orphaned := counts["orphaned"]
-	uploadLimit := a.uploadLimit(ctx)
+	uploadLimit := a.uploadLimit(tgCtx)
 	out.StaleLocks = &staleLocks
 	out.Orphaned = &orphaned
 	out.UploadLimitBytes = &uploadLimit
@@ -332,6 +340,9 @@ func (a *App) boundChannels(ctx context.Context) ([]BoundChannel, error) {
 func (a *App) statusAuth(ctx context.Context, out *StatusResult) {
 	user, ok, err := a.TG.Status(ctx)
 	if err != nil {
+		if ae, isApp := apperr.As(err); isApp && ae.Code == apperr.ErrSessionLocked {
+			out.SessionBusy = true
+		}
 		return
 	}
 	out.Authenticated = &ok
@@ -355,6 +366,11 @@ type DownloadOptions struct {
 	// Observer receives this call's stages, byte progress, and per-file
 	// results.
 	Observer Observer
+	// Resume counts a destination that already holds the remote file's
+	// content (same size, and same hash when the index has one and hashing
+	// is on) as done, skipped, instead of a conflict. A retried download
+	// sets it, so the files its earlier run landed do not stop the re-run.
+	Resume bool
 }
 
 // DownloadFile downloads a remote file to local path, streaming through a
@@ -377,7 +393,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	}
 	obs := opts.Observer
 	it := Item{Source: localDest, Path: p}
-	res, err := a.downloadRow(ctx, ch, row, &it, policy, obs)
+	res, err := a.downloadRow(ctx, ch, row, &it, policy, opts.Resume, obs)
 	switch {
 	case err != nil:
 		obs.done(it, err)
@@ -391,7 +407,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 
 // downloadRow downloads one resolved active row to it.Source, which it
 // rewrites to the local file the download actually targets.
-func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitestore.FileRow, it *Item, policy ConflictPolicy, obs Observer) (*DownloadResult, error) {
+func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitestore.FileRow, it *Item, policy ConflictPolicy, resume bool, obs Observer) (*DownloadResult, error) {
 	p := it.Path
 	if !row.MessageID.Valid {
 		return nil, apperr.New(apperr.ErrDB, fmt.Sprintf("lookup file: active row for %q has no message", p))
@@ -407,6 +423,9 @@ func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitesto
 	}
 	it.Source = localDest
 	if _, err := a.files().Stat(ctx, localDest); err == nil {
+		if resume && a.localHolds(ctx, localDest, size, hash) {
+			return &DownloadResult{Path: p, Dest: localDest, Size: size, Skipped: true}, nil
+		}
 		switch policy {
 		case ConflictSkip:
 			return &DownloadResult{Path: p, Dest: localDest, Size: size, Skipped: true}, nil
@@ -474,6 +493,30 @@ func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitesto
 		return nil, err
 	}
 	return &DownloadResult{Path: p, Dest: localDest, Size: size}, nil
+}
+
+// localHolds reports whether the local file at path already has the
+// content a download would write: the indexed size, and the indexed blake3
+// hash when there is one and hashing is on. Without an indexed size it
+// proves nothing and reports false.
+func (a *App) localHolds(ctx context.Context, path string, size int64, hash string) bool {
+	info, err := a.files().Stat(ctx, path)
+	if err != nil || info.IsDir || size <= 0 || info.Size != size {
+		return false
+	}
+	if hash == "" || !a.Cfg.Hash.Enabled || !strings.HasPrefix(hash, "blake3:") {
+		return true
+	}
+	f, err := a.files().Open(ctx, path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	h := blake3.New(32, nil)
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return "blake3:"+hex.EncodeToString(h.Sum(nil)) == hash
 }
 
 // downloadTo streams the message's downloadable body. It reports whether the

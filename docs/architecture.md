@@ -38,6 +38,18 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   (`td-gui`). A machine without saved Telegram credentials opens offline —
   no Telegram client — so the setup screen is reachable; saving credentials
   reopens the App online.
+- The GUI's process model: one base App owns the database and the one
+  long-lived Telegram client of the GUI's session; one App per bound
+  channel shares them, and one Transfer Manager runs every GUI Transfer,
+  each pinned to the channel it was submitted on. Only Auth replaces the
+  base App, and it refuses while GUI Transfers run. A Settings change
+  rebuilds the per-channel Apps at once and swaps the Manager when it is
+  idle; keys that size the Telegram client, the storage paths, or the
+  Session lock (`telegram.*`, `storage.*`, `rate_limit.*`,
+  `locks.session_wait_seconds`) report that they apply after a restart.
+- Re-issuing Auth's login or an Import run cancels the earlier one's
+  pending prompt and waits for it to end, so an abandoned prompt never
+  blocks the next attempt.
 - Interactive prompts (the login code, the 2FA password) are callbacks in
   the service layer; the facade turns each into a typed `auth.prompt` event
   and waits for the frontend's answer (`Auth.AnswerPrompt` /
@@ -49,11 +61,12 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   init use case against a synthetic per-channel local root under the data
   directory (a label for the binding and a re-bind dedup key, never
   created on disk); creating a channel is the same call with a title,
-  defaulting to the service's default title. Switching reopens the App
-  with the channel selector, because the App fixes its channel at
-  `service.Open`; a failed switch restores the previous selector, and an
-  Auth reopen re-applies it. The selection persists in the webview's local
-  storage, next to the other GUI display preferences.
+  defaulting to the service's default title. Switching only selects
+  another channel's App, so running Transfers keep going; an Auth reopen
+  re-applies the selection. When index sync sees the bound channels
+  change (another process ran `td init`), the facade emits the typed
+  `channels-changed` event with the new list. The selection persists in
+  the webview's local storage, next to the other GUI display preferences.
 - Long per-item service runs report through the Observer seam: the facade
   adapts it to typed `import.item` (Saved Messages import) and
   `repair.item` (repair runs) events, each carrying a running tally.
@@ -69,7 +82,10 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   `shell.toml`, plus Hyprland's `decoration:rounding` and
   `general:border_size` parsed from `hyprland.conf` and its `source`d
   files, onto the frontend's design tokens, watches those files, and
-  announces changes as the typed `omarchy:theme-changed` event.
+  announces changes as the typed `omarchy:theme-changed` event. Its About
+  versions are td-gui's own stamp and the answer of `td version --json`
+  from the installed CLI (looked up on PATH, beside td-gui, and in the
+  installers' directories), because the two install separately.
 - GUI display preferences (theme, language, the Omarchy switch) are stored
   in the webview's local storage, not in td's config file (see the config
   contract).
@@ -124,8 +140,8 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   is the process's. The tray menu lists the active Transfers, fed from
   the same typed transfer events the Transfers tab consumes, plus Show and
   Quit; Quit (and every OS quit path, via Wails' `ShouldQuit` option)
-  asks for confirmation while Transfers are running, with the index as
-  the authority on what counts as running. The app is single-instance: a
+  asks for confirmation while this GUI's own Transfers are running; a CLI
+  Transfer keeps running when the GUI quits, so it does not count. The app is single-instance: a
   second launch focuses the running window, because the GUI holds one
   Telegram session. macOS gets the inset hidden title bar (the frontend's
   header is the drag region, padded for the traffic lights) and Windows a
@@ -196,25 +212,26 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   Transfer's call runs
   its own operations inside the service; the Manager takes no locks.
   The owning Manager leases each Transfer from submission, renewing
-  `lease_expires_at` on the Operation-lock heartbeat and polling the
-  cancel-requested flag on the same tick: `td transfers cancel` sets the
-  flag from any process, and the owner cancels the Transfer's context,
-  which ends it `cancelled`. Readers mark a Transfer whose lease expired
+  `lease_expires_at` on the Operation-lock heartbeat and polling its
+  ownership and the cancel-requested flag once a second: `td transfers
+  cancel` sets the flag from any process, and the owner cancels the
+  Transfer's context, which ends it `cancelled`. Every owner write is
+  conditional on still owning the unfinished row; an owner that finds the
+  row interrupted or claimed by a retry cancels its run. Readers (`td
+  transfers list` / `show`) mark a Transfer whose lease expired
   `interrupted`. Reading, watching, and cancelling need only the index, so
   those commands open an offline App and never take the Session lock.
   `Watch` follows every process's Transfers by rereading the index on a
   fixed interval and reporting each change. When a Manager starts it prunes
-  terminal Transfers that ended more than 30 days ago.
-  which ends it `cancelled`. Readers (`td transfers list` / `show`) mark a
-  Transfer whose lease expired `interrupted`. Reading and cancelling need
-  only the index, so those commands open an offline App and never take the
-  Session lock. `td transfers retry` re-runs a `failed`, `cancelled`, or
+  terminal Transfers that ended more than 30 days ago, in one conditional
+  delete (the GUI's "clear finished" uses the same). `td transfers retry` re-runs a `failed`, `cancelled`, or
   `interrupted` Transfer: it claims the row with a compare-and-swap on the
   retryable stages, becomes the owner with a fresh lease, and rebuilds the
   call from the recorded source, destination, and options. An interrupted
   upload resumes from the parts `upload_progress` saved; downloads start
-  over. Retrying runs the transfer, so it opens the full App like `td cp`
-  and `td get` do.  `internal/transfer` depends on `internal/service`, never the reverse, and
+  over with `DownloadOptions.Resume`, which counts a local file already
+  holding the remote content as done. Retrying runs the transfer, so it opens the full App like `td cp`
+  and `td get` do. `internal/transfer` depends on `internal/service`, never the reverse, and
   imports no front-end framework.
 - `core/telegram/fake` supports integration tests and `TD_FAKE_TELEGRAM=1`.
 

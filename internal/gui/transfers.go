@@ -226,7 +226,7 @@ func (t *Transfers) Upload(ctx context.Context, paths []string, dest string, opt
 			"album uploads cannot replace existing files; upload them one at a time or remove the existing file first"))
 	}
 	m := t.manager()
-	run := context.WithoutCancel(ctx)
+	run := t.runContext(ctx)
 	var ids []string
 	switch {
 	case len(files) == 1:
@@ -355,7 +355,7 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	isFile := len(entries) == 1 && entries[0].Type == "file" &&
 		entries[0].Path == strings.TrimRight(remotePath, "/")
 	m := t.manager()
-	run := context.WithoutCancel(ctx)
+	run := t.runContext(ctx)
 	local := filepath.Join(destDir, path.Base(strings.TrimRight(remotePath, "/")))
 	if isFile {
 		h, err := m.SubmitDownload(run, transfer.Download{
@@ -409,20 +409,8 @@ func (t *Transfers) Retry(ctx context.Context, id string) (*Transfer, error) {
 // ClearFinished removes every terminal Transfer from the index and reports
 // each removal as a transfer-removed event. It returns how many cleared.
 func (t *Transfers) ClearFinished(ctx context.Context) (int, error) {
-	list, err := t.manager().List(ctx, transfer.Filter{All: true})
+	ids, err := t.manager().ClearFinished(ctx)
 	if err != nil {
-		return 0, toError(err)
-	}
-	var ids []string
-	for _, tr := range list {
-		if tr.Stage.Terminal() {
-			ids = append(ids, tr.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	if err := t.state.current().DB.DeleteTransfers(ctx, ids); err != nil {
 		return 0, toError(err)
 	}
 	for _, id := range ids {
@@ -459,6 +447,13 @@ func (t *Transfers) PickDirectory(ctx context.Context) (string, error) {
 }
 
 func (t *Transfers) manager() *transfer.Manager { return t.state.currentManager() }
+
+// runContext is the context a submitted Transfer runs under: it outlives
+// the bound call, and pins the active channel so a later switch does not
+// move the Transfer.
+func (t *Transfers) runContext(ctx context.Context) context.Context {
+	return service.WithChannel(context.WithoutCancel(ctx), t.state.selected())
+}
 
 // note records the newest known state of a Transfer and emits the typed
 // event for what changed: a stage event for a new Transfer or a stage

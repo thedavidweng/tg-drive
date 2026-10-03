@@ -46,8 +46,17 @@ type loginState struct {
 	Stage         string    `json:"stage,omitempty"`
 }
 
+// loginStatePath is the pending-login file of one session. Each session
+// has its own: the CLI and the GUI keep their sessions in one directory
+// (ADR 0034), and a code hash sent for one session must never be replayed
+// or cleared by the other's login. The default session keeps the
+// historical login_state.json name.
 func loginStatePath(sessionPath string) string {
-	return filepath.Join(filepath.Dir(sessionPath), "login_state.json")
+	dir, base := filepath.Split(sessionPath)
+	if base == "session.json" {
+		return filepath.Join(dir, "login_state.json")
+	}
+	return filepath.Join(dir, strings.TrimSuffix(base, filepath.Ext(base))+".login_state.json")
 }
 
 // loadLoginState returns the persisted pending-code state when it matches

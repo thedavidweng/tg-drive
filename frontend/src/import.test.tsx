@@ -124,6 +124,42 @@ test("cancelling the photo prompt surfaces the cancellation", async () => {
   expect(alert.textContent).toContain("ERR_CANCELLED")
 })
 
+test("opening the confirmation sheet keeps the previewed plan on screen", async () => {
+  await openImportTab(backendWith({ plan }))
+
+  fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+  await screen.findByText("Plan: 1 to import, 1 skipped (1 duplicates).")
+
+  fireEvent.click(screen.getByRole("button", { name: "Import…" }))
+  expect(screen.getByRole("dialog", { name: "Import Saved Messages" })).toBeTruthy()
+  // Nothing is planning while the sheet waits on the user.
+  expect(screen.queryByText("Planning…")).toBeNull()
+  expect(screen.getByText("Plan: 1 to import, 1 skipped (1 duplicates).")).toBeTruthy()
+
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }))
+  expect(screen.getByText("Plan: 1 to import, 1 skipped (1 duplicates).")).toBeTruthy()
+})
+
+test("plan rows name each item's kind in the interface language", async () => {
+  const withKinds: ImportOutcome = {
+    ...plan,
+    items: [
+      { message_id: 101, kind: "document", action: "import", path: "/saved/clip.mp4", size: 11 },
+      { message_id: 102, kind: "photo", action: "import", path: "/saved/cat.jpg", size: 5 },
+      { message_id: 103, kind: "hologram", action: "import", path: "/saved/x.bin", size: 5 },
+    ],
+  }
+  await openImportTab(backendWith({ plan: withKinds }))
+
+  fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+  const items = await screen.findByRole("list", { name: "Import items" })
+  const rows = within(items).getAllByRole("listitem")
+  expect(rows[0].textContent).toContain("Document")
+  expect(rows[1].textContent).toContain("Photo")
+  // A kind this build has no string for shows as the service wrote it.
+  expect(rows[2].textContent).toContain("hologram")
+})
+
 test("an unconfirmed run is rejected by the backend gate", async () => {
   const backend = backendWith({ plan })
   await expect(backend.import.run({})).rejects.toMatchObject({ code: "ERR_CONFIRMATION_REQUIRED" })
@@ -138,4 +174,8 @@ test("the import tab is translated", async () => {
   await screen.findByText("从收藏夹导入")
   expect(screen.getByRole("button", { name: "预览" })).toBeTruthy()
   expect(screen.getByRole("checkbox", { name: "导入后删除收藏夹中的原件" })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole("button", { name: "预览" }))
+  const items = await screen.findByRole("list", { name: "导入条目" })
+  expect(within(items).getAllByRole("listitem")[0].textContent).toContain("文档")
 })

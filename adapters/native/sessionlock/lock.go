@@ -44,14 +44,28 @@ func New(sessionPath string, wait time.Duration, logf func(format string, args .
 	return &Lock{path: sessionPath + ".lock", wait: wait, logf: logf}
 }
 
+type noWaitKey struct{}
+
+// WithoutWait marks ctx so a Telegram call made with it fails at once with
+// ERR_SESSION_LOCKED when another process holds the Session lock, instead
+// of waiting the configured bound. For calls whose Telegram part is
+// optional, like the auth line of td status.
+func WithoutWait(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noWaitKey{}, true)
+}
+
 // Acquire takes the lock, waiting up to the bound for another process to
-// release it. It returns ERR_SESSION_LOCKED when the bound passes. Acquiring a
-// lock this Lock already holds is a no-op.
+// release it (not at all under WithoutWait). It returns ERR_SESSION_LOCKED
+// when the bound passes. Acquiring a lock this Lock already holds is a no-op.
 func (l *Lock) Acquire(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.file != nil {
 		return nil
+	}
+	wait := l.wait
+	if ctx.Value(noWaitKey{}) != nil {
+		wait = 0
 	}
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
 		return err
@@ -60,7 +74,7 @@ func (l *Lock) Acquire(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(l.wait)
+	deadline := time.Now().Add(wait)
 	logged := false
 	for {
 		err := tryLock(f)
@@ -74,9 +88,9 @@ func (l *Lock) Acquire(ctx context.Context) error {
 		}
 		if !time.Now().Before(deadline) {
 			_ = f.Close()
-			msg := fmt.Sprintf("the Telegram session is in use by another td process; waited %s, retry when it finishes", l.wait)
+			msg := fmt.Sprintf("the Telegram session is in use by another td process; waited %s, retry when it finishes", wait)
 			return apperr.New(apperr.ErrSessionLocked, msg).
-				WithDetails(map[string]any{"wait_seconds": int(l.wait / time.Second)})
+				WithDetails(map[string]any{"wait_seconds": int(wait / time.Second)})
 		}
 		if !logged && l.logf != nil {
 			l.logf("telegram: session in use by another process; waiting up to %s", l.wait)

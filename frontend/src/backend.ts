@@ -11,6 +11,7 @@ import type {
   ChannelChoice,
   ChannelInfo,
   ChannelStatus,
+  ChannelsChanged,
   ConfigEntry,
   DeleteOutcome,
   DirectoryChanged,
@@ -58,6 +59,7 @@ export type {
   ChannelChoice,
   ChannelInfo,
   ChannelStatus,
+  ChannelsChanged,
   ConfigEntry,
   DeleteOutcome,
   DirectoryChanged,
@@ -134,6 +136,8 @@ export interface Backend {
     onTransferRemoved(cb: (e: TransferRemoved) => void): () => void
     /** Files were dropped onto a drop-target element of the window. */
     onFilesDropped(cb: (e: FilesDropped) => void): () => void
+    /** The bound channels changed (any front end bound one); carries the new list. */
+    onChannelsChanged(cb: (e: ChannelsChanged) => void): () => void
   }
   transfers: {
     /** Every Transfer in the index: active above the 30-day history. */
@@ -225,5 +229,9 @@ export interface Backend {
     pathCodecDoctor(): Promise<PathCodecReport>
     /** Subscribes to repair.item per-item progress; returns an unsubscribe. */
     onRepairItem(cb: (event: ItemEvent) => void): () => void
+  }
+  system: {
+    /** Open url in the system browser; a webview link cannot leave the app. */
+    openURL(url: string): Promise<void>
   }
 }

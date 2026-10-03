@@ -17,7 +17,8 @@ const DefaultSyncInterval = 250 * time.Millisecond
 // the directory the frontend is showing and emits EventDirectoryChanged
 // with the fresh listing, and diffs the Transfers, emitting the
 // transfer-stage, transfer-progress, and transfer-removed events for what
-// changed (a td process's Transfers included). It runs until ctx is
+// changed (a td process's Transfers included), and emits
+// EventChannelsChanged when the bound channels changed. It runs until ctx is
 // cancelled; the ctx a caller passes should live as long as the
 // application. It survives Auth reopening the App (setup/login on a fresh
 // machine): the poller resolves the current App every tick and re-pins its
@@ -26,6 +27,7 @@ func (s *Services) StartSync(ctx context.Context, interval time.Duration) {
 	go pollIndexChanges(ctx, s.state, interval, func(ctx context.Context) {
 		s.Drive.refreshCurrent(ctx)
 		s.Transfers.syncFromIndex(ctx)
+		s.Channels.syncFromIndex(ctx)
 	})
 }
 

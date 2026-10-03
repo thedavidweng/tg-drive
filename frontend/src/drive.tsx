@@ -446,6 +446,7 @@ function TreeCard({
 }) {
   const { t } = useI18n()
   const [result, setResult] = useState<FetchResult<TreeNode[]> | null>(null)
+  const [syncNonce, setSyncNonce] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -456,7 +457,17 @@ function TreeCard({
     return () => {
       live = false
     }
-  }, [backend, path, reloadNonce])
+  }, [backend, path, reloadNonce, syncNonce])
+
+  // Index sync announces one directory at a time; the tree spans every
+  // directory below path, so a change anywhere under it re-reads the tree.
+  // The previous tree stays on screen until the new one arrives.
+  useEffect(() => {
+    const prefix = path === "/" ? "/" : path + "/"
+    return backend.events.onDirectoryChanged((e) => {
+      if (e.path === path || e.path.startsWith(prefix)) setSyncNonce((n) => n + 1)
+    })
+  }, [backend, path])
 
   const tree: { state: "loading" } | { state: "ready"; nodes: TreeNode[] } | { state: "failed"; error: BackendError } =
     !result || result.path !== path
@@ -550,7 +561,7 @@ function NewFolderSheet({
   }
 
   return (
-    <Sheet title={t("sheet.newFolder.title")} onClose={onClose}>
+    <Sheet title={t("sheet.newFolder.title")} onClose={onClose} busy={busy}>
       <label className="block text-[12px] text-muted-foreground">
         {t("sheet.newFolder.name")}
         <input
@@ -596,7 +607,7 @@ function MoveSheet({
   }
 
   return (
-    <Sheet title={t("sheet.move.title")} onClose={onClose}>
+    <Sheet title={t("sheet.move.title")} onClose={onClose} busy={busy}>
       <label className="block text-[12px] text-muted-foreground">
         {t("sheet.move.path")}
         <input
@@ -641,7 +652,7 @@ function DeleteSheet({
   }
 
   return (
-    <Sheet title={t("sheet.delete.title")} onClose={onClose}>
+    <Sheet title={t("sheet.delete.title")} onClose={onClose} busy={busy}>
       <p className="text-[12.5px] text-fg-2">{t("sheet.delete.body", { name: entry.name })}</p>
       <SheetError error={error} />
       <SheetButtons

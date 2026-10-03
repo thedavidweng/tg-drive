@@ -65,7 +65,7 @@ function git(args, cwd) {
 // the branch never piles up old media; directories of PRs that have since
 // closed are dropped. Another PR's run pushing in between makes this one
 // start over from theirs.
-async function pushMedia(sha, dir) {
+async function pushMedia(sha, dir, manifest, media) {
   const work = await fs.mkdtemp(path.join(os.tmpdir(), "td-gui-previews-"))
   const remote = `https://x-access-token:${token}@github.com/${repo}.git`
   git(["init", "-q"], work)
@@ -87,8 +87,7 @@ async function pushMedia(sha, dir) {
     }
     const to = path.join(work, `pr-${pr}`, short(sha))
     await fs.mkdir(to, { recursive: true })
-    for (const f of await fs.readdir(dir)) await fs.copyFile(path.join(dir, f), path.join(to, f))
-    const manifest = JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8"))
+    for (const f of media) await fs.copyFile(path.join(dir, f), path.join(to, f))
     await fs.writeFile(path.join(to, "index.html"), player(sha, manifest))
     await fs.writeFile(path.join(work, ".nojekyll"), "")
     await fs.writeFile(
@@ -112,6 +111,38 @@ async function pushMedia(sha, dir) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
 
+// The artifact is written by the PR's code, so nothing in it is trusted:
+// only media files with plain names go to Pages (never HTML or scripts on
+// the repository's Pages origin), each under a size cap, and the manifest
+// is reduced to plain names and escaped text before it reaches the Pages
+// player or the PR description.
+const MEDIA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpg|jpeg|mp4|webm)$/
+const MAX_FILE_BYTES = 200 * 1024 * 1024
+
+async function mediaFiles(dir) {
+  const ok = new Set()
+  for (const f of await fs.readdir(dir).catch(() => [])) {
+    if (!MEDIA.test(f)) continue
+    const st = await fs.lstat(path.join(dir, f))
+    if (st.isFile() && st.size <= MAX_FILE_BYTES) ok.add(f)
+  }
+  return ok
+}
+
+// text for Markdown and HTML alike: one line, escaped, with no backticks,
+// brackets, or comment markers that could close the preview block
+const text = (s) =>
+  esc(String(s ?? "").replace(/[\r\n]+/g, " ").slice(0, 200)).replace(/[`[\]|*_]/g, (c) => `&#${c.charCodeAt(0)};`).replace(/<!--|-->/g, "")
+
+function cleanManifest(raw, media) {
+  const file = (f) => (typeof f === "string" && media.has(f) ? f : "")
+  const scenes = (Array.isArray(raw?.scenes) ? raw.scenes : [])
+    .map((s) => ({ title: text(s?.title), file: file(s?.file), width: Number.isFinite(s?.width) ? Math.max(1, Math.min(4000, s.width)) : 1520 }))
+    .filter((s) => s.file)
+  const errors = (Array.isArray(raw?.errors) ? raw.errors : []).slice(0, 50).map(text)
+  return { scenes, errors, video: file(raw?.video), poster: file(raw?.poster) }
+}
+
 // The page the video plays on: GitHub renders no video it does not host
 // itself, so the recording lives on the Pages site next to the shots.
 function player(sha, m) {
@@ -126,7 +157,7 @@ video,img{display:block;width:100%;border-radius:10px;border:1px solid var(--lin
 a{color:inherit}</style>
 <main><h1>#${pr} td-gui preview</h1><p class="m">commit ${short(sha)} · <a href="https://github.com/${repo}/pull/${pr}">back to the PR</a></p>
 ${m.video ? `<figure><video src="${esc(m.video)}" controls autoplay muted playsinline poster="${esc(m.poster || "")}"></video><figcaption>A walkthrough of the scenes below, recorded from the real app.</figcaption></figure>` : ""}
-${shots.map((s) => `<figure><img src="${esc(s.file)}" alt="${esc(s.title)}"><figcaption>${esc(s.title)}</figcaption></figure>`).join("\n")}
+${shots.map((s) => `<figure><img src="${esc(s.file)}" alt="${s.title}"><figcaption>${s.title}</figcaption></figure>`).join("\n")}
 </main></html>`
 }
 
@@ -145,26 +176,27 @@ async function publish() {
   const dir = process.env.OUT_DIR
   const result = process.env.RECORD_RESULT || "success"
   let m = null
+  const media = await mediaFiles(dir)
   try {
-    m = JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8"))
+    m = cleanManifest(JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8")), media)
   } catch {
     /* no manifest: the record job never produced one */
   }
   if (result === "cancelled" && !m) return // a newer commit took over
   if (!m || (!m.scenes.length && !m.video)) {
-    await setBlock(`${head(sha)}\nThe preview could not be recorded (${result}).${runURL ? ` See the [workflow run](${runURL}).` : ""}`)
+    await setBlock(`${head(sha)}\nThe preview could not be recorded (${text(result)}).${runURL ? ` See the [workflow run](${runURL}).` : ""}`)
     return
   }
-  await pushMedia(sha, dir)
+  await pushMedia(sha, dir, m, media)
   const raw = `https://raw.githubusercontent.com/${repo}/${BRANCH}/pr-${pr}/${short(sha)}/`
   const site = `${await pagesURL()}pr-${pr}/${short(sha)}/`
   let md = `${head(sha)}\n`
   if (m.video) {
-    md += `[![Play the recording](${raw}${m.poster})](${site})\n\n`
-    md += `<sub>▶ Open the recording (pausable, seekable) · [download the mp4](${raw}${m.video})</sub>\n\n`
+    if (m.poster) md += `[![Play the recording](${raw}${m.poster})](${site})\n\n`
+    md += `<sub>▶ [Open the recording](${site}) (pausable, seekable) · [download the mp4](${raw}${m.video})</sub>\n\n`
   }
   for (const s of m.scenes) {
-    md += `#### ${s.title}\n\n<img src="${raw}${s.file}" width="${Math.min(760, Math.round((s.width || 1520) / 2))}" alt="${esc(s.title)}">\n\n`
+    md += `#### ${s.title}\n\n<img src="${raw}${s.file}" width="${Math.min(760, Math.round(s.width / 2))}" alt="${s.title}">\n\n`
   }
   if (m.errors?.length) {
     md += `<details><summary>Some scenes failed to record</summary>\n\n${m.errors.map((e) => "- " + e).join("\n")}\n</details>\n`

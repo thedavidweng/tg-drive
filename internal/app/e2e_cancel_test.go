@@ -28,7 +28,8 @@ const cancelDeadline = 2 * time.Second
 func startTD(t *testing.T, bin, cfgPath, dbPath, statePath string, extraEnv []string, args ...string) (*exec.Cmd, *bufio.Scanner, *bytes.Buffer) {
 	t.Helper()
 	cmd := exec.Command(bin, append([]string{"--config", cfgPath, "--db", dbPath}, args...)...)
-	cmd.Env = append(os.Environ(), "TD_FAKE_TELEGRAM=1", "TD_FAKE_TELEGRAM_STATE="+statePath)
+	cmd.Env = append(os.Environ(), "TD_FAKE_TELEGRAM=1", "TD_FAKE_TELEGRAM_STATE="+statePath,
+		"TD_SESSION="+filepath.Join(filepath.Dir(statePath), "session.json"))
 	cmd.Env = append(cmd.Env, extraEnv...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -221,7 +222,8 @@ func TestE2EInterruptedPrompt(t *testing.T) {
 	bin, cfgPath, dbPath, statePath, _ := e2eSetup(t, dir)
 
 	cmd := exec.Command(bin, "--config", cfgPath, "--db", dbPath, "--json", "auth", "login")
-	cmd.Env = append(os.Environ(), "TD_FAKE_TELEGRAM=1", "TD_FAKE_TELEGRAM_STATE="+statePath)
+	cmd.Env = append(os.Environ(), "TD_FAKE_TELEGRAM=1", "TD_FAKE_TELEGRAM_STATE="+statePath,
+		"TD_SESSION="+filepath.Join(filepath.Dir(statePath), "session.json"))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)

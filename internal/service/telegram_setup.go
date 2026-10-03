@@ -23,9 +23,15 @@ type TelegramAsk func(TelegramField) (string, error)
 
 // ConfigureTelegram loads the config named by opts, asks for each missing
 // credential in the order api_id, api_hash, then phone (only when needPhone),
-// and saves the result.
+// and saves the answers. It returns the effective config with the answers
+// applied; the file gains only the answers, never a value that came from a
+// flag or the environment.
 func ConfigureTelegram(opts Options, needPhone bool, ask TelegramAsk) (config.Config, string, error) {
 	cfg, path, err := LoadConfig(opts)
+	if err != nil {
+		return cfg, path, err
+	}
+	file, err := config.LoadFile(path)
 	if err != nil {
 		return cfg, path, err
 	}
@@ -43,18 +49,21 @@ func ConfigureTelegram(opts Options, needPhone bool, ask TelegramAsk) (config.Co
 			return cfg, path, apperr.New(apperr.ErrConfigInvalid, "invalid api_id")
 		}
 		cfg.Telegram.APIID = id
+		file.Telegram.APIID = id
 	}
 	if cfg.Telegram.APIHash == "" {
 		if cfg.Telegram.APIHash, err = answer(TelegramAPIHash); err != nil {
 			return cfg, path, err
 		}
+		file.Telegram.APIHash = cfg.Telegram.APIHash
 	}
 	if needPhone && cfg.Telegram.Phone == "" {
 		if cfg.Telegram.Phone, err = answer(TelegramPhone); err != nil {
 			return cfg, path, err
 		}
+		file.Telegram.Phone = cfg.Telegram.Phone
 	}
-	return cfg, path, config.Save(path, cfg)
+	return cfg, path, config.Save(path, file)
 }
 
 // TelegramSetupResult reports where setup saved the credentials and where

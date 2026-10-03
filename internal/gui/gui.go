@@ -39,82 +39,153 @@ type Services struct {
 	state *appState
 }
 
-// appState owns the service App behind a mutex so Auth can reopen it: a
-// fresh machine opens offline (no Telegram client) and setup upgrades it to
-// a connected one. Services resolve the App per call, never caching it. It
-// also owns the one Transfer Manager every facade shares; the Manager is
-// rebuilt on every reopen — an Auth reopen or a channel switch — since it
-// binds the App it runs Transfers on.
+// appState is the GUI's process model (ADR 0031). One base App owns the
+// database and the one long-lived Telegram client of the GUI's session; one
+// App per bound channel shares them, and the channel switcher only selects
+// which App the views read. One Transfer Manager runs every GUI Transfer,
+// each pinned to the channel it was submitted on, so a switch never touches
+// a running Transfer and the concurrency limit covers them all.
+//
+// Only Auth replaces the base App (a fresh machine opens offline; setup and
+// login need a connected one), and it refuses to while GUI Transfers run.
+// Services resolve the App per call, never caching it.
 type appState struct {
-	mu       sync.Mutex
-	app      *service.App
-	closeApp func()
+	mu        sync.Mutex
+	base      *service.App
+	closeBase func()
+	// apps are the per-channel Apps over base, keyed by channel selector.
+	apps map[string]*service.App
 	// channel is the active channel selector (a bound channel's Telegram
-	// ID). The App's selector is fixed at Open (service.Options.Channel),
-	// so Channels switches channels by reopening the App with another one;
-	// "" selects the first bound channel.
+	// ID); "" selects the first bound channel.
 	channel string
 	manager *transfer.Manager
-	// observer is the Manager Observer wired in Open; a reopen reuses it
-	// for the new Manager.
+	// observer is the Manager Observer wired in Open; a new Manager reuses
+	// it.
 	observer transfer.Observer
+	// configStale marks a saved Settings change the running Manager has not
+	// picked up yet: the Manager is replaced once it runs nothing.
+	configStale bool
 }
 
+func newAppState(base *service.App, closeBase func(), observer transfer.Observer) *appState {
+	s := &appState{base: base, closeBase: closeBase, apps: map[string]*service.App{}}
+	s.observer = observer
+	s.observer.OnIdle = s.onIdle
+	s.manager = s.newManager(base)
+	return s
+}
+
+func (s *appState) newManager(base *service.App) *transfer.Manager {
+	return transfer.New(base, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: s.observer})
+}
+
+// current is the App of the active channel.
 func (s *appState) current() *service.App {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.app
+	return s.appLocked(s.channel)
 }
 
-// currentManager is the Transfer Manager of the current App.
+func (s *appState) appLocked(channel string) *service.App {
+	if app, ok := s.apps[channel]; ok {
+		return app
+	}
+	b := s.base
+	app := &service.App{Cfg: b.Cfg, ConfigPath: b.ConfigPath, DB: b.DB, TG: b.TG, Channel: channel}
+	s.apps[channel] = app
+	return app
+}
+
+// selected is the active channel selector, for pinning a Transfer to it.
+func (s *appState) selected() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.channel
+}
+
+// currentManager is the one Transfer Manager.
 func (s *appState) currentManager() *transfer.Manager {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.manager
 }
 
-// reopen replaces the App with a freshly opened one, bound to the selected
-// channel, and a Transfer Manager for it. The old App closes only after
-// the new one opened, so a failed reopen keeps the previous state.
+// running is how many Transfers this GUI owns and has not finished.
+func (s *appState) running() int {
+	return s.currentManager().Running()
+}
+
+// reopen replaces the base App with a freshly opened one — the offline App
+// of a fresh machine with a connected one after setup — and rebuilds the
+// per-channel Apps and the Manager over it. It refuses while this GUI runs
+// Transfers, which the old App's client and database serve. The old App
+// closes only after the new one opened, so a failed reopen keeps the
+// previous state.
 func (s *appState) reopen() error {
-	opts := openOptions()
-	s.mu.Lock()
-	opts.Channel = s.channel
-	s.mu.Unlock()
-	app, closeApp, err := service.Open(opts)
+	if n := s.running(); n > 0 {
+		return toError(apperr.New(apperr.ErrUsage,
+			"transfers are running; wait for them to finish or cancel them first"))
+	}
+	app, closeApp, err := service.Open(openOptions())
 	if err != nil {
 		return toError(err)
 	}
-	manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: s.observer})
 	s.mu.Lock()
-	old := s.closeApp
-	s.app, s.closeApp = app, closeApp
-	s.manager = manager
+	old := s.closeBase
+	s.base, s.closeBase = app, closeApp
+	s.apps = map[string]*service.App{}
+	s.manager = s.newManager(app)
+	s.configStale = false
 	s.mu.Unlock()
 	old()
 	return nil
 }
 
-// switchChannel reopens the App bound to another channel. A failed reopen
-// keeps the previous App and selection.
-func (s *appState) switchChannel(channel string) error {
+// reloadConfig applies a saved config change to the running GUI: the
+// per-channel Apps pick the new config up at once, and the Manager (which
+// fixes transfers.concurrency when built) is replaced now when it runs
+// nothing, else when its last Transfer ends. Calls already running keep the
+// App they started with; the database and Telegram client stay open.
+func (s *appState) reloadConfig() error {
+	cfg, path, err := service.LoadConfig(openOptions())
+	if err != nil {
+		return toError(err)
+	}
 	s.mu.Lock()
-	previous := s.channel
-	s.channel = channel
-	s.mu.Unlock()
-	if err := s.reopen(); err != nil {
-		s.mu.Lock()
-		s.channel = previous
-		s.mu.Unlock()
-		return err
+	defer s.mu.Unlock()
+	b := s.base
+	s.base = &service.App{Cfg: cfg, ConfigPath: path, DB: b.DB, TG: b.TG}
+	s.apps = map[string]*service.App{}
+	s.configStale = true
+	if s.manager.Running() == 0 {
+		s.manager = s.newManager(s.base)
+		s.configStale = false
 	}
 	return nil
+}
+
+// onIdle swaps in the Manager a Settings change asked for, once the old
+// one finished its last Transfer.
+func (s *appState) onIdle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.configStale && s.manager.Running() == 0 {
+		s.manager = s.newManager(s.base)
+		s.configStale = false
+	}
+}
+
+// switchChannel selects another bound channel's App. Nothing is reopened.
+func (s *appState) switchChannel(channel string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.channel = channel
 }
 
 func (s *appState) close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.closeApp()
+	s.closeBase()
 }
 
 func openOptions() service.Options {
@@ -144,14 +215,13 @@ func Open() (*Services, func(), error) {
 			return nil, func() {}, toError(err)
 		}
 	}
-	settings := &Settings{opts: opts}
-	state := &appState{app: app, closeApp: closeApp}
-	transfers := &Transfers{state: state, seen: map[string]Transfer{}}
-	state.observer = transfer.Observer{
+	transfers := &Transfers{seen: map[string]Transfer{}}
+	state := newAppState(app, closeApp, transfer.Observer{
 		OnStage:    transfers.observeStage,
 		OnProgress: transfers.observeProgress,
-	}
-	state.manager = transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: state.observer})
+	})
+	transfers.state = state
+	settings := &Settings{state: state}
 	closeServices := state.close
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -172,6 +242,13 @@ func Open() (*Services, func(), error) {
 		Maintenance: &Maintenance{state: state},
 		state:       state,
 	}, closeServices, nil
+}
+
+// RunningTransfers is how many Transfers this GUI owns and has not
+// finished: the ones quitting would interrupt. Another front end's
+// Transfers keep running when the GUI quits, so they do not count.
+func (s *Services) RunningTransfers() int {
+	return s.state.running()
 }
 
 // SetPromptEmitter wires how auth prompts reach the frontend. cmd/td-gui
@@ -210,6 +287,14 @@ func (s *Services) SetTransferEmitter(em Emitter) {
 // this method is not in the frontend bindings.
 func (s *Services) SetFilePicker(p FilePicker) {
 	s.Transfers.pick = p
+}
+
+// SetChannelsEmitter wires how the Channels facade's typed event
+// (channels-changed) reaches the frontend, same seam as SetDriveEmitter.
+func (s *Services) SetChannelsEmitter(em Emitter) {
+	s.Channels.mu.Lock()
+	defer s.Channels.mu.Unlock()
+	s.Channels.emit = em
 }
 
 // SetImportEmitter wires how the Import facade's typed events

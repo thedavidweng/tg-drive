@@ -13,6 +13,7 @@ declare module "@wailsio/runtime" {
     namespace Events {
         interface CustomEvents {
             "auth.prompt": gui$0.AuthPrompt;
+            "channels-changed": gui$0.ChannelsChanged;
             "directory-changed": gui$0.DirectoryChanged;
             "files-dropped": gui$0.FilesDropped;
             "import.item": gui$0.ItemEvent;

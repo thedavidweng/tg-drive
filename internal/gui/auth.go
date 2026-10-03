@@ -23,7 +23,9 @@ type Auth struct {
 	emitter   func(AuthPrompt)
 	prompts   map[string]chan promptAnswer
 	promptSeq int
-	loggingIn bool
+	// loginCancel and loginDone belong to the login in progress, if any.
+	loginCancel context.CancelFunc
+	loginDone   chan struct{}
 }
 
 // Prompt kinds emitted on the auth.prompt event.
@@ -119,18 +121,31 @@ type LoginResult struct {
 // forceNewCode requests a fresh code instead of reusing a pending one. The
 // login code and the 2FA password arrive as auth.prompt events and are
 // answered with AnswerPrompt.
+//
+// A Login started while another waits replaces it: the earlier one ends
+// ERR_CANCELLED first. Its prompt may never get an answer (a webview
+// reload loses the prompt event, and a bound call's context is never
+// cancelled on its own), and it must not block logging in for the rest of
+// the session.
 func (a *Auth) Login(ctx context.Context, phone string, forceNewCode bool) (*LoginResult, error) {
 	a.mu.Lock()
-	if a.loggingIn {
+	for a.loginCancel != nil {
+		cancel, done := a.loginCancel, a.loginDone
 		a.mu.Unlock()
-		return nil, toError(apperr.New(apperr.ErrUsage, "login already in progress"))
+		cancel()
+		<-done
+		a.mu.Lock()
 	}
-	a.loggingIn = true
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	a.loginCancel, a.loginDone = cancel, done
 	a.mu.Unlock()
 	defer func() {
 		a.mu.Lock()
-		a.loggingIn = false
+		a.loginCancel, a.loginDone = nil, nil
 		a.mu.Unlock()
+		cancel()
+		close(done)
 	}()
 
 	app := a.state.current()

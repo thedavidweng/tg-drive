@@ -33,7 +33,7 @@ esac
 mkdir -p "$OUT" "$WORK"
 
 # Same build flags as `make gui-build`, plus stripping for release.
-CGO_ENABLED=1 go build -tags gui -trimpath -ldflags "-s -w" -o dist/td-gui ./cmd/td-gui
+CGO_ENABLED=1 go build -tags gui -trimpath -ldflags "-s -w -X github.com/thedavidweng/tg-drive-cli/internal/version.Version=$VERSION" -o dist/td-gui ./cmd/td-gui
 
 # .deb. nfpm expands VERSION and DEBARCH from the environment.
 export VERSION DEBARCH

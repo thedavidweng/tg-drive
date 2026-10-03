@@ -31,8 +31,10 @@ const (
 	KindRecursiveDownload Kind = "recursive_download"
 )
 
-// Stage is where a Transfer is in its lifecycle. A Transfer only moves
-// forward through the stages, ending in exactly one terminal stage.
+// Stage is where a Transfer is in its lifecycle, ending in exactly one
+// terminal stage. A single-file Transfer only moves forward through the
+// stages; a multi-item one revisits the working stages for each item or
+// directory group it runs.
 type Stage string
 
 const (

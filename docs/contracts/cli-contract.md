@@ -34,6 +34,8 @@ td init <local-root>
   # (created on demand); machine records live in its comment threads
 td status
   # succeeds before init (data.initialized=false); lists bound channels
+  # never waits for another process's Session lock: while one holds it,
+  # the account line reads unknown and the rest comes from the index
 td doctor
   td doctor path-codec
 td scan [remote-root]
@@ -83,9 +85,10 @@ runs and after it ends, and the command waits for it in the foreground.
 Result output is unchanged. The Transfer kinds are `upload` (single-file
 cp), `download` (single-file get), `album_upload` (multi-file cp, one
 Transfer for the whole album call), `recursive_upload`, and
-`recursive_download`. A single-file `td cp --events` also emits one
-`transfer.stage` event per stage the Transfer enters, alongside the
-`cp.progress` events. Ctrl-C cancels the command's Transfers: they end
+`recursive_download`. Under `--events`, every `td cp` and `td get` form
+emits one `transfer.stage` event per stage its Transfer enters; `td cp`
+interleaves them with its `cp.progress` events, and each command ends the
+stream with its result line (`cp` or `get`). Ctrl-C cancels the command's Transfers: they end
 `cancelled`.
 
 `--as photo` sends a native photo message: Telegram recompresses the bytes,
@@ -98,6 +101,8 @@ forms.
 ```text
 td get <remote-path> <local-dest>
   [-r|--recursive] [--replace] [--skip-existing] [--auto-rename] [--continue-on-error]
+  [--events]
+  # --events: NDJSON transfer.stage events, then a final get line
 td transfers list
   [--active | --all] [--stage <stage>]
   # reads the index only: never waits for another process's Session lock
@@ -107,7 +112,7 @@ td transfers show <id>
 td transfers cancel <id>
   # reads and writes the index only: never waits for another process's
   # Session lock. Sets the Transfer's cancel-requested flag; the owning
-  # process notices on its lease heartbeat and ends the Transfer
+  # process notices within about a second and ends the Transfer
   # `cancelled`, a queued one without starting it. Cancelling an ended
   # Transfer fails with ERR_USAGE; an unknown ID with
   # ERR_TRANSFER_NOT_FOUND.
@@ -130,7 +135,10 @@ td transfers retry <id>
   # cp/get form it came from: the command waits and exits with the outcome.
   # The retrying process becomes the Transfer's owner; the Transfer keeps
   # its ID and created_at. An interrupted upload resumes from the parts
-  # upload_progress saved; a download starts over. Retrying a running or
+  # upload_progress saved; a download starts over, except that a local
+  # file that already holds the remote content (same size and hash) counts
+  # as done instead of a conflict, so a recursive download's earlier
+  # output never blocks its retry. Retrying a running or
   # completed Transfer fails with ERR_USAGE, an unknown ID with
   # ERR_TRANSFER_NOT_FOUND. Unlike the other transfers subcommands, retry
   # connects to Telegram, so it can wait for the Session lock.

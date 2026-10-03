@@ -7,9 +7,13 @@ name: UI preview
 #
 # Security split: the record job builds and runs the PR's code,
 # so it holds a read-only token and no credentials. The publish job, which
-# can write, only downloads the record job's artifacts; it checks out the
-# default branch (trusted) for publish.mjs and never the PR's code. Fork
-# pull requests get a read-only token regardless, so publish skips them.
+# can write, runs the default branch's publish.mjs, never the PR's code,
+# and treats the downloaded artifact as untrusted: it publishes only
+# allowlisted image and video files and escapes every manifest value.
+# This workflow file itself is read from the PR head on pull_request, so
+# the split protects only against PRs from forks, which get a read-only
+# token regardless and which publish skips; a same-repo branch is trusted
+# with write access by construction.
 
 on:
   pull_request:

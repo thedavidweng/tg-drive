@@ -85,6 +85,29 @@ test("an oversized file is flagged before the upload starts", async () => {
   await within(dialog).findByText("huge.bin exceeds the 2 GB upload limit")
   // The file under the limit is not flagged.
   expect(within(dialog).queryByText(/small\.txt exceeds/)).toBeNull()
+  // Telegram would reject the file, so the upload cannot start at all.
+  expect(within(dialog).getByText("Files over the 2 GB upload limit cannot be uploaded. Remove them to start.")).toBeTruthy()
+  const start = within(dialog).getByRole("button", { name: "Start upload" })
+  expect(start.hasAttribute("disabled")).toBe(true)
+  fireEvent.click(start)
+  expect(backend.uploads).toEqual([])
+})
+
+test("the oversize block names the account's own limit", async () => {
+  // A Premium account: the plan reports the 4 GB limit.
+  const backend = memoryBackend(seed, {
+    transfers: {
+      picks: { files: ["/home/me/huge.bin"] },
+      fileSizes: { "/home/me/huge.bin": 5 * 1024 * 1024 * 1024 },
+      uploadLimitBytes: 4 * 1024 * 1024 * 1024,
+    },
+  })
+  await openDrive(backend)
+
+  fireEvent.click(screen.getByRole("button", { name: "Upload files" }))
+  const dialog = await screen.findByRole("dialog", { name: "Upload to /" })
+  await within(dialog).findByText("Files over the 4 GB upload limit cannot be uploaded. Remove them to start.")
+  expect(within(dialog).getByRole("button", { name: "Start upload" }).hasAttribute("disabled")).toBe(true)
 })
 
 test("an album upload cannot choose replace", async () => {

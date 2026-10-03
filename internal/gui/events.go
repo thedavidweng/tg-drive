@@ -44,7 +44,16 @@ const (
 	EventImportItem = "import.item"
 	// EventRepairItem carries ItemEvent once per repaired item.
 	EventRepairItem = "repair.item"
+	// EventChannelsChanged carries ChannelsChanged: the bound channels or
+	// the active one changed, by this GUI or another process (td init).
+	EventChannelsChanged = "channels-changed"
 )
+
+// ChannelsChanged is the payload of EventChannelsChanged: the bound
+// channels as Channels.List returns them.
+type ChannelsChanged struct {
+	Channels []ChannelInfo `json:"channels"`
+}
 
 // TransferRemoved is the payload of EventTransferRemoved.
 type TransferRemoved struct {

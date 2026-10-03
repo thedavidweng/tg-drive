@@ -65,14 +65,18 @@ type ConfigSetResult struct {
 
 // SetConfig validates and saves one dotted config key.
 func SetConfig(opts Options, key, value string) (*ConfigSetResult, error) {
-	cfg, path, err := LoadConfig(opts)
+	_, path, err := LoadConfig(opts)
 	if err != nil {
 		return nil, err
 	}
-	if err := config.SetValue(&cfg, key, value); err != nil {
+	file, err := config.LoadFile(path)
+	if err != nil {
 		return nil, err
 	}
-	if err := config.Save(path, cfg); err != nil {
+	if err := config.SetValue(&file, key, value); err != nil {
+		return nil, err
+	}
+	if err := config.Save(path, file); err != nil {
 		return nil, err
 	}
 	return &ConfigSetResult{Key: key, Status: "set"}, nil

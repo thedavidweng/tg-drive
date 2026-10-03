@@ -120,8 +120,8 @@ func lastSeen(t *testing.T, svc *gui.Services, id string) gui.Transfer {
 }
 
 // shortTransferLeases shortens the owner's lease TTL (locks.ttl_seconds) so
-// the cancel flag poll — one third of the TTL — notices within the test's
-// deadlines. The config file is shared by the GUI and the CLI front end.
+// leases renew and expire within the test's deadlines. The config file is
+// shared by the GUI and the CLI front end.
 func shortTransferLeases(t *testing.T) {
 	t.Helper()
 	cfg := os.Getenv("TD_CONFIG")

@@ -299,9 +299,6 @@ func TestE2ERetryRejectsActiveCompletedUnknown(t *testing.T) {
 	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
 	e2eLogin(t, bin, cfgPath, dbPath, statePath)
 	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
-	// The owner's cancel poll rides the lease heartbeat: shorten the TTL so
-	// the cancelled cp below stops within the test.
-	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "config", "set", "locks.ttl_seconds", "3")
 
 	small := e2eLocalFile(t, dir, "small.txt", "small")
 	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "cp", small, "/small.txt")
@@ -421,5 +418,68 @@ func TestE2ERetryFailedAlbumAndRecursiveUpload(t *testing.T) {
 	if retriedRec["stage"] != "completed" || retriedRec["items_done"] != float64(3) ||
 		retriedRec["source"] != tree || retriedRec["dest"] != "/tree" {
 		t.Fatalf("retried recursive transfer = %v, want completed with 3 items from %s to /tree", retriedRec, tree)
+	}
+}
+
+// TestE2ERetryCancelledRecursiveDownload: a recursive download cancelled
+// mid-run retries from its recorded source, destination, and options. The
+// files the first run already wrote are on disk when the retry walks the
+// tree again, so the retry must land every file intact rather than trip
+// over its own earlier output.
+func TestE2ERetryCancelledRecursiveDownload(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(filepath.Join(tree, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"a.txt": "alpha", "b.txt": "bravo", "sub/c.txt": "charlie"}
+	for rel, body := range want {
+		e2eLocalFile(t, filepath.Dir(filepath.Join(tree, rel)), filepath.Base(rel), body)
+	}
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "cp", "--recursive", tree, "/tree")
+
+	// Cancel once the first file landed, so the retry meets it on disk.
+	out := filepath.Join(dir, "out")
+	cmd, sc, stderr := startTD(t, bin, cfgPath, dbPath, statePath, []string{"TD_FAKE_TRANSFER_DELAY=2s"},
+		"--json", "get", "--recursive", "/tree", out)
+	var id string
+	for deadline := time.Now().Add(20 * time.Second); id == ""; {
+		for _, tr := range listTransfers(t, bin, cfgPath, dbPath, statePath) {
+			if tr["kind"] == "recursive_download" && tr["items_done"] == float64(1) {
+				id, _ = tr["id"].(string)
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recursive download never finished its first file; stderr=%s", stderr)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "transfers", "cancel", id)
+	for sc.Scan() {
+	}
+	if code := exitCode(t, cmd.Wait()); code != 130 {
+		t.Fatalf("cancelled get exit = %d, want 130", code)
+	}
+	if ended := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "transfers", "show", id); ended["stage"] != "cancelled" ||
+		ended["items_done"] == float64(3) {
+		t.Fatalf("transfer after cancel = %v, want cancelled part-way", ended)
+	}
+	retried := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "transfers", "retry", id)
+	if retried["stage"] != "completed" || retried["id"] != id || retried["kind"] != "recursive_download" ||
+		retried["items_done"] != float64(3) || retried["items_total"] != float64(3) {
+		t.Fatalf("retried recursive download = %v, want completed with 3/3 items", retried)
+	}
+	for rel, body := range want {
+		got, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("after retry: %v", err)
+		}
+		if string(got) != body {
+			t.Fatalf("%s after retry = %q, want %q", rel, got, body)
+		}
 	}
 }

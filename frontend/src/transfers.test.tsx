@@ -166,6 +166,34 @@ test("clear finished empties the history through the backend", async () => {
   expect(rowIn(activeList(), "/running.bin")).toBeTruthy()
 })
 
+test("a transfer with a stage and kind this build does not know renders them raw", async () => {
+  const backend = memoryBackend({})
+  // A newer td can write stages and kinds an older td-gui has no strings for.
+  backend.putTransferForTest(transfer({ id: "t1", stage: "paused", kind: "sync", dest: "/future.bin" }))
+  await openTransfers(backend)
+
+  const row = rowIn(activeList(), "/future.bin")
+  expect(within(row).getByText("paused")).toBeTruthy()
+  expect(row.textContent).toContain("sync")
+})
+
+test("a rejected transfer action shows its error code beside the message", async () => {
+  const backend = memoryBackend({})
+  backend.putTransferForTest(transfer({ id: "t1", stage: "completed", finished_at: "2026-02-01T10:01:00Z" }))
+  await openTransfers(backend)
+
+  // The memory backend rejects retrying a completed transfer; reach it by
+  // racing a stage event that marks the row failed after the list loaded.
+  backend.emitTransferStage(
+    transfer({ id: "t1", stage: "failed", error_code: "ERR_X", error_message: "boom", finished_at: "2026-02-01T10:01:00Z" }),
+  )
+  fireEvent.click(await screen.findByRole("button", { name: "Retry /big.bin" }))
+
+  const alert = await screen.findByRole("alert")
+  expect(alert.textContent).toContain("transfer already completed: t1")
+  expect(alert.textContent).toContain("ERR_USAGE")
+})
+
 test("the tab is translated", async () => {
   const backend = memoryBackend({})
   backend.putTransferForTest(

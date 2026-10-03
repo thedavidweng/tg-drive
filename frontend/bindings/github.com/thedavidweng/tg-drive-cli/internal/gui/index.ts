@@ -32,6 +32,7 @@ export type {
     ChannelChoice,
     ChannelInfo,
     ChannelStatus,
+    ChannelsChanged,
     ConfigEntry,
     DeleteOptions,
     DeleteOutcome,

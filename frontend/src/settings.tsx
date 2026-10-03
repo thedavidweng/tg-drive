@@ -5,6 +5,7 @@ import type { Backend, BackendError, ConfigEntry, OmarchyState, Versions } from 
 import { Card, Row, Segmented } from "@/card"
 import { useI18n } from "@/i18n"
 import type { LanguagePref } from "@/i18n"
+import { ErrorText } from "@/sheet"
 import type { ThemeMode } from "@/theme"
 
 export interface SettingsProps {
@@ -122,7 +123,7 @@ function Configuration({ backend }: { backend: Backend }) {
     return (
       <Card label={t("settings.configuration")}>
         <li role="alert" className="px-3.5 py-3 text-red">
-          {config.error.message}
+          <ErrorText message={config.error.message} code={config.error.code} />
         </li>
       </Card>
     )
@@ -167,7 +168,9 @@ function ConfigRow({
   // so merely revealing is not an edit.
   const [baseline, setBaseline] = useState(String(entry.value))
   const [revealed, setRevealed] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<BackendError | null>(null)
+  // Set by a save whose key td-gui reads only at startup.
+  const [restartNote, setRestartNote] = useState(false)
   const masked = entry.secret && !revealed
   const dirty = !masked && draft !== baseline
 
@@ -190,7 +193,7 @@ function ConfigRow({
                     setBaseline(value)
                     setRevealed(true)
                   },
-                  (err: BackendError) => setError(err.message),
+                  (err: BackendError) => setError(err),
                 )
               }}
               className="grid size-6 shrink-0 place-items-center rounded-control text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
@@ -206,6 +209,7 @@ function ConfigRow({
               onChange={(e) => {
                 setDraft(e.target.value)
                 setError(null)
+                setRestartNote(false)
               }}
               spellCheck={false}
               className="min-w-0 flex-1 rounded-control border border-line bg-card-2 px-2 py-1 font-mono text-[12px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -232,9 +236,10 @@ function ConfigRow({
                     (saved) => {
                       setDraft(String(saved.value))
                       setBaseline(String(saved.value))
+                      setRestartNote(saved.restart_required ?? false)
                       if (saved.secret) setRevealed(false)
                     },
-                    (err: BackendError) => setError(err.message),
+                    (err: BackendError) => setError(err),
                   )
                 }}
                 className="h-6 shrink-0 rounded-control bg-primary px-2.5 text-[12px] font-medium text-primary-foreground transition-colors duration-150 ease-quiet hover:bg-primary/80"
@@ -247,7 +252,12 @@ function ConfigRow({
       </div>
       {error && (
         <p role="alert" className="pt-1 pl-2 text-[12px] text-red">
-          {error}
+          <ErrorText message={error.message} code={error.code} />
+        </p>
+      )}
+      {restartNote && !error && (
+        <p role="status" className="pt-1 pl-2 text-[12px] text-muted-foreground">
+          {t("settings.restartRequired")}
         </p>
       )}
     </li>
@@ -277,7 +287,9 @@ function About({ backend }: { backend: Backend }) {
       </li>
       <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5">
         <span className="flex-1">td</span>
-        <span className="font-mono text-[12px] text-muted-foreground">{versions?.cli ?? "…"}</span>
+        <span className="font-mono text-[12px] text-muted-foreground">
+          {versions === null ? "…" : versions.cli || t("settings.cliNotInstalled")}
+        </span>
       </li>
     </Card>
   )

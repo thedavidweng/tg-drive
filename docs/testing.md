@@ -67,13 +67,16 @@ a reader marks `interrupted` once its lease expires.
 `td transfers retry`: the SIGKILLed upload resumes from its saved parts
 (the `--events` stream shows only the unconfirmed parts going out), a
 cancelled upload and download re-run (the slow retry completing proves the
-recorded cancel request was cleared on takeover), failed album and
+recorded cancel request was cleared on takeover), a recursive download
+cancelled after its first file landed retries to completion without
+tripping over that file, failed album and
 recursive uploads re-run from their recorded options, and a running or
 completed Transfer rejects the retry with `ERR_USAGE` — answered from the
 index, fast, while the owning `td cp` runs on. The Transfer lease
 reuses `locks.ttl_seconds`, so both tests shorten it with `td config set`
-to make the owner's cancel poll and the lease expiry land within the tests'
-deadlines. The fake knob `TD_FAKE_TRANSFER_DELAY=<Go duration>` makes every
+to make the lease expiry land within the tests' deadlines. Each spawned
+`td` gets its own `TD_SESSION`, so the tests never touch the developer's
+real Session lock. The fake knob `TD_FAKE_TRANSFER_DELAY=<Go duration>` makes every
 resumable part and media download take that long, ending early on
 cancellation, so the signal lands mid-transfer. Like the other `TD_FAKE_*` knobs (documented on
 `fake.NewPersistent`), it is for tests only. The interrupt tests do not run
@@ -144,7 +147,12 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   the delete-source gate on both preview and run, per-item `import.item`
   events with their running tally, duplicate skips, confirmed source
   deletion, and the photo prompt answered or cancelled through the
-  prompt-event seam. The Maintenance facade is covered by adopt's preview,
+  prompt-event seam. The process model is covered in `process_test.go`:
+  switching channels mid-upload leaves the Transfer running and an Auth
+  reopen refuses meanwhile, a Settings change applies without a restart,
+  only this GUI's Transfers count toward quitting, a channel bound by
+  another process reaches the frontend as `channels-changed`, and a second
+  login replaces a stuck one. The Maintenance facade is covered by adopt's preview,
   run, and confirmation gate; all six repair modes (including hash
   backfill against a hash-less adopted file and the orphaned-delete gate);
   doctor's checks and max-upload report; and the path-codec doctor. The

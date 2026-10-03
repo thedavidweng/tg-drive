@@ -53,6 +53,10 @@ strategy = "single"
 Every key above except `[[roots]]` is readable with `td config get <section.key>`
 and writable with `td config set`, except `hash.algorithm` (always `blake3`). Integer limits must be positive
 (`caption.margin_utf16_units` and `upload.part_size_kb` may be 0).
+`td config set` (and the GUI's Settings) writes only what the config file
+already holds plus the key set: values that came from `--config` overrides,
+`TD_*` environment variables, or a front end's own defaults (the GUI's
+session path) are never written to the file.
 
 `transfers.concurrency` bounds how many Transfers one process runs at once;
 the rest wait `queued`.
@@ -60,7 +64,8 @@ the rest wait `queued`.
 `locks.ttl_seconds` is the lease time of Operation locks and of the Transfer
 owner's lease on each Transfer; both renew on a heartbeat at one third of
 it, so a Transfer whose owner vanished reads as expired — and is marked
-`interrupted` — within about one TTL.
+`interrupted` — within about one TTL. Cancel requests do not wait for the
+heartbeat: the owner polls for them once a second.
 
 `locks.session_wait_seconds` bounds how long a command that needs Telegram
 waits for another process to release the Session lock on the same session

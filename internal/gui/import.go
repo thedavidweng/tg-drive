@@ -97,6 +97,10 @@ func (im *Import) run(ctx context.Context, opts ImportOptions, dryRun bool) (*Im
 		return nil, toError(apperr.New(apperr.ErrUsage,
 			fmt.Sprintf("unknown conflict policy %q (want fail, replace, skip, or rename)", opts.Policy)))
 	}
+	// An import still waiting on a photo prompt is one whose prompt the
+	// frontend lost (a webview reload); a new run supersedes it rather
+	// than leave it parked for the rest of the session.
+	im.cancelPendingPrompts()
 	tracker := &itemTracker{emit: im.emitEvent, event: EventImportItem}
 	res, err := im.state.current().ImportSaved(ctx, service.ImportSavedOptions{
 		Into:          opts.Into,
@@ -152,6 +156,17 @@ func (im *Import) resolve(id string, answer promptAnswer) error {
 	default:
 	}
 	return nil
+}
+
+func (im *Import) cancelPendingPrompts() {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+	for _, ch := range im.prompts {
+		select {
+		case ch <- promptAnswer{err: apperr.Cancelled()}:
+		default:
+		}
+	}
 }
 
 // askPhotos emits the photo prompt and waits for the frontend's answer.

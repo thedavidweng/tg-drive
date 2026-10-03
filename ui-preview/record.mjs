@@ -2,14 +2,15 @@
 // video, driven by Playwright against a td-gui server-mode build
 // (go build -tags gui,server) backed by the fake Telegram.
 //
-//   node record.mjs --url http://127.0.0.1:3209 --out out [--setup-url http://127.0.0.1:3210]
+//   node record.mjs --url http://127.0.0.1:3209 --out out [--setup-url http://127.0.0.1:3210] [--omarchy-url http://127.0.0.1:3211]
 //
 // A scene is one entry in the list below; adding one is a new entry (plus
 // whatever state run.sh seeds for it). Each scene renders in its own
 // browser context at 2x device scale, the window size the desktop app opens
 // with, and produces one PNG in the output directory next to manifest.json
 // and preview.mp4. Scenes marked setup record against --setup-url, the
-// second, credential-free server run.sh launches.
+// second, credential-free server run.sh launches; scenes marked omarchy
+// against --omarchy-url, the third, which detects a seeded Omarchy theme.
 import fs from "node:fs/promises"
 import path from "node:path"
 import { spawn } from "node:child_process"
@@ -194,6 +195,38 @@ const scenes = [
       await page.getByRole("list", { name: "Capability checks" }).waitFor()
     },
   },
+  // Settings: appearance, the config table with secrets masked, and About.
+  // Only reads; nothing is saved.
+  {
+    name: "settings",
+    title: "Settings",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("tab", { name: "Settings" }).click()
+      await page.getByLabel("transfers.concurrency", { exact: true }).waitFor()
+      await page.getByRole("button", { name: "Reveal telegram.api_hash" }).waitFor()
+    },
+  },
+  // Omarchy mode, against the server that detects a seeded dark theme: the
+  // Drive drawn with the theme's palette and square corners, and Settings
+  // with the theme picker handed to Omarchy.
+  {
+    name: "drive-omarchy",
+    title: "Drive — Omarchy mode (tokyo-night)",
+    colorScheme: "light",
+    omarchy: true,
+  },
+  {
+    name: "settings-omarchy",
+    title: "Settings — Omarchy mode",
+    colorScheme: "light",
+    omarchy: true,
+    settle: async (page) => {
+      await page.getByRole("tab", { name: "Settings" }).click()
+      await page.getByRole("switch", { name: "Omarchy mode" }).waitFor()
+      await page.getByText("Follows the Omarchy theme tokyo-night.").waitFor()
+    },
+  },
   // First-run setup and login, against the credential-free server. They
   // chain through the facade's real state: auth-login saves credentials,
   // auth-code starts a login (and cancels it after the shot), so each
@@ -221,7 +254,8 @@ const scenes = [
     open: async (page, base) => {
       await openAuth(page, base, "form", "Connect to Telegram")
       await page.getByLabel("api_id").fill("12345")
-      await page.getByLabel("api_hash").fill("deadbeef")
+      // exact: the show/hide button is labelled "Show api_hash".
+      await page.getByLabel("api_hash", { exact: true }).fill("deadbeef")
       await page.getByLabel("Phone").fill("+15551234567")
       await page.getByRole("button", { name: "Save and continue" }).click()
       await page.getByRole("heading", { name: "Log in to Telegram" }).waitFor()
@@ -338,13 +372,18 @@ const scenes = [
 ]
 
 function parseArgs(argv) {
-  const args = { url: "", out: "", "setup-url": "" }
+  const args = { url: "", out: "", "setup-url": "", "omarchy-url": "" }
   for (let i = 2; i < argv.length; i += 2) {
     args[argv[i].replace(/^--/, "")] = argv[i + 1]
   }
-  if (!args.url || !args.out) throw new Error("usage: record.mjs --url <base> --out <dir> [--setup-url <base>]")
+  if (!args.url || !args.out) {
+    throw new Error("usage: record.mjs --url <base> --out <dir> [--setup-url <base>] [--omarchy-url <base>]")
+  }
   if (scenes.some((s) => s.setup) && !args["setup-url"]) {
     throw new Error("scenes marked setup need --setup-url (run.sh launches the second server)")
+  }
+  if (scenes.some((s) => s.omarchy) && !args["omarchy-url"]) {
+    throw new Error("scenes marked omarchy need --omarchy-url (run.sh launches the third server)")
   }
   return args
 }
@@ -436,7 +475,7 @@ async function shootVideo(browser, base, out) {
   return webm
 }
 
-const { url, out, "setup-url": setupUrl } = parseArgs(process.argv)
+const { url, out, "setup-url": setupUrl, "omarchy-url": omarchyUrl } = parseArgs(process.argv)
 await fs.mkdir(out, { recursive: true })
 const browser = await chromium.launch()
 const errors = []
@@ -448,7 +487,8 @@ let video = ""
 try {
   for (const scene of scenes) {
     try {
-      shots.push(await shootScene(browser, scene.setup ? setupUrl : url, out, scene))
+      const base = scene.setup ? setupUrl : scene.omarchy ? omarchyUrl : url
+      shots.push(await shootScene(browser, base, out, scene))
     } catch (err) {
       errors.push(`${scene.name}: ${err.message.split("\n")[0]}`)
     }

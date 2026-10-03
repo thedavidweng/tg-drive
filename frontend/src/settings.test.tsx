@@ -98,6 +98,43 @@ test("a rejected edit shows the service error", async () => {
 
   const alert = await screen.findByRole("alert")
   expect(alert.textContent).toContain("transfers.concurrency must be a positive integer")
+  expect(alert.textContent).toContain("ERR_CONFIG_INVALID")
+})
+
+test("saving a key that only applies at startup says td-gui must restart", async () => {
+  const backend = memoryBackend({ "/": [] }, { config: baseConfig })
+  render(<App backend={backend} languages={["en"]} />)
+  await openSettings()
+
+  // transfers.* applies at once: no restart note.
+  const concurrency = (await screen.findByLabelText("transfers.concurrency")) as HTMLInputElement
+  fireEvent.change(concurrency, { target: { value: "5" } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Save transfers.concurrency" }))
+  })
+  expect(screen.queryByText("Saved. This takes effect after restarting td-gui.")).toBeNull()
+
+  // telegram.* is read when the client opens: the note says when it applies.
+  fireEvent.change(screen.getByLabelText("telegram.phone"), { target: { value: "+15550009" } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Save telegram.phone" }))
+  })
+  const note = await screen.findByText("Saved. This takes effect after restarting td-gui.")
+  const phoneRow = screen.getByLabelText("telegram.phone").closest("li")!
+  expect(phoneRow.contains(note)).toBe(true)
+})
+
+test("the restart note is translated", async () => {
+  const backend = memoryBackend({ "/": [] }, { config: baseConfig })
+  render(<App backend={backend} languages={["zh-CN"]} />)
+  const tab = await screen.findByRole("tab", { name: "设置" })
+  fireEvent.mouseDown(tab)
+
+  fireEvent.change(await screen.findByLabelText("telegram.phone"), { target: { value: "+15550009" } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "保存 telegram.phone" }))
+  })
+  expect(await screen.findByText("已保存。重启 td-gui 后生效。")).toBeTruthy()
 })
 
 test("the theme override applies the attribute and persists", async () => {
@@ -173,4 +210,14 @@ test("About shows the versions of td-gui and td", async () => {
   const about = await screen.findByRole("region", { name: "About" })
   const rows = within(about).getAllByRole("listitem").map((r) => r.textContent)
   expect(rows).toEqual(["td-gui1.4.0", "td1.4.0"])
+})
+
+test("About says td is not installed when no CLI answered", async () => {
+  const backend = memoryBackend({ "/": [] }, { config: baseConfig, versions: { gui: "1.4.0", cli: "" } })
+  render(<App backend={backend} languages={["en"]} />)
+  await openSettings()
+
+  const about = await screen.findByRole("region", { name: "About" })
+  const rows = within(about).getAllByRole("listitem").map((r) => r.textContent)
+  expect(rows).toEqual(["td-gui1.4.0", "tdNot installed"])
 })

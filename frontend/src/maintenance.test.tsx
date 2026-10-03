@@ -31,8 +31,9 @@ const captionsOutcome: RepairOutcome = {
     skipped: 1,
     failed: 0,
     items: [
-      { path: "/notes.txt", message_id: 1, action: "planned", reason: "" },
+      { path: "/notes.txt", message_id: 1, action: "would_clean", reason: "" },
       { path: "/plain.bin", message_id: 7, action: "skipped", reason: "already clean or scaffold not exact" },
+      { path: "/odd.bin", message_id: 8, action: "rewound", reason: "" },
     ],
   },
 }
@@ -104,8 +105,31 @@ test("a captions dry run renders its counters and per-item rows", async () => {
   const items = screen.getByRole("list", { name: "Repair items" })
   const rows = within(items).getAllByRole("listitem")
   expect(rows[0].textContent).toContain("/notes.txt")
-  expect(rows[0].textContent).toContain("planned")
+  expect(rows[0].textContent).toContain("Would clean")
+  expect(rows[1].textContent).toContain("Skipped")
   expect(rows[1].textContent).toContain("already clean or scaffold not exact")
+  // An action this build has no string for shows as the service wrote it.
+  expect(rows[2].textContent).toContain("rewound")
+})
+
+test("live repair rows speak of repairs, not imports", async () => {
+  const backend = backendWith({})
+  backend.holdRepair()
+  await openMaintenanceTab(backend)
+
+  fireEvent.click(screen.getByRole("button", { name: "Hashes" }))
+  fireEvent.click(screen.getByRole("button", { name: "Run repair" }))
+  backend.emitRepairItem({ path: "/notes.txt", status: "completed", completed: 1, skipped: 0, failed: 0 })
+  backend.emitRepairItem({ path: "/plain.bin", status: "skipped", completed: 1, skipped: 1, failed: 0 })
+  backend.emitRepairItem({ path: "/gone.bin", status: "failed", error: "message deleted", completed: 1, skipped: 1, failed: 1 })
+
+  const items = await screen.findByRole("list", { name: "Repair items" })
+  const rows = within(items).getAllByRole("listitem")
+  expect(within(rows[0]).getByText("Repaired")).toBeTruthy()
+  expect(within(rows[1]).getByText("Skipped")).toBeTruthy()
+  expect(within(rows[2]).getByText("Failed")).toBeTruthy()
+  expect(screen.queryByText("Imported")).toBeNull()
+  backend.finishRepair()
 })
 
 test("deleting orphaned messages is blocked by a confirmation sheet", async () => {
@@ -168,7 +192,7 @@ test("doctor renders each check as pass, warn, or fail", async () => {
   expect(within(row("db_wal")).getByText("Fail")).toBeTruthy()
   expect(row("db_wal").textContent).toContain("not WAL")
   expect(within(row("upload")).getByText("Pass")).toBeTruthy()
-  expect(row("max_upload").textContent).toContain("2 GB")
+  expect(row("Upload limit per file").textContent).toContain("2 GB")
 
   // The path-codec doctor renders beside the checks.
   const codec = screen.getByRole("list", { name: "Path codec" })
@@ -184,4 +208,9 @@ test("the maintenance tab is translated", async () => {
   await screen.findByText("收纳现有消息")
   expect(screen.getByText("修复")).toBeTruthy()
   expect(screen.getByRole("button", { name: "运行检查" })).toBeTruthy()
+
+  fireEvent.click(screen.getByRole("button", { name: "运行检查" }))
+  const checks = await screen.findByRole("list", { name: "能力检查" })
+  expect(checks.textContent).toContain("单文件上传上限")
+  expect(checks.textContent).not.toContain("max_upload")
 })

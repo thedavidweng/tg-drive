@@ -14,12 +14,15 @@ OUT=$(mkdir -p "$1" && cd "$1" && pwd)
 WORK=$(mktemp -d)
 SERVER_LOG=$WORK/server.log
 SETUP_LOG=$WORK/server-setup.log
+OMARCHY_LOG=$WORK/server-omarchy.log
 PID=""
 SETUP_PID=""
+OMARCHY_PID=""
 
 cleanup() {
   [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
   [ -n "$SETUP_PID" ] && kill "$SETUP_PID" 2>/dev/null || true
+  [ -n "$OMARCHY_PID" ] && kill "$OMARCHY_PID" 2>/dev/null || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -28,7 +31,24 @@ fail() {
   echo "run.sh: $*" >&2
   [ -f "$SERVER_LOG" ] && { echo "--- td-gui server log ---" >&2; cat "$SERVER_LOG" >&2; }
   [ -f "$SETUP_LOG" ] && { echo "--- td-gui setup-server log ---" >&2; cat "$SETUP_LOG" >&2; }
+  [ -f "$OMARCHY_LOG" ] && { echo "--- td-gui omarchy-server log ---" >&2; cat "$OMARCHY_LOG" >&2; }
   exit 1
+}
+
+# free_port prints a free local port; the race until td-gui binds it is
+# acceptable for a CI job and a local run.
+free_port() {
+  node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})'
+}
+
+# wait_served waits until td-gui (pid $2) serves $1.
+wait_served() {
+  for _ in $(seq 100); do
+    curl -sf -o /dev/null "$1/" && return 0
+    kill -0 "$2" 2>/dev/null || fail "td-gui ($3) exited before serving"
+    sleep 0.2
+  done
+  curl -sf -o /dev/null "$1/" || fail "td-gui ($3) did not serve on $1"
 }
 
 # Build the PR's code: the frontend (embedded by the gui-tagged build), the
@@ -93,9 +113,6 @@ head -c 12582912 /dev/zero > "$WORK/files/big.bin"
 # upload after two confirmed parts, and the row keeps the error code.
 TD_FAKE_FAIL_UPLOAD_AFTER_PARTS=2 \
   "$WORK/td" cp "$WORK/files/big.bin" /broken.bin --upload-part-size-kb 1024 --upload-threads 1 > /dev/null 2>&1 || true
-# The owner's cancel poll is a third of locks.ttl_seconds; shorten it so
-# the GUI's cancel of a CLI upload turns around in seconds, not minutes.
-"$WORK/td" config set locks.ttl_seconds 3
 
 # The scripted picker answers: native dialogs are no-ops in server mode,
 # so td-gui falls back to these. Two 22 MiB photos keep the live-upload
@@ -116,20 +133,42 @@ export TD_PREVIEW_CLI_CP2="TD_FAKE_TRANSFER_DELAY=1s '$WORK/td' cp '$WORK/files/
 # fake state directly.
 go run ui-preview/seed.go "$STATE/fake.json"
 
+# The Omarchy scenes need the detected look, which is process-wide: a
+# third td-gui over a copy of the seeded drive (its own Session lock and
+# fake account, so it never contends with the main server), with
+# detection forced on and pointed at a seeded theme and Hyprland config.
+# Copied before any server starts, so the copy is a consistent snapshot.
+STATE_OMARCHY=$WORK/state-omarchy
+cp -a "$STATE" "$STATE_OMARCHY"
+OMARCHY_THEME=$WORK/omarchy/state/omarchy/current/theme
+mkdir -p "$OMARCHY_THEME" "$WORK/omarchy/config/hypr"
+cat > "$OMARCHY_THEME/colors.toml" <<'EOF'
+mode = "dark"
+background = "#1a1b26"
+foreground = "#c0caf5"
+accent = "#7aa2f7"
+EOF
+printf 'tokyo-night\n' > "$WORK/omarchy/state/omarchy/current/theme.name"
+printf 'general {\n    border_size = 2\n}\ndecoration {\n    rounding = 0\n}\n' > "$WORK/omarchy/config/hypr/hyprland.conf"
+
 # Serve the GUI. WAILS_SERVER_PORT=0 would need log parsing, so find a free
-# port first; the race is acceptable for a CI job and a local run.
-PORT=${TD_PREVIEW_PORT:-$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')}
+# port first.
+PORT=${TD_PREVIEW_PORT:-$(free_port)}
 TD_FAKE_TRANSFER_DELAY=800ms TD_FAKE_PART_SIZE=1048576 \
   TD_GUI_PICK_FILES="$PICK_FILES" TD_GUI_PICK_DIR="$WORK/downloads" \
   WAILS_SERVER_HOST=127.0.0.1 WAILS_SERVER_PORT=$PORT "$WORK/td-gui" > "$SERVER_LOG" 2>&1 &
 PID=$!
 BASE=http://127.0.0.1:$PORT
-for _ in $(seq 100); do
-  curl -sf -o /dev/null "$BASE/" && break
-  kill -0 "$PID" 2>/dev/null || fail "td-gui exited before serving"
-  sleep 0.2
-done
-curl -sf -o /dev/null "$BASE/" || fail "td-gui did not serve on $BASE"
+wait_served "$BASE" "$PID" main
+
+OMARCHY_PORT=${TD_PREVIEW_OMARCHY_PORT:-$(free_port)}
+TD_CONFIG="$STATE_OMARCHY/config.toml" TD_DB="$STATE_OMARCHY/td.db" TD_SESSION="$STATE_OMARCHY/session.json" \
+  TD_FAKE_TELEGRAM_STATE="$STATE_OMARCHY/fake.json" \
+  TD_OMARCHY=1 TD_OMARCHY_THEME="$OMARCHY_THEME" XDG_CONFIG_HOME="$WORK/omarchy/config" \
+  WAILS_SERVER_HOST=127.0.0.1 WAILS_SERVER_PORT=$OMARCHY_PORT "$WORK/td-gui" > "$OMARCHY_LOG" 2>&1 &
+OMARCHY_PID=$!
+BASE_OMARCHY=http://127.0.0.1:$OMARCHY_PORT
+wait_served "$BASE_OMARCHY" "$OMARCHY_PID" omarchy
 
 # The setup and login scenes need a fresh machine: a second td-gui whose
 # config, database, session, and fake state hold no credentials, so the
@@ -139,23 +178,18 @@ curl -sf -o /dev/null "$BASE/" || fail "td-gui did not serve on $BASE"
 # the seeded drive above.
 STATE_SETUP=$WORK/state-setup
 mkdir -p "$STATE_SETUP"
-SETUP_PORT=${TD_PREVIEW_SETUP_PORT:-$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')}
+SETUP_PORT=${TD_PREVIEW_SETUP_PORT:-$(free_port)}
 TD_CONFIG="$STATE_SETUP/config.toml" TD_DB="$STATE_SETUP/td.db" TD_SESSION="$STATE_SETUP/session.json" \
   TD_FAKE_TELEGRAM_STATE="$STATE_SETUP/fake.json" TD_FAKE_AUTH_PASSWORD="hunter2" \
   WAILS_SERVER_HOST=127.0.0.1 WAILS_SERVER_PORT=$SETUP_PORT "$WORK/td-gui" > "$SETUP_LOG" 2>&1 &
 SETUP_PID=$!
 BASE_SETUP=http://127.0.0.1:$SETUP_PORT
-for _ in $(seq 100); do
-  curl -sf -o /dev/null "$BASE_SETUP/" && break
-  kill -0 "$SETUP_PID" 2>/dev/null || fail "td-gui (setup) exited before serving"
-  sleep 0.2
-done
-curl -sf -o /dev/null "$BASE_SETUP/" || fail "td-gui (setup) did not serve on $BASE_SETUP"
+wait_served "$BASE_SETUP" "$SETUP_PID" setup
 
 # Walk the scenes and normalise the recording to mp4 (Playwright writes
 # webm; Pages visitors get h264).
 PREVIEW_SHA=${PREVIEW_SHA:-$(git rev-parse HEAD)} node "$ROOT/ui-preview/record.mjs" \
-  --url "$BASE" --setup-url "$BASE_SETUP" --out "$OUT" \
+  --url "$BASE" --setup-url "$BASE_SETUP" --omarchy-url "$BASE_OMARCHY" --out "$OUT" \
   || fail "scene recording failed"
 WEBM=$(node -pe 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).video' "$OUT/manifest.json")
 ffmpeg -y -loglevel error -i "$OUT/$WEBM" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$OUT/preview.mp4"

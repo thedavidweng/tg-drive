@@ -35,6 +35,12 @@ export function CancelPrompt(id: string): $CancellablePromise<void> {
  * forceNewCode requests a fresh code instead of reusing a pending one. The
  * login code and the 2FA password arrive as auth.prompt events and are
  * answered with AnswerPrompt.
+ * 
+ * A Login started while another waits replaces it: the earlier one ends
+ * ERR_CANCELLED first. Its prompt may never get an answer (a webview
+ * reload loses the prompt event, and a bound call's context is never
+ * cancelled on its own), and it must not block logging in for the rest of
+ * the session.
  */
 export function Login(phone: string, forceNewCode: boolean): $CancellablePromise<$models.LoginResult | null> {
     return $Call.ByID(2896542783, phone, forceNewCode);

@@ -125,6 +125,9 @@ func run() error {
 	svc.SetMaintenanceEmitter(func(name string, data any) {
 		app.Event.Emit(name, data)
 	})
+	svc.SetChannelsEmitter(func(name string, data any) {
+		app.Event.Emit(name, data)
+	})
 	syncCtx, stopSync := context.WithCancel(context.Background())
 	defer stopSync()
 	svc.StartSync(syncCtx, gui.DefaultSyncInterval)

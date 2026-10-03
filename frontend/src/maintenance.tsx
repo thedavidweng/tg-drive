@@ -15,8 +15,9 @@ import type {
 } from "@/backend"
 import { Card, Segmented } from "@/card"
 import { Button } from "@/components/ui/button"
+import { formatSize } from "@/format"
 import { Sheet, SheetButtons } from "@/sheet"
-import { useI18n, type Translate } from "@/i18n"
+import { isMessageKey, useI18n, type Translate } from "@/i18n"
 
 export function MaintenanceScreen({ backend }: { backend: Backend }) {
   return (
@@ -369,12 +370,18 @@ function itemStatusBadgeClass(status: string): string {
 function itemStatusLabel(status: string, t: Translate): string {
   switch (status) {
     case "completed":
-      return t("import.action.imported")
+      return t("maintenance.repairStatus.completed")
     case "skipped":
-      return t("import.action.skipped")
+      return t("maintenance.repairStatus.skipped")
     default:
-      return t("import.action.failed")
+      return t("maintenance.repairStatus.failed")
   }
+}
+
+// The service's per-item action words; one a newer td adds shows as written.
+function repairActionLabel(action: string, t: Translate): string {
+  const key = `maintenance.repairAction.${action}`
+  return isMessageKey(key) ? t(key) : action
 }
 
 /** The finished repair rendered as counter rows plus any per-item list. */
@@ -418,7 +425,7 @@ function RepairResult({ outcome }: { outcome: RepairOutcome }) {
             <li key={item.path} className="flex min-h-9 items-center gap-3 px-3.5 py-1.5 text-[12.5px]">
               <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{item.path}</span>
               <span className="shrink-0 text-[11.5px] text-muted-foreground">
-                {item.action}
+                {repairActionLabel(item.action, t)}
                 {item.reason ? ` — ${item.reason}` : ""}
               </span>
             </li>
@@ -508,7 +515,7 @@ function DiagnosticsCard({ backend }: { backend: Backend }) {
               ))}
               {phase.report.max_upload_bytes != null && (
                 <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5 text-[12.5px]">
-                  <span className="min-w-0 flex-1 font-mono text-[12px]">max_upload</span>
+                  <span className="min-w-0 flex-1">{t("maintenance.maxUpload")}</span>
                   <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
                     {formatSize(phase.report.max_upload_bytes, t)}
                   </span>
@@ -538,7 +545,8 @@ function DiagnosticsCard({ backend }: { backend: Backend }) {
   )
 }
 
-function DoctorCheckRow({ check }: { check: DoctorCheck }) {
+/** One capability check: its name, any hint, and its pass/warn/fail badge. */
+export function DoctorCheckRow({ check }: { check: DoctorCheck }) {
   return (
     <li className="flex min-h-9 items-center gap-3 px-3.5 py-1.5 text-[12.5px]">
       <span className="min-w-0 flex-1">
@@ -581,16 +589,4 @@ const statusKeys: Record<string, Parameters<Translate>[0]> = {
   warn: "maintenance.status.warn",
   fail: "maintenance.status.fail",
   unknown: "maintenance.status.unknown",
-}
-
-function formatSize(bytes: number, t: Translate): string {
-  if (bytes < 1024) return t("size.b", { n: bytes })
-  const units = ["size.kb", "size.mb", "size.gb"] as const
-  let n = bytes / 1024
-  let i = 0
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024
-    i++
-  }
-  return t(units[i], { n: n >= 10 ? Math.round(n) : Math.round(n * 10) / 10 })
 }

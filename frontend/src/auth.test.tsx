@@ -25,6 +25,30 @@ test("the setup form says where to obtain api_id and api_hash", async () => {
   expect(link.getAttribute("href")).toBe("https://my.telegram.org")
 })
 
+test("the my.telegram.org link opens in the system browser", async () => {
+  const backend = memoryBackend({}, { auth: { configured: false } })
+  render(<App backend={backend} languages={["en"]} />)
+
+  // The webview ignores target=_blank; the link goes through the backend.
+  fireEvent.click(await screen.findByRole("link", { name: /my\.telegram\.org/ }))
+  expect(backend.openedURLs).toEqual(["https://my.telegram.org"])
+})
+
+test("the api_hash field is masked until shown", async () => {
+  render(<App backend={memoryBackend({}, { auth: { configured: false } })} languages={["en"]} />)
+
+  const hash = (await screen.findByLabelText("api_hash")) as HTMLInputElement
+  expect(hash.type).toBe("password")
+  const show = screen.getByRole("button", { name: "Show api_hash" })
+  expect(show.getAttribute("aria-pressed")).toBe("false")
+  fireEvent.click(show)
+  expect(hash.type).toBe("text")
+  const hide = screen.getByRole("button", { name: "Hide api_hash" })
+  expect(hide.getAttribute("aria-pressed")).toBe("true")
+  fireEvent.click(hide)
+  expect(hash.type).toBe("password")
+})
+
 test("setup saves the credentials and moves on to login", async () => {
   render(<App backend={memoryBackend({}, { auth: { configured: false } })} languages={["en"]} />)
 
@@ -54,6 +78,8 @@ test("login asks for the code and shows the account afterwards", async () => {
 
   fireEvent.click(await screen.findByRole("button", { name: "Send login code" }))
   expect(await screen.findByText("Enter the login code Telegram sent you.")).toBeTruthy()
+  // The attempt budget shows from the first attempt on.
+  expect(screen.getByText("Attempt 1 of 3.")).toBeTruthy()
   fireEvent.change(screen.getByLabelText("Login code"), { target: { value: "12345" } })
   fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
 
@@ -69,7 +95,8 @@ test("a wrong code re-asks with the attempt count", async () => {
   fireEvent.change(await screen.findByLabelText("Login code"), { target: { value: "00000" } })
   fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
 
-  expect(await screen.findByText("Invalid code, try again (attempt 2 of 3).")).toBeTruthy()
+  expect(await screen.findByText("Invalid code, try again.")).toBeTruthy()
+  expect(screen.getByText("Attempt 2 of 3.")).toBeTruthy()
   fireEvent.change(screen.getByLabelText("Login code"), { target: { value: "12345" } })
   fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
   expect(await screen.findByLabelText("Logged in as Test User")).toBeTruthy()
@@ -101,6 +128,14 @@ test("restarting login reuses the pending code and says so", async () => {
 
   fireEvent.click(await screen.findByRole("button", { name: "Send login code" }))
   expect(await screen.findByText("Reusing the code Telegram sent earlier.")).toBeTruthy()
+  expect(screen.getByText("Attempt 1 of 3.")).toBeTruthy()
+
+  // A wrong reused code: the retry, the reuse note, and the count together.
+  fireEvent.change(screen.getByLabelText("Login code"), { target: { value: "00000" } })
+  fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+  expect(await screen.findByText("Invalid code, try again.")).toBeTruthy()
+  expect(screen.getByText("Reusing the code Telegram sent earlier.")).toBeTruthy()
+  expect(screen.getByText("Attempt 2 of 3.")).toBeTruthy()
 })
 
 test("requesting a new code after cancelling sends a fresh one", async () => {
@@ -128,6 +163,13 @@ test("an expired reused code is resent and says so", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
 
   expect(await screen.findByText("The previous code expired; Telegram sent a new one.")).toBeTruthy()
+  expect(screen.getByText("Attempt 1 of 3.")).toBeTruthy()
+  // A wrong resent code keeps the resent note beside the retry and the count.
+  fireEvent.change(screen.getByLabelText("Login code"), { target: { value: "00000" } })
+  fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
+  expect(await screen.findByText("Attempt 2 of 3.")).toBeTruthy()
+  expect(screen.getByText("Invalid code, try again.")).toBeTruthy()
+  expect(screen.getByText("The previous code expired; Telegram sent a new one.")).toBeTruthy()
   fireEvent.change(screen.getByLabelText("Login code"), { target: { value: "12345" } })
   fireEvent.click(screen.getByRole("button", { name: "Verify code" }))
   expect(await screen.findByLabelText("Logged in as Test User")).toBeTruthy()
@@ -207,7 +249,8 @@ test("Chinese: the login flow is translated", async () => {
   expect(await screen.findByText("请输入 Telegram 发送的登录验证码。")).toBeTruthy()
   fireEvent.change(screen.getByLabelText("登录验证码"), { target: { value: "00000" } })
   fireEvent.click(screen.getByRole("button", { name: "验证" }))
-  expect(await screen.findByText("验证码错误，请重试（第 2 次，共 3 次）。")).toBeTruthy()
+  expect(await screen.findByText("验证码错误，请重试。")).toBeTruthy()
+  expect(screen.getByText("第 2 次尝试，共 3 次。")).toBeTruthy()
   fireEvent.change(screen.getByLabelText("登录验证码"), { target: { value: "12345" } })
   fireEvent.click(screen.getByRole("button", { name: "验证" }))
   expect(await screen.findByLabelText("已登录：Test User")).toBeTruthy()

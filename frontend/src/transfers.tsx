@@ -5,7 +5,8 @@ import type { Backend, BackendError, Transfer } from "@/backend"
 import { isTerminalStage } from "@/backend"
 import { Button } from "@/components/ui/button"
 import { formatDate, formatSize } from "@/format"
-import { useI18n, type Locale, type Translate } from "@/i18n"
+import { isMessageKey, useI18n, type Locale, type Translate } from "@/i18n"
+import { ErrorText } from "@/sheet"
 
 /** Kinds counting bytes (single-file) versus items (multi-file). */
 const byteKinds = new Set(["upload", "download"])
@@ -96,7 +97,7 @@ export function TransfersScreen({ backend }: { backend: Backend }) {
     <div>
       {actionError && (
         <p role="alert" className="mb-2 rounded-control bg-red-soft px-2 py-1.5 text-[12px] text-red">
-          {actionError.message}
+          <ErrorText message={actionError.message} code={actionError.code} />
         </p>
       )}
       <section aria-label={t("transfers.active")} className="mb-4">
@@ -201,7 +202,7 @@ function TransferRow({
         </span>
         {tr.stage === "failed" && (
           <span className="mt-0.5 block text-[11.5px] text-red">
-            {tr.error_message} <code className="font-mono text-[11px] opacity-80">{tr.error_code}</code>
+            <ErrorText message={tr.error_message} code={tr.error_code} />
           </span>
         )}
         {!terminal && <TransferProgress tr={tr} t={t} />}
@@ -243,9 +244,11 @@ function TransferRow({
   )
 }
 
+// Stages and kinds come from the shared index, where a newer td may have
+// written one this build has no string for; those show as written.
 function kindLabel(tr: Transfer, t: Translate): string {
-  const key = `transfer.kind.${tr.kind}` as Parameters<Translate>[0]
-  return t(key)
+  const key = `transfer.kind.${tr.kind}`
+  return isMessageKey(key) ? t(key) : tr.kind
 }
 
 function StagePill({ stage, t }: { stage: string; t: Translate }) {
@@ -258,10 +261,10 @@ function StagePill({ stage, t }: { stage: string; t: Translate }) {
     : stage === "queued"
       ? "bg-pill text-muted-foreground"
       : "bg-seg-track text-fg"
-  const key = `transfer.stage.${stage}` as Parameters<Translate>[0]
+  const key = `transfer.stage.${stage}`
   return (
     <span data-stage={stage} className={`flex-none rounded-full px-1.5 py-px text-[10.5px] font-medium ${tone}`}>
-      {t(key)}
+      {isMessageKey(key) ? t(key) : stage}
     </span>
   )
 }
@@ -286,7 +289,7 @@ function TransferProgress({ tr, t }: { tr: Transfer; t: Translate }) {
         className="h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-pill"
       >
         <span
-          className="block h-full rounded-full bg-primary transition-[width] duration-200 ease-quiet"
+          className="block h-full rounded-full bg-primary transition-[width] duration-150 ease-quiet"
           style={{ width: `${pct * 100}%` }}
         />
       </span>

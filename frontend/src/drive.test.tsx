@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { cleanup, fireEvent, render, screen, waitForElementToBeRemoved, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from "@testing-library/react"
 
 import { App } from "@/App"
 import { memoryBackend } from "@/testing/memory-backend"
@@ -183,6 +183,63 @@ test("a directory change from another process refreshes the shown listing", asyn
   })
   await screen.findByText("from-cli.txt")
   expect(screen.queryByText("notes.txt")).toBeNull()
+})
+
+test("a directory change from another process refreshes the tree view", async () => {
+  const backend = treeBackend()
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+  fireEvent.click(screen.getByRole("button", { name: "Tree" }))
+  const tree = await screen.findByRole("list", { name: "Tree of /" })
+  expect(within(tree).queryByText("from-cli.txt")).toBeNull()
+
+  // The CLI uploaded into a nested folder; index sync announces that folder.
+  backend.putFileForTest("/photos/2024/from-cli.txt", 10, "2026-02-01T00:00:00Z")
+  backend.emitDirectoryChanged({
+    path: "/photos/2024",
+    entries: [
+      { name: "beach.jpg", path: "/photos/2024/beach.jpg", type: "file", size: 99, date: "2026-01-04T00:00:00Z" },
+      { name: "from-cli.txt", path: "/photos/2024/from-cli.txt", type: "file", size: 10, date: "2026-02-01T00:00:00Z" },
+    ],
+  })
+  expect(await within(screen.getByRole("list", { name: "Tree of /" })).findByText("from-cli.txt")).toBeTruthy()
+})
+
+test("a sheet whose action is in flight ignores Escape and backdrop clicks", async () => {
+  const backend = memoryBackend(seed)
+  backend.holdDelete()
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(within(row("notes.txt")).getByRole("button", { name: "Delete" }))
+  const dialog = screen.getByRole("dialog", { name: "Delete file" })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }))
+  // The delete is held open: Cancel is disabled, and so are the shortcuts.
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true))
+
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })
+  expect(screen.getByRole("dialog", { name: "Delete file" })).toBeTruthy()
+  const backdrop = dialog.previousElementSibling as HTMLElement
+  fireEvent.click(backdrop)
+  expect(screen.getByRole("dialog", { name: "Delete file" })).toBeTruthy()
+
+  backend.finishDelete()
+  await waitForElementToBeRemoved(() => screen.queryByRole("dialog"))
+  expect(screen.queryByText("notes.txt")).toBeNull()
+})
+
+test("a sheet error shows the error code beside the message", async () => {
+  render(<App backend={memoryBackend(seed)} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(screen.getByRole("button", { name: "New folder" }))
+  const dialog = screen.getByRole("dialog", { name: "New folder" })
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "Folder name" }), { target: { value: "photos" } })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create" }))
+
+  const alert = await within(dialog).findByRole("alert")
+  expect(alert.textContent).toContain("path already exists: /photos")
+  expect(alert.textContent).toContain("ERR_PATH_EXISTS")
 })
 
 test("a directory change for a path that is not shown does not clobber the listing", async () => {

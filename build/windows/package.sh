@@ -51,7 +51,7 @@ trap 'rm -f cmd/td-gui/*.syso' EXIT
 
 # Windows WebView2 needs no cgo; windowsgui hides the console window.
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-	go build -tags gui -trimpath -ldflags "-s -w -H windowsgui" \
+	go build -tags gui -trimpath -ldflags "-s -w -H windowsgui -X github.com/thedavidweng/tg-drive-cli/internal/version.Version=$VERSION" \
 	-o "$WORK/td-gui.exe" ./cmd/td-gui
 
 # makensis is a native Windows tool and only recognizes absolute paths

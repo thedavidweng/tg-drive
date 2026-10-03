@@ -173,7 +173,9 @@ Once a channel is bound it adds the selected channel and index counters:
 ```
 
 `authenticated`, `user_id`, and `display_name` are omitted when Telegram is
-unreachable. JSON paths are absolute; human output abbreviates the home
+unreachable, including while another process holds the Session lock:
+`td status` does not wait for it, and `upload_limit_bytes` then falls back
+to `limits.free_upload_bytes`. JSON paths are absolute; human output abbreviates the home
 directory to `~`.
 
 ## Init
@@ -260,12 +262,16 @@ Long-running commands such as `td cp --events` emit one JSON envelope per line:
 {"ok":true,"data":{"path":"/big.bin","message_id":1234,"size":4294967296},"meta":{"command":"cp","duration_ms":4200,"schema_version":"2026-07-29","request_id":"..."}}
 ```
 
-A single-file `td cp --events` also emits `transfer.stage` events, one each
-time its Transfer enters a stage: `queued`, then `hashing` (when the file is
-hashed), `uploading`, `publishing`, and finally `completed`, `failed`, or
-`cancelled`.
+Every `td cp --events` and `td get --events` form also emits
+`transfer.stage` events, one each time its Transfer enters a stage: a
+single-file upload `queued`, then `hashing` (when the file is hashed),
+`uploading`, `publishing`, and finally `completed`, `failed`, or
+`cancelled`; a download `queued`, `downloading`, then its end. Album and
+recursive Transfers report the stage of the item group in flight, so their
+stream may revisit `hashing` / `uploading` / `downloading`.
 They are interleaved with the `cp.progress` lines in the order the stages
-happen, before the final `cp` line (or error envelope). `data` is the
+happen, before the final `cp` or `get` line (or error envelope). The final
+`get` line carries the same `data` as `td get --json`. `data` is the
 Transfer as `td transfers show` returns it, at the moment it entered the
 stage:
 
@@ -326,10 +332,11 @@ events only.
 - `id` is the Transfer ID, a UUID. `kind` is `upload`, `download`,
   `album_upload`, `recursive_upload`, or `recursive_download`.
 - `stage` is `queued`, `hashing`, `uploading`, `downloading`, `publishing`,
-  `completed`, `failed`, `cancelled`, or `interrupted`. A Transfer only
-  moves forward, and visits the
-  stages its kind has: an upload `hashing`, `uploading`, `publishing`; a
-  download `downloading`. `completed`, `failed`, `cancelled`, and
+  `completed`, `failed`, `cancelled`, or `interrupted`. A Transfer visits
+  the stages its kind has: an upload `hashing`, `uploading`, `publishing`;
+  a download `downloading`. A single-file Transfer only moves forward; an
+  album or recursive one reports the stage of the item group in flight, so
+  it may return to `hashing` or `uploading` for the next group. `completed`, `failed`, `cancelled`, and
   `interrupted` are terminal. `cancelled` ends a Transfer its owner
   cancelled — Ctrl-C on the owning command, or `td transfers cancel` from
   any process. `interrupted` ends one whose owner vanished mid-run: a
@@ -351,8 +358,8 @@ events only.
   Transfer carries no error.
 - `front_end` is the front end that created it (`cli` or `gui`).
 - `cancel_requested` is set by `td transfers cancel` or the GUI's Transfers
-  tab; the owning process polls it on its lease heartbeat and ends the
-  Transfer `cancelled`. A retry clears it when it takes the Transfer over,
+  tab; the owning process polls it once a second and ends the Transfer
+  `cancelled`. A retry clears it when it takes the Transfer over,
   so the recorded request never cancels the new owner.
 - Timestamps are RFC 3339 UTC; `finished_at` appears once the Transfer ended.
 

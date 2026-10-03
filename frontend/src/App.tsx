@@ -106,8 +106,9 @@ function Shell(props: ShellProps) {
   const { backend } = props
   const { t } = useI18n()
   const [gate, setGate] = useState<Gate>({ state: "loading" })
-  // The channel the drive is bound to; switching remounts the Drive view,
-  // which then lists the new channel from its root.
+  // The channel the drive is bound to; switching remounts the screens that
+  // show one channel's results (Drive lists the new root; Import and
+  // Maintenance drop plans made for the previous channel).
   const [activeChannel, setActiveChannel] = useState("")
   const refresh = useCallback(() => {
     backend.auth.status().then(
@@ -144,7 +145,6 @@ function Shell(props: ShellProps) {
       <header className="app-drag app-header grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-3.5">
         <div className="flex min-w-0 items-center gap-2">
           <Logo />
-          <ChannelSwitcher backend={backend} onActiveChange={setActiveChannel} />
         </div>
         <TabsList
           aria-label={t("tabs.label")}
@@ -160,7 +160,8 @@ function Shell(props: ShellProps) {
             </TabsTrigger>
           ))}
         </TabsList>
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="flex min-w-0 items-center justify-end gap-1.5">
+          <ChannelSwitcher backend={backend} onActiveChange={setActiveChannel} />
           {gate.status.user && (
             <AccountChip
               user={gate.status.user}
@@ -182,10 +183,10 @@ function Shell(props: ShellProps) {
           <TransfersScreen backend={backend} />
         </TabsContent>
         <TabsContent value="import">
-          <ImportScreen backend={backend} />
+          <ImportScreen key={activeChannel} backend={backend} />
         </TabsContent>
         <TabsContent value="maintenance">
-          <MaintenanceScreen backend={backend} />
+          <MaintenanceScreen key={activeChannel} backend={backend} />
         </TabsContent>
         <TabsContent value="settings">
           <SettingsScreen

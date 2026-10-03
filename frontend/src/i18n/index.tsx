@@ -45,6 +45,15 @@ export function resolveLocale(languages: readonly string[]): Locale {
 
 export type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string
 
+/**
+ * Whether key names an English string. Keys built from backend values (a
+ * Transfer's stage, an import item's kind) go through this first: a newer
+ * td can send a value this build has no string for.
+ */
+export function isMessageKey(key: string): key is MessageKey {
+  return Object.hasOwn(en, key)
+}
+
 const I18nContext = createContext<{ locale: Locale; t: Translate } | null>(null)
 
 export function I18nProvider({
@@ -59,8 +68,9 @@ export function I18nProvider({
   const value = useMemo(() => {
     const locale = language === "system" ? resolveLocale(languages) : language
     const catalogue = catalogues[locale]
+    // A key in neither catalogue renders as itself rather than throwing.
     const t: Translate = (key, vars) =>
-      (catalogue[key] ?? en[key]).replace(/\{(\w+)\}/g, (m, name: string) => String(vars?.[name] ?? m))
+      (catalogue[key] ?? en[key] ?? String(key)).replace(/\{(\w+)\}/g, (m, name: string) => String(vars?.[name] ?? m))
     return { locale, t }
   }, [languages, language])
   useEffect(() => {

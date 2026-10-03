@@ -5,8 +5,10 @@ package gui
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
 	"github.com/thedavidweng/tg-drive-cli/internal/service"
@@ -16,13 +18,39 @@ import (
 // the shared index: listing them, binding or creating one, switching the
 // active one, and reporting a channel's status.
 //
-// The App's channel selector is fixed at Open (service.Options.Channel), so
-// switching the active channel reopens the App bound to the new channel
-// (appState.switchChannel). The selection survives Auth's reopen the same
-// way.
+// Each bound channel has its own App over the one database and Telegram
+// client, and switching only selects which App the views read
+// (appState.switchChannel); Transfers already running keep their channel.
+// The selection survives Auth's reopen.
 type Channels struct {
 	state *appState
 	drive *Drive
+
+	mu   sync.Mutex
+	emit Emitter
+	// last is the list last announced on EventChannelsChanged.
+	last []ChannelInfo
+}
+
+// syncFromIndex announces the bound channels when they differ from the
+// last announcement: a td init in a terminal, or this GUI's own bind or
+// switch.
+func (c *Channels) syncFromIndex(ctx context.Context) {
+	list, err := c.List(ctx)
+	if err != nil {
+		return
+	}
+	c.mu.Lock()
+	if slices.Equal(list, c.last) {
+		c.mu.Unlock()
+		return
+	}
+	c.last = list
+	emit := c.emit
+	c.mu.Unlock()
+	if emit != nil {
+		emit(EventChannelsChanged, ChannelsChanged{Channels: list})
+	}
 }
 
 // ChannelInfo is one channel bound in the shared index (td init or a GUI
@@ -261,8 +289,8 @@ func (c *Channels) Select(ctx context.Context, channelID string) (*ChannelStatus
 	return c.Status(ctx)
 }
 
-// selectChannel reopens the App bound to channelID after checking the
-// channel is bound.
+// selectChannel makes the App of channelID the active one after checking
+// the channel is bound.
 func (c *Channels) selectChannel(ctx context.Context, channelID string) error {
 	app := c.state.current()
 	bound, err := app.BoundChannels(ctx)
@@ -279,11 +307,15 @@ func (c *Channels) selectChannel(ctx context.Context, channelID string) error {
 	if !known {
 		return toError(apperr.New(apperr.ErrChannelNotFound, "channel not bound: "+channelID))
 	}
-	// Forget the shown directory before the reopen: it belongs to the old
+	// Forget the shown directory before the switch: it belongs to the old
 	// channel's tree, and index sync must not re-read it against the new
 	// one.
 	c.drive.resetView()
-	return c.state.switchChannel(channelID)
+	c.state.switchChannel(channelID)
+	// A switch writes nothing to the index, so index sync would not
+	// announce the new active channel.
+	c.syncFromIndex(ctx)
+	return nil
 }
 
 // DiscussionLink identifies the discussion group a LinkDiscussion call

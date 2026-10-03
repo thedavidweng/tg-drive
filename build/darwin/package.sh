@@ -24,7 +24,7 @@ for arch in arm64 amd64; do
 		MACOSX_DEPLOYMENT_TARGET=12.0 \
 		CGO_CFLAGS="-mmacosx-version-min=12.0" \
 		CGO_LDFLAGS="-mmacosx-version-min=12.0" \
-		go build -tags gui -trimpath -ldflags "-s -w" \
+		go build -tags gui -trimpath -ldflags "-s -w -X github.com/thedavidweng/tg-drive-cli/internal/version.Version=$VERSION" \
 		-o "$WORK/td-gui-$arch" ./cmd/td-gui
 done
 lipo -create -output "$WORK/td-gui" "$WORK/td-gui-arm64" "$WORK/td-gui-amd64"

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -84,6 +85,69 @@ func TestE2ECpEventsTransferStages(t *testing.T) {
 	shown := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "transfers", "show", fmt.Sprint(first["id"]))
 	if !jsonEqual(shown, last) {
 		t.Fatalf("transfers show = %v, want the last transfer.stage payload %v", shown, last)
+	}
+}
+
+// stageEvents splits an --events stream into the transfer.stage payloads,
+// checking they all describe one Transfer of kind, and returns them with
+// the meta command of the stream's last line.
+func stageEvents(t *testing.T, lines []eventLine, kind string) ([]map[string]any, string) {
+	t.Helper()
+	var out []map[string]any
+	for _, ev := range lines {
+		if ev.Meta["command"] != "transfer.stage" {
+			continue
+		}
+		var tr map[string]any
+		if err := json.Unmarshal(ev.Data, &tr); err != nil {
+			t.Fatal(err)
+		}
+		if tr["kind"] != kind || (len(out) > 0 && tr["id"] != out[0]["id"]) {
+			t.Fatalf("transfer.stage %v does not describe the one %s Transfer", tr, kind)
+		}
+		out = append(out, tr)
+	}
+	if len(lines) == 0 {
+		t.Fatal("no events")
+	}
+	return out, fmt.Sprint(lines[len(lines)-1].Meta["command"])
+}
+
+// TestE2EEventsTransferStagesEveryForm: every cp and get form streams its
+// Transfer's stages under --events, not just the single-file upload: an
+// album and a recursive upload, and a single and a recursive download,
+// each from queued to completed, before its command's final line.
+func TestE2EEventsTransferStagesEveryForm(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+
+	a := e2eLocalFile(t, dir, "a.txt", "alpha")
+	b := e2eLocalFile(t, dir, "b.txt", "bravo")
+	tree := filepath.Join(dir, "tree")
+	if err := os.MkdirAll(tree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e2eLocalFile(t, tree, "c.txt", "charlie")
+	e2eLocalFile(t, tree, "d.txt", "delta")
+
+	for _, tc := range []struct {
+		kind, final string
+		args        []string
+	}{
+		{"album_upload", "cp", []string{"cp", a, b, "/album/", "--events"}},
+		{"recursive_upload", "cp", []string{"cp", "--recursive", tree, "/tree", "--events"}},
+		{"download", "get", []string{"get", "/album/a.txt", filepath.Join(dir, "out", "a.txt"), "--events"}},
+		{"recursive_download", "get", []string{"get", "--recursive", "/tree", filepath.Join(dir, "out", "tree"), "--events"}},
+	} {
+		stages, final := stageEvents(t, runE2EEventLines(t, bin, cfgPath, dbPath, statePath, tc.args...), tc.kind)
+		if final != tc.final {
+			t.Fatalf("%s: last line = %s, want %s", tc.kind, final, tc.final)
+		}
+		if len(stages) < 2 || stages[0]["stage"] != "queued" || stages[len(stages)-1]["stage"] != "completed" {
+			t.Fatalf("%s: transfer.stage events = %v, want queued first and completed last", tc.kind, stages)
+		}
 	}
 }
 

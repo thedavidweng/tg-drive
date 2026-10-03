@@ -177,12 +177,16 @@ ui-preview/run.sh out     # seeds, builds, serves, records into out/
 (`TD_FAKE_TELEGRAM_STATE`, login code `12345`), builds td-gui with
 `-tags gui,server` — Wails' headless server mode, CGO-free and needing no
 webview — and drives it with Playwright (`record.mjs`, pinned in
-`ui-preview/package.json`). It serves two instances: the seeded,
-authenticated one the Drive scenes record, and a credential-free one for
-the setup and login scenes (its fake account has two-step verification,
-`TD_FAKE_AUTH_PASSWORD`). Each scene is one entry in the scenes list in
-`record.mjs` (color scheme, locale, optional theme override or
-interaction, and `setup` to record against the credential-free server);
+`ui-preview/package.json`). It serves three instances: the seeded,
+authenticated one most scenes record, a credential-free one for the setup
+and login scenes (its fake account has two-step verification,
+`TD_FAKE_AUTH_PASSWORD`), and a copy of the seeded drive with Omarchy
+detection forced on against a seeded theme (`TD_OMARCHY=1`,
+`TD_OMARCHY_THEME`) for the Omarchy scenes; the other two run with
+`TD_OMARCHY=0`, so the shots match on every machine. Each scene is one
+entry in the scenes list in `record.mjs` (color scheme, locale, optional
+theme override or interaction, and `setup` or `omarchy` to pick the
+instance);
 adding a scene is a new entry plus any seed data in `run.sh`. A scene's
 `spawn` names an environment variable `run.sh` exports holding a shell
 command to start once the scene's page loaded — how the Transfers scenes
@@ -204,8 +208,15 @@ The workflow has two jobs with a strict security split (ADR 0036):
   checks out or runs the PR's code: it downloads the artifact, checks out
   only the default branch for `ui-preview/publish.mjs`, pushes the media
   to the `previews` branch (one directory per open PR, force-with-lease,
-  closed PRs dropped), and rewrites the PR description block. Fork pull
-  requests hold a read-only token regardless, so `publish` skips them.
+  closed PRs dropped), and rewrites the PR description block. The artifact
+  is the PR's output, so the publisher trusts none of it: it copies only
+  regular `.png` / `.jpg` / `.mp4` / `.webm` files with plain names under a
+  size cap (no symlinks, no HTML), and escapes every manifest value it
+  writes into the player page or the PR description.
+- Fork pull requests hold a read-only token regardless, so `publish`
+  skips them. The workflow file is read from the PR head, so the split
+  guards against fork PRs only; a same-repo branch already has write
+  access.
 
 One-time setup: enable GitHub Pages on the repository (Settings → Pages →
 deploy from the `previews` branch, root). The Actions token cannot enable

@@ -252,6 +252,14 @@ export interface ChannelStatus {
 }
 
 /**
+ * ChannelsChanged is the payload of EventChannelsChanged: the bound
+ * channels as Channels.List returns them.
+ */
+export interface ChannelsChanged {
+    "channels": ChannelInfo[] | null;
+}
+
+/**
  * ConfigEntry is one config key and its display value.
  */
 export interface ConfigEntry {
@@ -262,6 +270,13 @@ export interface ConfigEntry {
      */
     "value": any;
     "secret": boolean;
+
+    /**
+     * RestartRequired marks a saved key the running GUI cannot apply: one
+     * its Telegram client or database was opened with. It takes effect
+     * when td-gui next starts; every other key applies at once.
+     */
+    "restart_required"?: boolean;
 }
 
 /**

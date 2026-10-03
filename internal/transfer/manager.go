@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,9 @@ type Observer struct {
 	// OnProgress reports a Transfer's byte or item progress, at most as
 	// often as it is written to the index.
 	OnProgress func(Transfer)
+	// OnIdle reports that the last Transfer this Manager owned ended, so
+	// Running is back to zero.
+	OnIdle func()
 }
 
 // Options configures a Manager.
@@ -52,7 +56,15 @@ type Manager struct {
 	opts  Options
 	owner string
 	slots chan struct{}
+	// running counts the Transfers this Manager owns that have not ended,
+	// queued ones included.
+	running atomic.Int64
 }
+
+// Running is how many Transfers this Manager owns and has not finished,
+// queued ones included. Other processes' Transfers do not count: quitting
+// this process interrupts only its own.
+func (m *Manager) Running() int { return int(m.running.Load()) }
 
 // New returns a Manager running Transfers on app.
 func New(app *service.App, opts Options) *Manager {
@@ -378,14 +390,20 @@ func start[T any](ctx context.Context, m *Manager, t Transfer,
 	// A Transfer submitted without an item total (the recursive kinds, whose
 	// item count only the walk discovers) grows it as items report; one
 	// submitted with a total keeps it.
-	tr := &tracker{m: m, t: t, written: time.Now().UTC(), ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0}
+	tr := &tracker{m: m, t: t, written: time.Now().UTC(), ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0, lost: cancel}
 	stop := m.leaseHeartbeat(t.ID, tr.ctx, cancel)
 	tr.notify(m.opts.Observer.OnStage)
 	h := &Handle[T]{id: t.ID, done: make(chan struct{})}
+	m.running.Add(1)
 	go func() {
 		// finish records the ending before the heartbeat stops and Wait
 		// unblocks, so a finished Transfer's lease never advances again.
 		defer close(h.done)
+		defer func() {
+			if m.running.Add(-1) == 0 && m.opts.Observer.OnIdle != nil {
+				m.opts.Observer.OnIdle()
+			}
+		}()
 		defer stop()
 		defer cancel()
 		select {
@@ -408,13 +426,20 @@ func start[T any](ctx context.Context, m *Manager, t Transfer,
 	return h
 }
 
-// leaseHeartbeat renews the Transfer's lease and polls its cancel-requested
-// flag on the Operation-lock heartbeat: same TTL, renewed at one third of
-// it. A set flag — written by any process sharing the index — cancels the
-// Transfer's context, as does a renewal that finds the lease lost, so a
-// Transfer never runs unowned. It writes with writeCtx, which outlives the
-// Transfer's cancellation. The returned stop waits for the heartbeat to
-// exit.
+// cancelPollInterval is how often an owner checks that it still holds its
+// Transfer and whether another process asked to cancel it. It is far
+// shorter than the lease heartbeat (a third of locks.ttl_seconds, five
+// minutes by default), so a cancel from the GUI or td transfers cancel
+// lands within about a second.
+const cancelPollInterval = time.Second
+
+// leaseHeartbeat renews the Transfer's lease on the Operation-lock
+// heartbeat (same TTL, renewed at one third of it) and polls its ownership
+// and cancel-requested flag every cancelPollInterval. A set flag — written
+// by any process sharing the index — cancels the Transfer's context, as
+// does finding the lease lost, so a Transfer never runs unowned. It writes
+// with writeCtx, which outlives the Transfer's cancellation. The returned
+// stop waits for the heartbeat to exit.
 func (m *Manager) leaseHeartbeat(id string, writeCtx context.Context, cancel context.CancelFunc) (stop func()) {
 	ttl := m.app.LockTTL()
 	interval := ttl / 3
@@ -425,19 +450,24 @@ func (m *Manager) leaseHeartbeat(id string, writeCtx context.Context, cancel con
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ticker := time.NewTicker(interval)
+		ticker := time.NewTicker(min(interval, cancelPollInterval))
 		defer ticker.Stop()
+		renewed := time.Now()
 		for {
 			select {
 			case <-stopCh:
 				return
-			case <-ticker.C:
-				ok, err := m.app.DB.RenewTransferLease(writeCtx, id, m.owner, formatTime(time.Now().UTC().Add(ttl)))
-				if err != nil || !ok {
-					cancel()
-					return
+			case now := <-ticker.C:
+				if now.Sub(renewed) >= interval {
+					ok, err := m.app.DB.RenewTransferLease(writeCtx, id, m.owner, formatTime(now.UTC().Add(ttl)))
+					if err != nil || !ok {
+						cancel()
+						return
+					}
+					renewed = now
 				}
-				if requested, err := m.app.DB.TransferCancelRequested(writeCtx, id); err == nil && requested {
+				owned, requested, err := m.app.DB.TransferOwnership(writeCtx, id, m.owner)
+				if err == nil && (!owned || requested) {
 					cancel()
 					return
 				}
@@ -635,7 +665,9 @@ func (m *Manager) retryRun(t *Transfer, options string, obs service.Observer) (f
 		}
 		t.BytesTotal, t.ItemsTotal = 0, 1
 		return func(ctx context.Context, tr *tracker) (any, error) {
-			opts := service.DownloadOptions{}
+			// Resume: what the earlier run already landed is done, not a
+			// conflict with the recorded policy.
+			opts := service.DownloadOptions{Resume: true}
 			opts.Observer = tr.observe(obs)
 			res, err := m.app.DownloadFile(ctx, t.Source, t.Dest, o.Policy, opts)
 			if err == nil {
@@ -650,7 +682,7 @@ func (m *Manager) retryRun(t *Transfer, options string, obs service.Observer) (f
 		}
 		t.BytesTotal, t.ItemsTotal = 0, 0
 		return func(ctx context.Context, tr *tracker) (any, error) {
-			opts := service.DownloadOptions{}
+			opts := service.DownloadOptions{Resume: true}
 			opts.Observer = tr.observe(obs)
 			return m.app.DownloadRecursive(ctx, t.Source, t.Dest, o.Policy, o.ContinueOnError, opts)
 		}, nil
@@ -718,6 +750,8 @@ type tracker struct {
 	// growItems counts each reported item into ItemsTotal.
 	growItems bool
 	written   time.Time
+	// lost cancels the run once a write finds the Transfer no longer ours.
+	lost context.CancelFunc
 }
 
 // observe is next with this Transfer's recording in front, so the index
@@ -754,10 +788,18 @@ var stageOf = map[service.Stage]Stage{
 	service.StagePublishing:  StagePublishing,
 }
 
+// enter moves the Transfer to stage s. A single-file Transfer only moves
+// forward. A multi-item one runs one upload or download per item or
+// directory group, so it shows the stage of the work in progress: after a
+// group publishes, the next group's hashing or uploading is entered again.
 func (tr *tracker) enter(s Stage) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if s.rank() <= tr.t.Stage.rank() {
+	if tr.t.Kind.tracksBytes() {
+		if s.rank() <= tr.t.Stage.rank() {
+			return
+		}
+	} else if s == tr.t.Stage || tr.t.Stage.Terminal() {
 		return
 	}
 	tr.t.Stage = s
@@ -853,11 +895,17 @@ func (tr *tracker) finish(err error) {
 }
 
 // write saves the Transfer's state. A failed write is not the call's
-// failure: the call goes on, and the next write catches the index up.
+// failure: the call goes on, and the next write catches the index up. A
+// write the index refuses because the Transfer is no longer ours (a reader
+// marked it interrupted, a retry took it over) stops the run.
 func (tr *tracker) write(now time.Time) {
 	tr.t.UpdatedAt = now
 	tr.written = now
-	_ = tr.m.app.DB.UpdateTransferState(tr.ctx, tr.t.row())
+	row := tr.t.row()
+	row.OwnerToken = tr.m.owner
+	if ok, err := tr.m.app.DB.UpdateTransferState(tr.ctx, row); err == nil && !ok {
+		tr.lost()
+	}
 }
 
 func (tr *tracker) notify(fn func(Transfer)) {

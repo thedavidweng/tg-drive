@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react"
+import { Eye, EyeOff } from "lucide-react"
 
 import type { AuthPrompt, Backend, BackendError } from "@/backend"
 import { Button } from "@/components/ui/button"
@@ -29,10 +30,13 @@ export function ErrorAlert({ error }: { error: BackendError }) {
   )
 }
 
+const credentialsURL = "https://my.telegram.org"
+
 export function SetupScreen({ backend, onDone }: { backend: Backend; onDone: () => void }) {
   const { t } = useI18n()
   const [apiID, setApiID] = useState("")
   const [apiHash, setApiHash] = useState("")
+  const [showHash, setShowHash] = useState(false)
   const [phone, setPhone] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<BackendError | null>(null)
@@ -54,10 +58,14 @@ export function SetupScreen({ backend, onDone }: { backend: Backend; onDone: () 
     <AuthCard title={t("auth.setupTitle")}>
       <form aria-label={t("auth.setupTitle")} onSubmit={submit} className="flex flex-col gap-3.5">
         <p className="text-[13px] text-muted-foreground">{t("auth.setupIntro")}</p>
+        {/* The webview does not follow target=_blank; the system browser
+            opens the page instead. */}
         <a
-          href="https://my.telegram.org"
-          target="_blank"
-          rel="noreferrer"
+          href={credentialsURL}
+          onClick={(e) => {
+            e.preventDefault()
+            void backend.system.openURL(credentialsURL)
+          }}
           className="text-[13px] text-primary underline-offset-4 hover:underline"
         >
           {t("auth.getCredentials")}
@@ -75,13 +83,28 @@ export function SetupScreen({ backend, onDone }: { backend: Backend; onDone: () 
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="setup-api-hash">{t("auth.apiHash")}</Label>
-          <Input
-            id="setup-api-hash"
-            value={apiHash}
-            onChange={(e) => setApiHash(e.target.value)}
-            autoComplete="off"
-            required
-          />
+          <div className="relative">
+            <Input
+              id="setup-api-hash"
+              type={showHash ? "text" : "password"}
+              value={apiHash}
+              onChange={(e) => setApiHash(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              required
+              className="pr-8"
+            />
+            <button
+              type="button"
+              aria-label={showHash ? t("auth.hideApiHash") : t("auth.showApiHash")}
+              title={showHash ? t("auth.hideApiHash") : t("auth.showApiHash")}
+              aria-pressed={showHash}
+              onClick={() => setShowHash((v) => !v)}
+              className="absolute inset-y-0 right-1 my-auto grid size-6 place-items-center rounded-control text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+            >
+              {showHash ? <EyeOff aria-hidden className="size-3.5" /> : <Eye aria-hidden className="size-3.5" />}
+            </button>
+          </div>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="setup-phone">{t("auth.phone")}</Label>
@@ -220,17 +243,18 @@ function PromptForm({
   const [value, setValue] = useState("")
   const isCode = prompt.kind === "code"
 
-  const hint = isCode
-    ? prompt.attempt > 1
-      ? t("auth.codeRetry", { attempt: prompt.attempt, max: prompt.max_attempts })
-      : prompt.resent
-        ? t("auth.codeResent")
-        : prompt.reused
-          ? t("auth.codeReused")
-          : t("auth.codeSent")
-    : prompt.attempt > 1
-      ? t("auth.passwordRetry")
-      : t("auth.passwordPrompt")
+  // A code prompt can carry several facts at once: a retry, which code is
+  // in play (resent or reused), and the attempt budget. Each gets a line.
+  const hints: string[] = []
+  if (isCode) {
+    if (prompt.attempt > 1) hints.push(t("auth.codeInvalid"))
+    if (prompt.resent) hints.push(t("auth.codeResent"))
+    else if (prompt.reused) hints.push(t("auth.codeReused"))
+    else if (prompt.attempt <= 1) hints.push(t("auth.codeSent"))
+    if (prompt.max_attempts > 0) hints.push(t("auth.codeAttempt", { attempt: prompt.attempt, max: prompt.max_attempts }))
+  } else {
+    hints.push(prompt.attempt > 1 ? t("auth.passwordRetry") : t("auth.passwordPrompt"))
+  }
 
   return (
     <form
@@ -240,7 +264,13 @@ function PromptForm({
       }}
       className="flex flex-col gap-3.5"
     >
-      <p className="text-[13px] text-muted-foreground">{hint}</p>
+      <div className="flex flex-col gap-1">
+        {hints.map((hint) => (
+          <p key={hint} className="text-[13px] text-muted-foreground">
+            {hint}
+          </p>
+        ))}
+      </div>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`prompt-${prompt.kind}`}>{isCode ? t("auth.codeLabel") : t("auth.passwordLabel")}</Label>
         <Input
