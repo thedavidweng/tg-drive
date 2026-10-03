@@ -45,6 +45,7 @@ export const wailsBackend: Backend = {
     onTransferProgress: (cb) => Events.On("transfer-progress", (ev) => cb(ev.data)),
     onTransferRemoved: (cb) => Events.On("transfer-removed", (ev) => cb(ev.data)),
     onFilesDropped: (cb) => Events.On("files-dropped", (ev) => cb(ev.data)),
+    onChannelsChanged: (cb) => Events.On("channels-changed", (ev) => cb(ev.data)),
   },
   transfers: {
     list: async () => (await call(Transfers.List())) ?? { active: [], history: [] },

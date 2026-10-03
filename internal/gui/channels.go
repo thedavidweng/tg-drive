@@ -5,8 +5,10 @@ package gui
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/internal/service"
@@ -16,13 +18,21 @@ import (
 // the shared index: listing them, binding or creating one, switching the
 // active one, and reporting a channel's status.
 //
-// The App's channel selector is fixed at Open (service.Options.Channel), so
-// switching the active channel reopens the App bound to the new channel
-// (appState.switchChannel). The selection survives Auth's reopen the same
-// way.
+// Switching the active channel changes the selector every later facade call
+// pins on its ctx (appState.switchChannel); the App, its Telegram client,
+// and the Transfers running on other channels are untouched. The selection
+// survives Auth's reopen.
 type Channels struct {
 	state *appState
 	drive *Drive
+
+	mu sync.Mutex
+	// emit is the typed-event sink SetChannelsEmitter connects.
+	emit Emitter
+	// last is the channel list last reported to the frontend (by List or a
+	// channels-changed event); nil until the first report. Index sync
+	// emits only when the list differs from it.
+	last []ChannelInfo
 }
 
 // ChannelInfo is one channel bound in the shared index (td init or a GUI
@@ -42,7 +52,7 @@ type ChannelInfo struct {
 // List returns the channels bound in the shared index, marking the active
 // one. It reads only the index, never Telegram, so it also works offline.
 func (c *Channels) List(ctx context.Context) ([]ChannelInfo, error) {
-	app := c.state.current()
+	app, ctx := c.state.use(ctx)
 	bound, err := app.BoundChannels(ctx)
 	if err != nil {
 		return nil, toError(err)
@@ -50,7 +60,7 @@ func (c *Channels) List(ctx context.Context) ([]ChannelInfo, error) {
 	// The active channel is the one the App's selector resolves to. Nothing
 	// bound yet is an empty list, not an error; a dangling selector is.
 	activeID := ""
-	if len(bound) > 0 || app.Channel != "" {
+	if len(bound) > 0 || c.state.activeChannel() != "" {
 		id, err := app.ChannelTelegramID(ctx)
 		if err != nil {
 			return nil, toError(err)
@@ -66,7 +76,31 @@ func (c *Channels) List(ctx context.Context) ([]ChannelInfo, error) {
 			Active:    ch.ChannelID == activeID,
 		})
 	}
+	c.mu.Lock()
+	c.last = out
+	c.mu.Unlock()
 	return out, nil
+}
+
+// syncFromIndex reports a channel list another writer changed — a td
+// process binding a channel, or this GUI's own Bind — as a
+// channels-changed event. Services.StartSync runs it on every index
+// commit. Before the frontend's first List there is nothing to diff
+// against, so the first read only records the baseline.
+func (c *Channels) syncFromIndex(ctx context.Context) {
+	c.mu.Lock()
+	prev, known := c.last, c.last != nil
+	c.mu.Unlock()
+	list, err := c.List(ctx)
+	if err != nil || !known || slices.Equal(prev, list) {
+		return
+	}
+	c.mu.Lock()
+	emit := c.emit
+	c.mu.Unlock()
+	if emit != nil {
+		emit(EventChannelsChanged, ChannelsChanged{Channels: list})
+	}
 }
 
 // ChannelStatus is the active channel's health: its linked discussion group,
@@ -83,6 +117,8 @@ type ChannelStatus struct {
 	DiscussionTitle  string `json:"discussion_title,omitempty"`
 	// UploadLimitBytes is the account's per-file upload limit on Telegram.
 	UploadLimitBytes int64 `json:"upload_limit_bytes"`
+	// Capabilities is what the account may do on the channel.
+	Capabilities *ChannelCapabilities `json:"capabilities,omitempty"`
 	// LastScanAt is the RFC3339 time the index last changed from a scan,
 	// empty when the channel was never scanned; LastFullScanAt is the last
 	// completed full scan.
@@ -90,10 +126,27 @@ type ChannelStatus struct {
 	LastFullScanAt string `json:"last_full_scan_at,omitempty"`
 }
 
+// ChannelCapabilities are the account's permissions on a channel, from the
+// Telegram capability layer td doctor checks. A drive needs all four.
+type ChannelCapabilities struct {
+	// CanUpload is posting files to the channel.
+	CanUpload bool `json:"can_upload"`
+	// CanDelete is deleting the channel's messages (td rm).
+	CanDelete bool `json:"can_delete"`
+	// CanEditCaptions is editing old messages' captions (td mv, repair).
+	CanEditCaptions bool `json:"can_edit_captions"`
+	// CanInvite is exporting the channel's invite link (td share).
+	CanInvite bool `json:"can_invite"`
+}
+
 // Status reports the active channel's status. Without a bound channel it
 // fails with ERR_CHANNEL_NOT_FOUND.
 func (c *Channels) Status(ctx context.Context) (*ChannelStatus, error) {
-	app := c.state.current()
+	app, ctx := c.state.use(ctx)
+	return c.statusFor(app, ctx)
+}
+
+func (c *Channels) statusFor(app *service.App, ctx context.Context) (*ChannelStatus, error) {
 	if app.TG == nil {
 		return nil, toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
 	}
@@ -118,6 +171,13 @@ func (c *Channels) Status(ctx context.Context) (*ChannelStatus, error) {
 	}
 	if st.LastFullScanAt != nil {
 		out.LastFullScanAt = *st.LastFullScanAt
+	}
+	perms, err := app.ChannelPermissions(ctx)
+	if err == nil {
+		out.Capabilities = &ChannelCapabilities{
+			CanUpload: perms.Upload, CanDelete: perms.Delete,
+			CanEditCaptions: perms.EditCaptions, CanInvite: perms.InviteLink,
+		}
 	}
 	discussion, err := app.DiscussionGroup(ctx)
 	if err != nil {
@@ -149,7 +209,7 @@ type BindChoices struct {
 // Choices lists the user's Telegram channels with the ones already bound as
 // drives marked, plus the default title for a created channel.
 func (c *Channels) Choices(ctx context.Context) (*BindChoices, error) {
-	app := c.state.current()
+	app, ctx := c.state.use(ctx)
 	if app.TG == nil {
 		return nil, toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
 	}
@@ -206,7 +266,7 @@ type BindResult struct {
 // channel. GUI bindings use a synthetic per-channel local root under the
 // data directory.
 func (c *Channels) Bind(ctx context.Context, req BindRequest) (*BindResult, error) {
-	app := c.state.current()
+	app, ctx := c.state.use(ctx)
 	if app.TG == nil {
 		return nil, toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
 	}
@@ -250,21 +310,30 @@ func (c *Channels) Bind(ctx context.Context, req BindRequest) (*BindResult, erro
 	}, nil
 }
 
-// Select switches the active channel: the App reopens bound to it, and every
-// facade call then works on that channel. The channel must be bound in the
-// index; an unknown ID fails with ERR_CHANNEL_NOT_FOUND and keeps the
+// Select switches the active channel: every later facade call works on
+// that channel, and running Transfers keep theirs. The channel must be
+// bound in the index; an unknown ID fails with ERR_CHANNEL_NOT_FOUND and keeps the
 // current channel.
 func (c *Channels) Select(ctx context.Context, channelID string) (*ChannelStatus, error) {
-	if err := c.selectChannel(ctx, strings.TrimSpace(channelID)); err != nil {
+	channelID = strings.TrimSpace(channelID)
+	app, scoped := c.state.use(ctx)
+	// Read the target before changing the shared selector. A failed status
+	// read must not leave the frontend showing the previous drive while
+	// subsequent calls operate on the new one.
+	status, err := c.statusFor(app, service.WithChannel(scoped, channelID))
+	if err != nil {
 		return nil, err
 	}
-	return c.Status(ctx)
+	if err := c.selectChannel(ctx, channelID); err != nil {
+		return nil, err
+	}
+	return status, nil
 }
 
-// selectChannel reopens the App bound to channelID after checking the
-// channel is bound.
+// selectChannel makes channelID the active channel after checking it is
+// bound. Transfers already running keep the channel they were submitted on.
 func (c *Channels) selectChannel(ctx context.Context, channelID string) error {
-	app := c.state.current()
+	app, ctx := c.state.use(ctx)
 	bound, err := app.BoundChannels(ctx)
 	if err != nil {
 		return toError(err)
@@ -279,11 +348,12 @@ func (c *Channels) selectChannel(ctx context.Context, channelID string) error {
 	if !known {
 		return toError(apperr.New(apperr.ErrChannelNotFound, "channel not bound: "+channelID))
 	}
-	// Forget the shown directory before the reopen: it belongs to the old
+	// Forget the shown directory before the switch: it belongs to the old
 	// channel's tree, and index sync must not re-read it against the new
 	// one.
 	c.drive.resetView()
-	return c.state.switchChannel(channelID)
+	c.state.switchChannel(channelID)
+	return nil
 }
 
 // DiscussionLink identifies the discussion group a LinkDiscussion call
@@ -297,7 +367,7 @@ type DiscussionLink struct {
 // channel when it has none (the service keeps an existing link), so the
 // channel can carry machine records (ADR 0018).
 func (c *Channels) LinkDiscussion(ctx context.Context) (*DiscussionLink, error) {
-	app := c.state.current()
+	app, ctx := c.state.use(ctx)
 	if app.TG == nil {
 		return nil, toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
 	}

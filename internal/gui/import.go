@@ -98,7 +98,7 @@ func (im *Import) run(ctx context.Context, opts ImportOptions, dryRun bool) (*Im
 			fmt.Sprintf("unknown conflict policy %q (want fail, replace, skip, or rename)", opts.Policy)))
 	}
 	tracker := &itemTracker{emit: im.emitEvent, event: EventImportItem}
-	res, err := im.state.current().ImportSaved(ctx, service.ImportSavedOptions{
+	res, err := im.state.current().ImportSaved(im.state.scoped(ctx), service.ImportSavedOptions{
 		Into:          opts.Into,
 		PhotosAs:      opts.PhotosAs,
 		Policy:        service.ConflictPolicy(opts.Policy),

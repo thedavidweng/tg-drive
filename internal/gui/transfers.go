@@ -124,14 +124,14 @@ func (t *Transfers) List(ctx context.Context) (*TransferList, error) {
 }
 
 // UploadOptions are the upload sheet's choices. They map one-to-one onto
-// the service's upload options: the conflict policy and the replace
-// confirmation (service.UploadOptions.Validate), the presentation kind and
-// caption (service.Presentation, UploadOptions.Caption), and the recursive
-// switches of td cp --recursive.
+// the options of td cp: the conflict policy and the replace confirmation
+// (service.UploadOptions.Validate), the presentation and caption
+// (service.Presentation, UploadOptions.Caption), the per-call upload
+// tuning, and the recursive switches of td cp --recursive.
 type UploadOptions struct {
-	// Policy is the remote conflict policy: "skip", "replace", or "fail"
-	// (the zero value, matching cp without flags). The CLI-only rename
-	// policy is not offered.
+	// Policy is the remote conflict policy: "skip", "replace", "rename"
+	// (cp --auto-rename), or "fail" (the zero value, matching cp without
+	// flags).
 	Policy string `json:"policy"`
 	// ConfirmReplace is the ADR 0003 confirmation Policy "replace"
 	// requires.
@@ -139,6 +139,21 @@ type UploadOptions struct {
 	// Kind is the Telegram presentation: "document", "photo", or "video"
 	// ("" is the document default). Folder uploads take no presentation.
 	Kind string `json:"kind,omitempty"`
+	// DurationSeconds, Width, Height, and SupportsStreaming are the video
+	// attributes (cp --duration, --width, --height, --streaming); they
+	// need Kind "video".
+	DurationSeconds   float64 `json:"duration_seconds,omitempty"`
+	Width             int     `json:"width,omitempty"`
+	Height            int     `json:"height,omitempty"`
+	SupportsStreaming bool    `json:"supports_streaming,omitempty"`
+	// ThumbPath is a local JPEG attached as the preview thumbnail (cp
+	// --thumb); photos take none.
+	ThumbPath string `json:"thumb_path,omitempty"`
+	// UploadThreads and UploadPartSizeKB override upload.threads and
+	// upload.part_size_kb for this upload (cp --upload-threads,
+	// --upload-part-size-kb); 0 uses the config.
+	UploadThreads    int `json:"upload_threads,omitempty"`
+	UploadPartSizeKB int `json:"upload_part_size_kb,omitempty"`
 	// Caption is human text rendered above the caption block: on the file's
 	// own message for one file, on the first member of an album. Folder
 	// uploads take no caption.
@@ -153,11 +168,15 @@ type UploadOptions struct {
 	IncludeEmptyDirs bool `json:"include_empty_dirs,omitempty"`
 }
 
-// DownloadOptions are the download sheet's choices.
+// DownloadOptions are the download sheet's choices, the options of td get.
 type DownloadOptions struct {
-	// Policy is the local conflict policy: "skip", "replace", or "fail"
-	// (the zero value, matching get without flags).
+	// Policy is the local conflict policy: "skip", "replace", "rename"
+	// (get --auto-rename), or "fail" (the zero value, matching get without
+	// flags).
 	Policy string `json:"policy"`
+	// ContinueOnError lets a folder download continue past failed files
+	// (get -r --continue-on-error).
+	ContinueOnError bool `json:"continue_on_error,omitempty"`
 }
 
 // conflictPolicy parses a sheet's policy choice; the zero value is fail,
@@ -170,9 +189,11 @@ func conflictPolicy(s string) (service.ConflictPolicy, error) {
 		return service.ConflictSkip, nil
 	case string(service.ConflictReplace):
 		return service.ConflictReplace, nil
+	case string(service.ConflictRename):
+		return service.ConflictRename, nil
 	default:
 		return "", apperr.New(apperr.ErrUsage,
-			"unknown conflict policy "+strconv.Quote(s)+" (want skip, replace, or fail)")
+			"unknown conflict policy "+strconv.Quote(s)+" (want skip, replace, rename, or fail)")
 	}
 }
 
@@ -195,11 +216,20 @@ func (t *Transfers) Upload(ctx context.Context, paths []string, dest string, opt
 	if err != nil {
 		return nil, toError(err)
 	}
-	svcOpts := service.UploadOptions{ConfirmReplace: opts.ConfirmReplace, Caption: opts.Caption}
+	if opts.UploadThreads < 0 || opts.UploadPartSizeKB < 0 {
+		return nil, toError(apperr.New(apperr.ErrUsage, "upload threads and part size must not be negative"))
+	}
+	svcOpts := service.UploadOptions{
+		ConfirmReplace: opts.ConfirmReplace, Caption: opts.Caption,
+		Threads: opts.UploadThreads, PartSizeKB: opts.UploadPartSizeKB,
+	}
 	if err := svcOpts.Validate(policy); err != nil {
 		return nil, toError(err)
 	}
-	pres := service.Presentation{Kind: opts.Kind}
+	pres := service.Presentation{
+		Kind: opts.Kind, DurationSeconds: opts.DurationSeconds, Width: opts.Width, Height: opts.Height,
+		SupportsStreaming: opts.SupportsStreaming, ThumbPath: opts.ThumbPath,
+	}
 	if err := pres.Validate(); err != nil {
 		return nil, toError(err)
 	}
@@ -215,7 +245,7 @@ func (t *Transfers) Upload(ctx context.Context, paths []string, dest string, opt
 	}
 	// As with cp, presentation belongs to file uploads; a folder upload
 	// has none.
-	if len(dirs) > 0 && (opts.Kind != "" || opts.Caption != "") {
+	if len(dirs) > 0 && (pres != service.Presentation{} || opts.Caption != "") {
 		return nil, toError(apperr.New(apperr.ErrUsage,
 			"presentation and caption apply to file uploads, not folder uploads"))
 	}
@@ -226,7 +256,7 @@ func (t *Transfers) Upload(ctx context.Context, paths []string, dest string, opt
 			"album uploads cannot replace existing files; upload them one at a time or remove the existing file first"))
 	}
 	m := t.manager()
-	run := context.WithoutCancel(ctx)
+	run := context.WithoutCancel(t.state.scoped(ctx))
 	var ids []string
 	switch {
 	case len(files) == 1:
@@ -258,8 +288,11 @@ func (t *Transfers) Upload(ctx context.Context, paths []string, dest string, opt
 			ContinueOnError:  opts.ContinueOnError,
 			IncludeEmptyDirs: opts.IncludeEmptyDirs,
 			// A folder upload carries no presentation or caption (above);
-			// the replace confirmation still applies.
-			Options: service.UploadOptions{ConfirmReplace: opts.ConfirmReplace},
+			// the replace confirmation and upload tuning still apply.
+			Options: service.UploadOptions{
+				ConfirmReplace: opts.ConfirmReplace,
+				Threads:        opts.UploadThreads, PartSizeKB: opts.UploadPartSizeKB,
+			},
 		})
 		if err != nil {
 			return nil, toError(err)
@@ -309,7 +342,7 @@ func (t *Transfers) PlanUpload(ctx context.Context, paths []string, dest, policy
 	if err != nil {
 		return nil, toError(err)
 	}
-	app := t.state.current()
+	app, ctx := t.state.use(ctx)
 	if app.TG == nil {
 		return nil, toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
 	}
@@ -346,7 +379,8 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	if err != nil {
 		return "", toError(err)
 	}
-	entries, err := t.state.current().ListDir(ctx, remotePath)
+	app, scoped := t.state.use(ctx)
+	entries, err := app.ListDir(scoped, remotePath)
 	if err != nil {
 		return "", toError(err)
 	}
@@ -355,7 +389,7 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	isFile := len(entries) == 1 && entries[0].Type == "file" &&
 		entries[0].Path == strings.TrimRight(remotePath, "/")
 	m := t.manager()
-	run := context.WithoutCancel(ctx)
+	run := context.WithoutCancel(scoped)
 	local := filepath.Join(destDir, path.Base(strings.TrimRight(remotePath, "/")))
 	if isFile {
 		h, err := m.SubmitDownload(run, transfer.Download{
@@ -367,7 +401,7 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 		return h.ID(), nil
 	}
 	h, err := m.SubmitRecursiveDownload(run, transfer.RecursiveDownload{
-		Source: remotePath, Dest: local, Policy: policy,
+		Source: remotePath, Dest: local, Policy: policy, ContinueOnError: opts.ContinueOnError,
 	})
 	if err != nil {
 		return "", toError(err)

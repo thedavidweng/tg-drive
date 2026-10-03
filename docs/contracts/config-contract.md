@@ -59,6 +59,12 @@ and writable with `td config set`, except `hash.algorithm` (always `blake3`). In
 `transfers.concurrency` bounds how many Transfers one process runs at once;
 the rest wait `queued`.
 
+A running desktop GUI applies a `transfers.concurrency` change made from its
+Settings tab to its Transfer queue at once: raising it starts queued
+Transfers, lowering it lets running ones finish and holds the queue until
+fewer run. Every other key, and any key changed with `td config set`,
+applies the next time the GUI starts, as it does for the next td command.
+
 `locks.ttl_seconds` is the lease time of Operation locks and of the Transfer
 owner's lease on each Transfer; both renew on a heartbeat at one third of
 it, so a Transfer whose owner vanished reads as expired — and is marked

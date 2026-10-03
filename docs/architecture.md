@@ -49,11 +49,17 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   init use case against a synthetic per-channel local root under the data
   directory (a label for the binding and a re-bind dedup key, never
   created on disk); creating a channel is the same call with a title,
-  defaulting to the service's default title. Switching reopens the App
-  with the channel selector, because the App fixes its channel at
-  `service.Open`; a failed switch restores the previous selector, and an
-  Auth reopen re-applies it. The selection persists in the webview's local
-  storage, next to the other GUI display preferences.
+  defaulting to the service's default title. Switching does not reopen
+  the App: `appState` keeps the selector, and every facade call scopes its
+  context to it (`service.WithChannel`), so a Transfer started before a
+  switch keeps the channel it was started on and keeps running. A
+  selector that names no bound channel fails the switch and leaves the
+  previous one; an Auth reopen re-applies it. The selection persists in
+  the webview's local storage, next to the other GUI display preferences.
+  The channel status carries the account's permissions on the channel
+  (upload, delete messages, edit captions, export invite links) from the
+  same capability checks `td doctor` runs. A failed capability probe
+  leaves permissions unavailable rather than hiding the channel status.
 - Long per-item service runs report through the Observer seam: the facade
   adapts it to typed `import.item` (Saved Messages import) and
   `repair.item` (repair runs) events, each carrying a running tally.
@@ -64,7 +70,11 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   display alongside the max-upload check, and the path-codec doctor runs
   the codec's fixed vectors and a scoped round trip.
 - The Settings facade covers config get/set (secrets stay redacted unless a
-  call explicitly confirms revealing) and Omarchy mode: on a detected
+  call explicitly confirms revealing; `transfers.concurrency` applies to
+  the running queue, other keys at the next start), the About versions
+  (the GUI's own stamp, and the separately installed td CLI's version from
+  running `td version --json` found on PATH, in `TD_INSTALL_DIR`, or in the
+  installer's default directory), and Omarchy mode: on a detected
   Omarchy desktop it maps the current theme's `colors.toml` and
   `shell.toml`, plus Hyprland's `decoration:rounding` and
   `general:border_size` parsed from `hyprland.conf` and its `source`d
@@ -85,6 +95,8 @@ cmd/td-gui (build tag gui, the only package importing Wails)
 - The Transfers facade runs every GUI upload and download through the one
   Transfer Manager `appState` owns (rebuilt with the App on an Auth
   reopen), so GUI transfers are the same index records the CLI writes,
+  with the queue bounded by a resizable `transfer.Limiter` shared across
+  rebuilds, so a concurrency change and an Auth reopen keep one budget,
   created with `front_end = gui`. The Transfers tab streams them as typed
   `transfer-stage` / `transfer-progress` / `transfer-removed` events: one
   deduping snapshot is fed by the Manager's Observer (this process's
@@ -101,17 +113,21 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   sheet: the upload sheet previews the facade's dry-run plan — the
   service's plan plus each file's size against the account's upload limit
   from the channel status — before its start button enables, and its
-  controls map one-to-one onto the service's upload options (presentation,
-  caption, conflict policy, no-hash, the recursive flags), with replace
-  gated on an explicit confirmation, the service's
+  controls map one-to-one onto `td cp`'s flags (presentation, video
+  attributes, thumbnail, caption, conflict policy including rename,
+  no-hash, the recursive flags, upload threads and part size), with
+  replace gated on an explicit confirmation, the service's
   `ERR_CONFIRMATION_REQUIRED`, and disallowed for albums. The download
-  sheet carries the local conflict policy.
+  sheet carries `td get`'s: the local conflict policy, and
+  continue-on-error for folders.
 - Index sync (ADR 0033): `Services.StartSync` polls `PRAGMA data_version`
   on a pinned connection (the pragma advances only for *other* connections'
   commits) and, on change, re-reads the directory the frontend last listed
   and emits the typed `directory-changed` event with the fresh listing,
-  and reports changed or vanished Transfers into the same deduping
-  snapshot the Transfers facade's Observer feeds.
+  reports changed or vanished Transfers into the same deduping
+  snapshot the Transfers facade's Observer feeds, and emits the typed
+  `channels-changed` event when the bound channels differ from the list
+  the frontend last read (a `td init` in a terminal included).
   The poller resolves the App through `appState` every tick: an Auth
   reopen closes the old pool, so the poller re-pins the new pool and runs
   one refresh to cover commits that landed while unpinned. The Drive

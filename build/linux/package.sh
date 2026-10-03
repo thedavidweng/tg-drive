@@ -14,6 +14,7 @@ VERSION="${VERSION:?set VERSION to the release version without a leading v}"
 WAILS3="${WAILS3:-dist/bin/wails3}"
 OUT=dist/gui
 WORK=dist/gui-linux-work
+. build/version.sh
 
 case "$(go env GOARCH)" in
 amd64)
@@ -33,7 +34,8 @@ esac
 mkdir -p "$OUT" "$WORK"
 
 # Same build flags as `make gui-build`, plus stripping for release.
-CGO_ENABLED=1 go build -tags gui -trimpath -ldflags "-s -w" -o dist/td-gui ./cmd/td-gui
+CGO_ENABLED=1 go build -tags gui -trimpath -ldflags "-s -w $VERSION_LDFLAGS" -o dist/td-gui ./cmd/td-gui
+verify_version dist/td-gui
 
 # .deb. nfpm expands VERSION and DEBARCH from the environment.
 export VERSION DEBARCH

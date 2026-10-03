@@ -6,10 +6,10 @@
  * the shared index: listing them, binding or creating one, switching the
  * active one, and reporting a channel's status.
  * 
- * The App's channel selector is fixed at Open (service.Options.Channel), so
- * switching the active channel reopens the App bound to the new channel
- * (appState.switchChannel). The selection survives Auth's reopen the same
- * way.
+ * Switching the active channel changes the selector every later facade call
+ * pins on its ctx (appState.switchChannel); the App, its Telegram client,
+ * and the Transfers running on other channels are untouched. The selection
+ * survives Auth's reopen.
  * @module
  */
 
@@ -57,9 +57,9 @@ export function List(): $CancellablePromise<$models.ChannelInfo[] | null> {
 }
 
 /**
- * Select switches the active channel: the App reopens bound to it, and every
- * facade call then works on that channel. The channel must be bound in the
- * index; an unknown ID fails with ERR_CHANNEL_NOT_FOUND and keeps the
+ * Select switches the active channel: every later facade call works on
+ * that channel, and running Transfers keep theirs. The channel must be
+ * bound in the index; an unknown ID fails with ERR_CHANNEL_NOT_FOUND and keeps the
  * current channel.
  */
 export function Select(channelID: string): $CancellablePromise<$models.ChannelStatus | null> {

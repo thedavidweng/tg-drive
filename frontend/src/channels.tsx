@@ -5,7 +5,7 @@ import type { Backend, BackendError, BindChoices, BindRequest, ChannelInfo, Chan
 import { Button } from "@/components/ui/button"
 import { formatDate, formatSize } from "@/format"
 import { Sheet, SheetError } from "@/sheet"
-import { useI18n } from "@/i18n"
+import { useI18n, type Translate } from "@/i18n"
 
 /**
  * The localStorage key of the last selected drive channel, a GUI-side
@@ -54,6 +54,9 @@ export function ChannelSwitcher({
     )
   }, [backend])
   useEffect(reload, [reload])
+  // Bindings made elsewhere (td init in a terminal) arrive as
+  // channels-changed from index sync.
+  useEffect(() => backend.events.onChannelsChanged((e) => setChannels(e.channels ?? [])), [backend])
 
   const active = channels?.find((c) => c.active)
 
@@ -256,6 +259,7 @@ function ChannelsSheet({
                   )
                 }
               />
+              <StatusRow label={t("channels.status.permissions")} value={permissionsText(status, t)} />
               <StatusRow label={t("channels.status.uploadLimit")} value={formatSize(status.upload_limit_bytes, t)} />
               <StatusRow
                 label={t("channels.status.lastScan")}
@@ -284,6 +288,20 @@ function ChannelsSheet({
       </div>
     </Sheet>
   )
+}
+
+/** The account's permissions on the channel: all granted, or the missing ones named. */
+function permissionsText(status: ChannelStatus, t: Translate): string {
+  const caps = status.capabilities
+  if (!caps) return t("channels.status.permissionsUnknown")
+  const missing = [
+    !caps?.can_upload && t("channels.permission.upload"),
+    !caps?.can_delete && t("channels.permission.delete"),
+    !caps?.can_edit_captions && t("channels.permission.edit"),
+    !caps?.can_invite && t("channels.permission.invite"),
+  ].filter((m): m is string => !!m)
+  if (missing.length === 0) return t("channels.status.allGranted")
+  return t("channels.status.missing", { list: missing.join(t("channels.permission.separator")) })
 }
 
 function StatusRow({ label, value }: { label: string; value: React.ReactNode }) {

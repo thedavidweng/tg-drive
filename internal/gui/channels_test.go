@@ -390,3 +390,105 @@ func TestChannelsLinkDiscussionGroup(t *testing.T) {
 		t.Fatalf("Status after link = %+v, want %q linked", st, link.DiscussionTitle)
 	}
 }
+
+func TestChannelsStatusReportsTheChannelPermissions(t *testing.T) {
+	seedDrive(t, nil)
+	svc := openGUI(t)
+
+	st, err := svc.Channels.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := gui.ChannelCapabilities{CanUpload: true, CanDelete: true, CanEditCaptions: true, CanInvite: true}
+	if st.Capabilities == nil || *st.Capabilities != want {
+		t.Fatalf("Status capabilities = %+v, want every permission of the channel's owner %+v", st.Capabilities, want)
+	}
+}
+
+func TestChannelsStatusReportsMissingPermissions(t *testing.T) {
+	seedDrive(t, nil)
+	// The account lost its admin rights on the channel: it can still read,
+	// but none of the writes the drive needs.
+	t.Setenv("TD_FAKE_DENY_CAPABILITIES", "upload,delete,edit,invite")
+	svc := openGUI(t)
+
+	st, err := svc.Channels.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Capabilities == nil || *st.Capabilities != (gui.ChannelCapabilities{}) {
+		t.Fatalf("Status capabilities = %+v, want every permission denied", st.Capabilities)
+	}
+}
+
+func TestChannelsStatusSurvivesCapabilityProbeFailure(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_FAIL_DOCTOR", "1")
+	svc := openGUI(t)
+
+	st, err := svc.Channels.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Title != "Drive" || st.Capabilities != nil {
+		t.Fatalf("Status = %+v, want Drive with unknown permissions", st)
+	}
+}
+
+// channelsChanges returns the recorded channels-changed events in order.
+func (r *eventRecorder) channelsChanges() []gui.ChannelsChanged {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []gui.ChannelsChanged
+	for _, e := range r.events {
+		if e.name == gui.EventChannelsChanged {
+			out = append(out, e.data.(gui.ChannelsChanged))
+		}
+	}
+	return out
+}
+
+// A td process binds another channel into the shared index; index sync
+// reports the new channel list as a typed channels-changed event.
+func TestChannelsSyncEmitsChannelsChangedWhenTheCLIBinds(t *testing.T) {
+	archiveID := seedDriveAndChannel(t, nil, "Archive")
+	svc := openGUI(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	// The frontend's own List is the baseline sync diffs against.
+	if _, err := svc.Channels.List(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rec := &eventRecorder{}
+	svc.SetChannelsEmitter(rec.emit)
+	svc.StartSync(ctx, 20*time.Millisecond)
+
+	cli, closeCLI, err := service.Open(service.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeCLI()
+	if _, err := cli.InitRoot(ctx, t.TempDir(), "", "", strconv.FormatInt(archiveID, 10)); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, ev := range rec.channelsChanges() {
+			if len(ev.Channels) == 2 {
+				archive := boundChannel(t, ev.Channels, "Archive")
+				if archive.Active || !boundChannel(t, ev.Channels, "Drive").Active {
+					t.Fatalf("channels-changed = %+v, want Archive listed and Drive still active", ev.Channels)
+				}
+				// Nothing changed since: no duplicate event follows.
+				time.Sleep(200 * time.Millisecond)
+				if n := len(rec.channelsChanges()); n != 1 {
+					t.Fatalf("got %d channels-changed events, want exactly one: %+v", n, rec.channelsChanges())
+				}
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("no channels-changed event listed the CLI's binding; events: %+v", rec.channelsChanges())
+}

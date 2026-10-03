@@ -15,6 +15,7 @@ VERSION="${VERSION:?set VERSION to the release version without a leading v}"
 WAILS3="${WAILS3:-dist/bin/wails3}"
 OUT=dist/gui
 WORK=dist/gui-darwin-work
+. build/version.sh
 
 mkdir -p "$OUT" "$WORK"
 
@@ -24,10 +25,11 @@ for arch in arm64 amd64; do
 		MACOSX_DEPLOYMENT_TARGET=12.0 \
 		CGO_CFLAGS="-mmacosx-version-min=12.0" \
 		CGO_LDFLAGS="-mmacosx-version-min=12.0" \
-		go build -tags gui -trimpath -ldflags "-s -w" \
+		go build -tags gui -trimpath -ldflags "-s -w $VERSION_LDFLAGS" \
 		-o "$WORK/td-gui-$arch" ./cmd/td-gui
 done
 lipo -create -output "$WORK/td-gui" "$WORK/td-gui-arm64" "$WORK/td-gui-amd64"
+verify_version "$WORK/td-gui"
 
 # .app bundle.
 APP="$WORK/td-gui.app"

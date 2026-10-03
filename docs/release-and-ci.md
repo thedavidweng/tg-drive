@@ -177,12 +177,17 @@ ui-preview/run.sh out     # seeds, builds, serves, records into out/
 (`TD_FAKE_TELEGRAM_STATE`, login code `12345`), builds td-gui with
 `-tags gui,server` — Wails' headless server mode, CGO-free and needing no
 webview — and drives it with Playwright (`record.mjs`, pinned in
-`ui-preview/package.json`). It serves two instances: the seeded,
-authenticated one the Drive scenes record, and a credential-free one for
-the setup and login scenes (its fake account has two-step verification,
-`TD_FAKE_AUTH_PASSWORD`). Each scene is one entry in the scenes list in
-`record.mjs` (color scheme, locale, optional theme override or
-interaction, and `setup` to record against the credential-free server);
+`ui-preview/package.json`). It serves three instances: the seeded,
+authenticated one the Drive, Settings, and Transfers scenes record (with
+the preview's td on its PATH, so Settings → About shows the probed CLI
+version); a credential-free one for the setup and login scenes (its fake
+account has two-step verification, `TD_FAKE_AUTH_PASSWORD`); and one on a
+copy of the seeded drive with Omarchy detection forced on against a
+seeded theme (`TD_OMARCHY`, `TD_OMARCHY_THEME`), for the Omarchy scenes,
+which also rewrite that theme to record a live theme change. Each scene
+is one entry in the scenes list in `record.mjs` (color scheme, locale,
+optional theme override or interaction, and `setup` or `omarchy` to
+record against those servers);
 adding a scene is a new entry plus any seed data in `run.sh`. A scene's
 `spawn` names an environment variable `run.sh` exports holding a shell
 command to start once the scene's page loaded — how the Transfers scenes

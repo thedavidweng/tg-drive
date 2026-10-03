@@ -5,7 +5,10 @@ package gui_test
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/thedavidweng/tg-drive/internal/gui"
@@ -114,12 +117,50 @@ func TestSettingsSetRoundTrips(t *testing.T) {
 	}
 }
 
-func TestSettingsVersionsReportsTheSharedModuleVersion(t *testing.T) {
+// TestSettingsVersionsReportsTheInstalledCLI builds a td binary stamped
+// with its own version, the way the release does, and puts it on PATH: the
+// td row reports that binary's version, not the GUI's stamp.
+func TestSettingsVersionsReportsTheInstalledCLI(t *testing.T) {
 	seedConfig(t, nil)
+	bin := t.TempDir()
+	name := "td"
+	if runtime.GOOS == "windows" {
+		name = "td.exe"
+	}
+	build := exec.Command("go", "build", "-trimpath",
+		"-ldflags", "-X github.com/thedavidweng/tg-drive/internal/version.Version=9.8.7",
+		"-o", filepath.Join(bin, name), "github.com/thedavidweng/tg-drive/cmd/td")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build td: %v\n%s", err, out)
+	}
+	t.Setenv("PATH", bin)
 	svc := openGUI(t)
 
 	v := svc.Settings.Versions(context.Background())
-	if v.GUI != version.Version || v.CLI != version.Version {
-		t.Fatalf("Versions = %+v, want both %q", v, version.Version)
+	if v.GUI != version.Version || v.CLI != "9.8.7" {
+		t.Fatalf("Versions = %+v, want gui %q and the installed td's 9.8.7", v, version.Version)
+	}
+}
+
+// TestSettingsVersionsWithoutACLI reports no td version when no td binary
+// is installed, and ignores an unrelated program named td.
+func TestSettingsVersionsWithoutACLI(t *testing.T) {
+	seedConfig(t, nil)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("LOCALAPPDATA", home)
+	bin := t.TempDir()
+	if runtime.GOOS != "windows" {
+		if err := os.WriteFile(filepath.Join(bin, "td"), []byte("#!/bin/sh\necho 'a todo list'\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
+	svc := openGUI(t)
+
+	v := svc.Settings.Versions(context.Background())
+	if v.GUI != version.Version || v.CLI != "" {
+		t.Fatalf("Versions = %+v, want gui %q and no td version", v, version.Version)
 	}
 }

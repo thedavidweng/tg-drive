@@ -41,6 +41,10 @@ type Options struct {
 	FrontEnd FrontEnd
 	// Observer receives every change to the Transfers this Manager runs.
 	Observer Observer
+	// Limiter is the run-slot budget, shared with every Manager given the
+	// same one. Nil gives the Manager its own of transfers.concurrency
+	// slots.
+	Limiter *Limiter
 }
 
 // Manager submits Transfers and runs them on one App, at most
@@ -51,16 +55,16 @@ type Manager struct {
 	app   *service.App
 	opts  Options
 	owner string
-	slots chan struct{}
+	slots *Limiter
 }
 
 // New returns a Manager running Transfers on app.
 func New(app *service.App, opts Options) *Manager {
-	n := app.Cfg.Transfers.Concurrency
-	if n < 1 {
-		n = defaultConcurrency
+	slots := opts.Limiter
+	if slots == nil {
+		slots = NewLimiter(app.Cfg.Transfers.Concurrency)
 	}
-	m := &Manager{app: app, opts: opts, owner: newOwnerToken(), slots: make(chan struct{}, n)}
+	m := &Manager{app: app, opts: opts, owner: newOwnerToken(), slots: slots}
 	// Retention housekeeping at Manager start. A failed prune is not the
 	// caller's failure: the next Manager start retries.
 	_ = m.pruneFinished(context.Background(), time.Now().UTC().Add(-retention))
@@ -388,14 +392,12 @@ func start[T any](ctx context.Context, m *Manager, t Transfer,
 		defer close(h.done)
 		defer stop()
 		defer cancel()
-		select {
-		case m.slots <- struct{}{}:
-		case <-tctx.Done():
+		if err := m.slots.acquire(tctx); err != nil {
 			h.err = apperr.Cancelled()
 			tr.finish(h.err)
 			return
 		}
-		defer func() { <-m.slots }()
+		defer m.slots.release()
 		h.result, h.err = run(tctx, tr)
 		// A Transfer ends cancelled, not failed, when its context stopped
 		// it; AfterCancel keeps the code of a failure that left durable

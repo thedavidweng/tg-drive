@@ -174,3 +174,16 @@ test("About shows the versions of td-gui and td", async () => {
   const rows = within(about).getAllByRole("listitem").map((r) => r.textContent)
   expect(rows).toEqual(["td-gui1.4.0", "td1.4.0"])
 })
+
+test("About says when no td CLI is installed", async () => {
+  const backend = memoryBackend(
+    { "/": [] },
+    { config: baseConfig, versions: { gui: "1.4.0", cli: "" } },
+  )
+  render(<App backend={backend} languages={["en"]} />)
+  await openSettings()
+
+  const about = await screen.findByRole("region", { name: "About" })
+  const rows = within(about).getAllByRole("listitem").map((r) => r.textContent)
+  expect(rows).toEqual(["td-gui1.4.0", "tdNot installed"])
+})

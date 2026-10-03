@@ -113,8 +113,13 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   channel and creating one (explicit and default title) with the result
   activated, rejecting the selection of an unbound channel, the selection
   surviving an Auth reopen, the channel status (file count, discussion
-  group, upload limit, last scan) with and without a bound channel, and
-  linking a discussion group.
+  group, upload limit, last scan, the account's channel permissions) with
+  and without a bound channel, linking a discussion group, and a
+  `channels-changed` event when a CLI process binds another channel. The
+  fake knob `TD_FAKE_DENY_CAPABILITIES=upload,delete,edit,invite` makes
+  the capability checks report those permissions missing;
+  `TD_FAKE_FAIL_DOCTOR=1` verifies a failed probe leaves the rest of the
+  channel status available.
   Auth is covered by setup on a credential-less machine, login with the
   code and 2FA prompts answered through the prompt-event seam, a rate
   limit mapping to its wait details, logout, and the GUI and CLI holding
@@ -123,7 +128,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   and `TD_FAKE_LOGIN_FLOOD_WAIT=<seconds>` fails login with a flood wait
   before any code is sent. The Settings facade is covered by a config
   round-trip with secrets redacted until a confirmed reveal (the service's
-  `ERR_CONFIRMATION_REQUIRED` reaches the frontend) and by Omarchy
+  `ERR_CONFIRMATION_REQUIRED` reaches the frontend), the About versions
+  (the stamped GUI version, the probed td CLI version, and empty when no
+  td answers), and by Omarchy
   detection against a seeded theme and `hyprland.conf`, with a theme
   change emitting on the watch channel. The Transfers facade is covered by
   the typed event sequences of its upload and download submissions (single
@@ -131,8 +138,13 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   retry after a failed resumable upload resuming from saved parts, the
   `ERR_USAGE` rejection of retrying an active or completed Transfer, the
   index-sync pick-up of a transfer a real CLI process started — cancelled
-  from the facade — and clear-finished removals; and by the option
-  submission: an album upload with presentation and caption, the
+  from the facade — and clear-finished removals; live behaviour across
+  the session: a Transfer survives a channel switch mid-upload and
+  completes on the channel it started on, and a `transfers.concurrency`
+  change in Settings resizes the running queue without a restart; and by
+  the option parity with `td cp` / `td get` (video attributes, thumbnail,
+  rename policy, upload threads and part size, continue-on-error, and
+  their validation errors); and by the option submission: an album upload with presentation and caption, the
   `ERR_CONFIRMATION_REQUIRED` rejection of an unconfirmed replace before
   any Transfer is created, the dry-run plan's parity with the service's
   planner and its per-file upload-limit flags, the download conflict
@@ -167,8 +179,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   updating from typed events, the listing refreshing on a
   directory-changed event, an error alert, the channel switcher changing
   the Drive view to the selected channel, the switcher sheet's channel
-  status (discussion group, upload limit, last scan, file count) with
-  link-discussion updating it, binding a listed channel and creating one
+  status (discussion group, permissions with the missing ones named,
+  upload limit, last scan, file count) with link-discussion updating it,
+  a channel bound elsewhere appearing on a `channels-changed` event, binding a listed channel and creating one
   with the default title on a fresh machine, the auth gate (setup on an
   unconfigured machine, login otherwise), the login flow states (code,
   wrong-code attempts, 2FA password, reused and resent codes, rate-limit
@@ -179,14 +192,17 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   against the upload limit, replace gated on its confirmation checkbox
   and disallowed for albums, the recursive options shown for folders
   instead of presentation — and its download row actions opening the
-  download sheet (local conflict policy) through the folder picker; and
+  download sheet (local conflict policy, continue-on-error for folders)
+  through the folder picker, with the upload sheet's td cp parity fields
+  (rename, video attributes, thumbnail, threads, part size); and
   the Transfers tab — stage pills and progress bars updating
   from the typed events, item counts for multi-item transfers, cancel and
   retry calling the backend, failures showing their plain-language reason
   and error code, CLI transfers badged, and clear finished emptying the
   history; and the Settings tab — config keys listed with secrets
   masked until revealed, edits saved through the backend with rejection
-  errors shown, the theme and language overrides, and the Omarchy switch
+  errors shown, the About rows (the CLI row reading "Not installed" when
+  no td answers), the theme and language overrides, and the Omarchy switch
   applying and clearing the flat theme; the Import tab — the dry-run plan
   with per-item outcomes, the confirmation sheet blocking the run (with
   the delete-source warning), the photo prompt answered and cancelled, and

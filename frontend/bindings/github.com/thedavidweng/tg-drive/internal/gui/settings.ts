@@ -40,16 +40,20 @@ export function Reveal(key: string, confirmed: boolean): $CancellablePromise<$mo
 
 /**
  * Set validates and saves one config key, returning the entry as it now
- * displays (a secret stays redacted).
+ * displays (a secret stays redacted). transfers.concurrency applies to the
+ * running Transfer queue at once; every other key applies the next time the
+ * GUI starts, as it does for the next td command.
  */
 export function Set(key: string, value: string): $CancellablePromise<$models.ConfigEntry> {
     return $Call.ByID(596867238, key, value);
 }
 
 /**
- * Versions reports the version of both binaries. td and td-gui build from
- * one module stamped with one version at release, so the running binary's
- * stamp is the CLI's.
+ * Versions reports the running GUI's stamp and the version of the td CLI
+ * installed beside it. The two install separately, so the CLI's version
+ * comes from running the td binary found on PATH or in the installers'
+ * default directory; CLI is empty when none is found or it does not
+ * answer `td version --json` like td does.
  */
 export function Versions(): $CancellablePromise<$models.Versions> {
     return $Call.ByID(926113187);

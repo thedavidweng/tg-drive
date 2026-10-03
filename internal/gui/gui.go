@@ -43,18 +43,21 @@ type Services struct {
 // fresh machine opens offline (no Telegram client) and setup upgrades it to
 // a connected one. Services resolve the App per call, never caching it. It
 // also owns the one Transfer Manager every facade shares; the Manager is
-// rebuilt on every reopen — an Auth reopen or a channel switch — since it
-// binds the App it runs Transfers on.
+// rebuilt on an Auth reopen, since it binds the App it runs Transfers on,
+// but every Manager shares one Limiter, so the concurrency budget is global
+// and follows the saved transfers.concurrency live.
 type appState struct {
 	mu       sync.Mutex
 	app      *service.App
 	closeApp func()
 	// channel is the active channel selector (a bound channel's Telegram
-	// ID). The App's selector is fixed at Open (service.Options.Channel),
-	// so Channels switches channels by reopening the App with another one;
-	// "" selects the first bound channel.
+	// ID); "" selects the first bound channel. Switching it never reopens
+	// the App: use pins it on each call's ctx, and a Transfer pins the
+	// channel it was submitted on, so running Transfers keep their App,
+	// Telegram client, and channel across a switch.
 	channel string
 	manager *transfer.Manager
+	limiter *transfer.Limiter
 	// observer is the Manager Observer wired in Open; a reopen reuses it
 	// for the new Manager.
 	observer transfer.Observer
@@ -66,6 +69,32 @@ func (s *appState) current() *service.App {
 	return s.app
 }
 
+// use is the current App and ctx selecting the active channel for calls
+// made with it.
+func (s *appState) use(ctx context.Context) (*service.App, context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.app, service.WithChannel(ctx, s.channel)
+}
+
+// scoped is ctx selecting the active channel.
+func (s *appState) scoped(ctx context.Context) context.Context {
+	_, ctx = s.use(ctx)
+	return ctx
+}
+
+// activeChannel is the active channel selector; "" selects the first bound
+// channel.
+func (s *appState) activeChannel() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.channel
+}
+
+func (s *appState) newManager(app *service.App) *transfer.Manager {
+	return transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: s.observer, Limiter: s.limiter})
+}
+
 // currentManager is the Transfer Manager of the current App.
 func (s *appState) currentManager() *transfer.Manager {
 	s.mu.Lock()
@@ -73,19 +102,19 @@ func (s *appState) currentManager() *transfer.Manager {
 	return s.manager
 }
 
-// reopen replaces the App with a freshly opened one, bound to the selected
-// channel, and a Transfer Manager for it. The old App closes only after
-// the new one opened, so a failed reopen keeps the previous state.
+// reopen replaces the App with a freshly opened one, after Auth changed the
+// Telegram config, and a Transfer Manager for it. The old App closes only
+// after the new one opened, so a failed reopen keeps the previous state.
+// Auth reopens only while logged out, when no Transfer can run.
 func (s *appState) reopen() error {
-	opts := openOptions()
-	s.mu.Lock()
-	opts.Channel = s.channel
-	s.mu.Unlock()
-	app, closeApp, err := service.Open(opts)
+	app, closeApp, err := service.Open(openOptions())
 	if err != nil {
 		return toError(err)
 	}
-	manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: s.observer})
+	if n := app.Cfg.Transfers.Concurrency; n > 0 {
+		s.limiter.SetLimit(n)
+	}
+	manager := s.newManager(app)
 	s.mu.Lock()
 	old := s.closeApp
 	s.app, s.closeApp = app, closeApp
@@ -95,20 +124,11 @@ func (s *appState) reopen() error {
 	return nil
 }
 
-// switchChannel reopens the App bound to another channel. A failed reopen
-// keeps the previous App and selection.
-func (s *appState) switchChannel(channel string) error {
+// switchChannel makes channel the active one for every later call.
+func (s *appState) switchChannel(channel string) {
 	s.mu.Lock()
-	previous := s.channel
+	defer s.mu.Unlock()
 	s.channel = channel
-	s.mu.Unlock()
-	if err := s.reopen(); err != nil {
-		s.mu.Lock()
-		s.channel = previous
-		s.mu.Unlock()
-		return err
-	}
-	return nil
 }
 
 func (s *appState) close() {
@@ -144,14 +164,14 @@ func Open() (*Services, func(), error) {
 			return nil, func() {}, toError(err)
 		}
 	}
-	settings := &Settings{opts: opts}
-	state := &appState{app: app, closeApp: closeApp}
+	state := &appState{app: app, closeApp: closeApp, limiter: transfer.NewLimiter(app.Cfg.Transfers.Concurrency)}
+	settings := &Settings{opts: opts, state: state}
 	transfers := &Transfers{state: state, seen: map[string]Transfer{}}
 	state.observer = transfer.Observer{
 		OnStage:    transfers.observeStage,
 		OnProgress: transfers.observeProgress,
 	}
-	state.manager = transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: state.observer})
+	state.manager = state.newManager(app)
 	closeServices := state.close
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -202,6 +222,14 @@ func (s *Services) SetTransferEmitter(em Emitter) {
 	s.Transfers.mu.Lock()
 	defer s.Transfers.mu.Unlock()
 	s.Transfers.emit = em
+}
+
+// SetChannelsEmitter wires how the Channels facade's typed event
+// (channels-changed) reaches the frontend, same seam as SetDriveEmitter.
+func (s *Services) SetChannelsEmitter(em Emitter) {
+	s.Channels.mu.Lock()
+	defer s.Channels.mu.Unlock()
+	s.Channels.emit = em
 }
 
 // SetFilePicker connects the native file dialogs the Transfers facade's

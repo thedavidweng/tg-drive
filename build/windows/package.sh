@@ -12,6 +12,7 @@ VERSION="${VERSION:?set VERSION to the release version without a leading v}"
 WAILS3="${WAILS3:-dist/bin/wails3}"
 OUT=dist/gui
 WORK=dist/gui-windows-work
+. build/version.sh
 
 # Chocolatey installs NSIS under Program Files but the current GitHub
 # Actions step shell does not inherit the updated machine PATH, so fall
@@ -51,8 +52,9 @@ trap 'rm -f cmd/td-gui/*.syso' EXIT
 
 # Windows WebView2 needs no cgo; windowsgui hides the console window.
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-	go build -tags gui -trimpath -ldflags "-s -w -H windowsgui" \
+	go build -tags gui -trimpath -ldflags "-s -w -H windowsgui $VERSION_LDFLAGS" \
 	-o "$WORK/td-gui.exe" ./cmd/td-gui
+verify_version "$WORK/td-gui.exe"
 
 # makensis is a native Windows tool and only recognizes absolute paths
 # with a backslash after the drive letter — "D:/a/..." is treated as
