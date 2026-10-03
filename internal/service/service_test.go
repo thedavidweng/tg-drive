@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram/fake"
+	"github.com/thedavidweng/tg-drive/internal/config"
 )
 
 func testApp(t *testing.T) (*App, *fake.Client) {

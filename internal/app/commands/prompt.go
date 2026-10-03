@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 type stdinLine struct {

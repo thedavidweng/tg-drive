@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/publisher"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/fsmodel"
+	"github.com/thedavidweng/tg-drive/core/manifest"
+	"github.com/thedavidweng/tg-drive/core/publisher"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // RepairOptions selects one td repair mode. No selection at all repairs

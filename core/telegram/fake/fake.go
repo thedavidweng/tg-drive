@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // Client is an in-memory fake Telegram client for tests.

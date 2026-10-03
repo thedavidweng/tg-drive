@@ -12,7 +12,7 @@ import (
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/crypto"
 	"github.com/gotd/td/tg"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 	"golang.org/x/sync/errgroup"
 )
 

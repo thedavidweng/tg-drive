@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 	_ "modernc.org/sqlite"
 )
 

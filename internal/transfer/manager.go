@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // defaultConcurrency applies when transfers.concurrency is unset.

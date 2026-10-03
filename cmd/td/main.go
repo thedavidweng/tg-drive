@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/app"
+	"github.com/thedavidweng/tg-drive/internal/app"
 )
 
 func main() {

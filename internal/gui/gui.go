@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
-	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/config"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
 
 // SessionFileName is the GUI's Telegram session file. It sits beside the

@@ -11,7 +11,7 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // RateLimiter paces outbound Telegram RPCs to reduce FLOOD_WAIT triggers and

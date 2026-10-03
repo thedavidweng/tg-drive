@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/ports"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
+	"github.com/thedavidweng/tg-drive/core/manifest"
+	"github.com/thedavidweng/tg-drive/core/ports"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // scanErrCount reads pending scan errors matching code.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // Kind is what a Transfer moves.

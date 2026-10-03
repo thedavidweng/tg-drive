@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // The ADR 0003 gates hold for every front end, so the service itself must

@@ -10,7 +10,7 @@ import (
 
 	"lukechampine.com/blake3"
 
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
+	"github.com/thedavidweng/tg-drive/core/manifest"
 )
 
 // blake3Of hashes content the way uploads and backfill store it.

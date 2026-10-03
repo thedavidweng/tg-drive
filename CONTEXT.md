@@ -1,4 +1,4 @@
-# tg-drive-cli Domain Glossary
+# tg-drive Domain Glossary
 
 ## Core concepts
 

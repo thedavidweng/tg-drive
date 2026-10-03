@@ -9,7 +9,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/gui"
 )
 
 // newPicker connects the facade's file dialogs. TD_GUI_PICK_FILES

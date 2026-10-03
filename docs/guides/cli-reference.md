@@ -19,9 +19,9 @@ Telegram-backed virtual file tree CLI.
 Environment:
   TD_API_ID, TD_API_HASH  Telegram API credentials (https://my.telegram.org/apps)
   TD_PHONE                account phone number (international format)
-  TD_CONFIG               config file path        (default ~/.config/tg-drive-cli/config.toml)
-  TD_SESSION              session file path       (default ~/.config/tg-drive-cli/session.json)
-  TD_DB                   local cache DB path     (default ~/.local/share/tg-drive-cli/local_cache.db)
+  TD_CONFIG               config file path        (default ~/.config/tg-drive/config.toml)
+  TD_SESSION              session file path       (default ~/.config/tg-drive/session.json)
+  TD_DB                   local cache DB path     (default ~/.local/share/tg-drive/local_cache.db)
   TD_CHANNEL              channel title or ID (same as --channel)
   TD_JSON                 set to 1 for JSON output (same as --json)
   TD_WAIT                 set to 1 to wait through safe flood waits (same as --wait)

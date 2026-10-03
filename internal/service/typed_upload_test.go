@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
+	"github.com/thedavidweng/tg-drive/core/manifest"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram/fake"
 	"lukechampine.com/blake3"
 )
 

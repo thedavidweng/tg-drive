@@ -16,8 +16,8 @@ import (
 	"github.com/gotd/td/telegram/message/styling"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/manifest"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 func (c *Client) CreateChannel(ctx context.Context, title string) (*tgtelegram.Channel, error) {

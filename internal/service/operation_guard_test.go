@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram/fake"
 )
 
 // writeAudit is the Telegram client every service test runs against: the

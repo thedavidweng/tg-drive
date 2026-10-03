@@ -63,7 +63,7 @@ Before opening or finishing a PR:
 
 ## Issue tracker
 
-Issues live in `thedavidweng/tg-drive-cli` on GitHub. Use `gh issue create`.
+Issues live in `thedavidweng/tg-drive` on GitHub. Use `gh issue create`.
 Pull requests are not a triage queue.
 
 ## Architectural decisions

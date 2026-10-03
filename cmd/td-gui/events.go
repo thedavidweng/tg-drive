@@ -5,7 +5,7 @@ package main
 import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/gui"
 )
 
 // Every typed event is registered in this file and nowhere else. Call

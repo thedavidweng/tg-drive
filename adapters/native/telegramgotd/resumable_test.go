@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/gotd/td/tg"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // ackFlakySender returns ok=false for the first N calls per part, then ok.

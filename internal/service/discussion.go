@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // discussionChat returns the linked discussion group's Telegram channel id,

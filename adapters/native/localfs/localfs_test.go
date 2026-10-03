@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/localfs"
+	"github.com/thedavidweng/tg-drive/adapters/native/localfs"
 )
 
 func TestLocalFSWriteRename(t *testing.T) {

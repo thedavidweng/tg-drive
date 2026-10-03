@@ -2,10 +2,10 @@ package commands
 
 import (
 	"github.com/spf13/cobra"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
-	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
 
 // The transfers commands read Transfers from the index only, through an

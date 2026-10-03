@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-REPO="thedavidweng/tg-drive-cli"
+REPO="thedavidweng/tg-drive"
 BINARY="td"
-CASK="thedavidweng/tap/tg-drive-cli"
+CASK="thedavidweng/tap/tg-drive"
 
 step() { printf '==> %s
 ' "$1"; }
@@ -51,7 +51,7 @@ install_binary() {
 case "${1:-}" in
   uninstall)
     rm -f "${TD_INSTALL_DIR:-$HOME/.local/bin}/$BINARY"
-    step "Uninstalled. Config remains under ~/.config/tg-drive-cli."
+    step "Uninstalled. Config remains under ~/.config/tg-drive."
     exit 0
     ;;
   --help|-h)

@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
-	"github.com/thedavidweng/tg-drive-cli/core/ports"
+	"github.com/thedavidweng/tg-drive/core/fsmodel"
+	"github.com/thedavidweng/tg-drive/core/ports"
 )
 
 var _ ports.FileIndex = (*DB)(nil)

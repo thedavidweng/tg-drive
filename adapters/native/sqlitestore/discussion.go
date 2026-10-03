@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // DiscussionGroup returns the linked discussion group identity of a channel

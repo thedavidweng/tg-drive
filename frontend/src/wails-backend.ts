@@ -1,6 +1,6 @@
 import { Events } from "@wailsio/runtime"
 
-import { Auth, Channels, Drive, Import, Maintenance, Settings, Transfers } from "../bindings/github.com/thedavidweng/tg-drive-cli/internal/gui"
+import { Auth, Channels, Drive, Import, Maintenance, Settings, Transfers } from "../bindings/github.com/thedavidweng/tg-drive/internal/gui"
 import type { Backend, BackendError } from "@/backend"
 
 /**

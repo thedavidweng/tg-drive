@@ -8,7 +8,7 @@ import (
 	"github.com/go-faster/errors"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // UploadMediaGroup sends the requests as one native media group via

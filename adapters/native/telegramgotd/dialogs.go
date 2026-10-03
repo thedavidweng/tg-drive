@@ -11,7 +11,7 @@ import (
 	"github.com/gotd/td/telegram/query"
 	"github.com/gotd/td/telegram/query/dialogs"
 	"github.com/gotd/td/tg"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // formatTDChannelTitle appends " [TD]" so drive channels are easy to pick in init.

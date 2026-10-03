@@ -5,13 +5,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sessionlock"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/telegramgotd"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
+	"github.com/thedavidweng/tg-drive/adapters/native/sessionlock"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
+	"github.com/thedavidweng/tg-drive/adapters/native/telegramgotd"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram/fake"
+	"github.com/thedavidweng/tg-drive/internal/config"
 )
 
 // Options configures Open. Empty paths resolve through the TD_* environment

@@ -29,7 +29,7 @@ export TD_PHONE=...
 ## Login
 
 - You only need to log in once. The session persists to
-  `~/.config/tg-drive-cli/session.json`. `td auth status --json` reports
+  `~/.config/tg-drive/session.json`. `td auth status --json` reports
   whether a login is necessary.
 - Re-running `td auth login` while a code is pending reuses that code. Pass
   `--resend` only when you need a fresh one.

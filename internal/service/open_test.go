@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 func openOptions(t *testing.T) Options {

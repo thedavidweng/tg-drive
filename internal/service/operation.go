@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/sqlitestore"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // An operation (ADR 0030) is one use case's exclusive claim on canonical

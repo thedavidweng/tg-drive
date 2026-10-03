@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // cancelled returns ERR_CANCELLED once ctx is cancelled. Long-running use

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/fileperm"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
-	"github.com/thedavidweng/tg-drive-cli/core/model"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/adapters/native/fileperm"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/fsmodel"
+	"github.com/thedavidweng/tg-drive/core/model"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 	_ "modernc.org/sqlite"
 )
 

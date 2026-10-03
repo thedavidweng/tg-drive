@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // DiscussionClient implementation (ADR 0018). The fake models the linked

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/thedavidweng/tg-drive-cli/core/ports"
+	"github.com/thedavidweng/tg-drive/core/ports"
 )
 
 // FS implements ports.FileSystem using the host OS filesystem.

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/gotd/td/tg"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // TestBuildAlbumInputMedia pins the sendMultiMedia input mapping: photo kind

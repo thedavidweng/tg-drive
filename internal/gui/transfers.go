@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
-	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
 
 // Transfers is the facade service over the Transfer Manager (ADR 0033):

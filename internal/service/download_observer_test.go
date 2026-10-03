@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // A single-file download reports the downloading stage, byte progress up to

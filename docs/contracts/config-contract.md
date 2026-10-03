@@ -1,6 +1,8 @@
 # Config contract
 
-Default path: `~/.config/tg-drive-cli/config.toml` on Unix, `%APPDATA%\tg-drive-cli\config.toml` on Windows.
+Default path: `~/.config/tg-drive/config.toml` on Unix, `%APPDATA%\tg-drive\config.toml` on Windows. Data directory: `~/.local/share/tg-drive` on Unix, `%LOCALAPPDATA%\tg-drive` on Windows.
+
+An install that already has `config.toml`, `session.json`, or `gui-session.json` under the previous `tg-drive-cli` config directory keeps using that directory. The same rule applies to `local_cache.db` in the data directory. `TD_CONFIG`, `TD_SESSION`, and `TD_DB` still override these paths. Moving the directories to the `tg-drive` names is optional.
 
 ```toml
 [telegram]
@@ -9,8 +11,8 @@ api_hash = "redacted in output"
 phone = "+10000000000"
 
 [storage]
-db_path = "~/.local/share/tg-drive-cli/local_cache.db"
-session_path = "~/.config/tg-drive-cli/session.json"
+db_path = "~/.local/share/tg-drive/local_cache.db"
+session_path = "~/.config/tg-drive/session.json"
 
 [caption]
 safe_media_caption_utf16_units = 1024

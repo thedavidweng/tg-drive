@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/internal/output"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
-	"github.com/thedavidweng/tg-drive-cli/internal/version"
+	"github.com/thedavidweng/tg-drive/internal/output"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/version"
 )
 
 // Runtime is the command runtime contract.

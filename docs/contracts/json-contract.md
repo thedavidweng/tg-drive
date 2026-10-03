@@ -142,7 +142,7 @@ must match the interrupted attempt).
     "user_id": 42,
     "display_name": "Test User",
     "channels": [],
-    "db_path": "/home/you/.local/share/tg-drive-cli/local_cache.db"
+    "db_path": "/home/you/.local/share/tg-drive/local_cache.db"
   }
 }
 ```
@@ -167,7 +167,7 @@ Once a channel is bound it adds the selected channel and index counters:
     "stale_locks": 0,
     "upload_states": 0,
     "upload_limit_bytes": 2147483648,
-    "db_path": "/home/you/.local/share/tg-drive-cli/local_cache.db"
+    "db_path": "/home/you/.local/share/tg-drive/local_cache.db"
   }
 }
 ```

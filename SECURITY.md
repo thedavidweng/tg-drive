@@ -19,5 +19,5 @@ view and download them. Captions and hashtags expose path names.
 
 Please do not open a public issue for a vulnerability.
 
-Open a [private security advisory](https://github.com/thedavidweng/tg-drive-cli/security/advisories/new)
+Open a [private security advisory](https://github.com/thedavidweng/tg-drive/security/advisories/new)
 or contact the maintainer through the repository profile.

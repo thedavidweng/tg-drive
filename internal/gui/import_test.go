@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram/fake"
+	"github.com/thedavidweng/tg-drive/internal/gui"
 )
 
 // seedSaved seeds a bound drive and, after the seeding front end closes,

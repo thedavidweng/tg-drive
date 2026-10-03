@@ -7,7 +7,7 @@ import (
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // Saved Messages support (td import saved). The saved chat is the self peer:

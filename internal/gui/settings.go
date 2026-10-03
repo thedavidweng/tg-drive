@@ -5,8 +5,8 @@ package gui
 import (
 	"context"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
-	"github.com/thedavidweng/tg-drive-cli/internal/version"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/version"
 )
 
 // Settings is the facade service for config and appearance preferences.

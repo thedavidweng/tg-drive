@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/internal/config"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/config"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // Channel selection, listing, and bound-status commands.

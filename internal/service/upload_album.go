@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/fsmodel"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/fsmodel"
 )
 
 // Album uploads publish several files as native Telegram media groups

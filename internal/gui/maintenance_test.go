@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram/fake"
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram/fake"
+	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // seedUnmanaged seeds a bound drive and adds a plain document message

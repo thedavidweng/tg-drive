@@ -10,7 +10,7 @@ import (
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
 
-	tgtelegram "github.com/thedavidweng/tg-drive-cli/core/telegram"
+	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // DiscussionClient implementation (ADR 0018): the linked discussion
@@ -85,7 +85,7 @@ func (c *Client) EnsureDiscussionGroup(ctx context.Context, channelID int64) (*t
 			title = t + " Discussion"
 		}
 		upd, err := api.ChannelsCreateChannel(ctx, &tg.ChannelsCreateChannelRequest{
-			Title: title, About: "tg-drive-cli machine records (ADR 0018)", Megagroup: true,
+			Title: title, About: "tg-drive machine records (ADR 0018)", Megagroup: true,
 		})
 		if err != nil {
 			return mapRPCError(err)

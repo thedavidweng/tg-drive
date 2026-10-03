@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // Drive browses the bound channel's index.

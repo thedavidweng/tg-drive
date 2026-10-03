@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/gui"
 )
 
 // The tray and quit flows cannot run headless (no display, no tray

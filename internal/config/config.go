@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/thedavidweng/tg-drive-cli/adapters/native/fileperm"
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	"github.com/thedavidweng/tg-drive/adapters/native/fileperm"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // Config matches docs/contracts/config-contract.md.
@@ -132,21 +132,58 @@ func Defaults() Config {
 }
 
 func defaultConfigDir(home string) string {
-	if runtime.GOOS == "windows" {
-		if appData := os.Getenv("APPDATA"); appData != "" {
-			return filepath.Join(appData, "tg-drive-cli")
-		}
-	}
-	return filepath.Join(home, ".config", "tg-drive-cli")
+	return preferDir(
+		namedConfigDir(home, "tg-drive"),
+		namedConfigDir(home, "tg-drive-cli"),
+		"config.toml", "session.json", "gui-session.json",
+	)
 }
 
 func defaultDataDir(home string) string {
+	return preferDir(
+		namedDataDir(home, "tg-drive"),
+		namedDataDir(home, "tg-drive-cli"),
+		"local_cache.db",
+	)
+}
+
+func namedConfigDir(home, name string) string {
 	if runtime.GOOS == "windows" {
-		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			return filepath.Join(local, "tg-drive-cli")
+		if appData := os.Getenv("APPDATA"); appData != "" {
+			return filepath.Join(appData, name)
 		}
 	}
-	return filepath.Join(home, ".local", "share", "tg-drive-cli")
+	return filepath.Join(home, ".config", name)
+}
+
+func namedDataDir(home, name string) string {
+	if runtime.GOOS == "windows" {
+		if local := os.Getenv("LOCALAPPDATA"); local != "" {
+			return filepath.Join(local, name)
+		}
+	}
+	return filepath.Join(home, ".local", "share", name)
+}
+
+// preferDir keeps an install that already has files under the previous
+// directory name. New installs use current.
+func preferDir(current, legacy string, markers ...string) string {
+	if dirHasAny(current, markers...) {
+		return current
+	}
+	if dirHasAny(legacy, markers...) {
+		return legacy
+	}
+	return current
+}
+
+func dirHasAny(dir string, names ...string) bool {
+	for _, name := range names {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultConfigPath returns the default config file path.

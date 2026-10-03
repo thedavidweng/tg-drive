@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 const AlbumMagic = "td-album:v1"

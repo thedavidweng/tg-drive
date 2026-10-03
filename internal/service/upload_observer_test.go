@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // observed records everything an Observer receives, one line per callback,

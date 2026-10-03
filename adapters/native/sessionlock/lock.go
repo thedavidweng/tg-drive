@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 )
 
 // DefaultWait is how long Acquire waits for another process by default.

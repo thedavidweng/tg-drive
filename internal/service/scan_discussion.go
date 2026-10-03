@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sort"
 
-	apperr "github.com/thedavidweng/tg-drive-cli/core/errors"
-	"github.com/thedavidweng/tg-drive-cli/core/manifest"
-	"github.com/thedavidweng/tg-drive-cli/core/telegram"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/manifest"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // collectDiscussionComments runs the ADR 0018 pass of a scan: walk the

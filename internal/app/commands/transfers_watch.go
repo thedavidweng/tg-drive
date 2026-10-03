@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive-cli/internal/transfer"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
 
 // Like list and show, watch reads the index only, through an offline App:
