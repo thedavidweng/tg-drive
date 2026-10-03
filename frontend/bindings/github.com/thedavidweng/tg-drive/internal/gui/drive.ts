@@ -19,7 +19,7 @@ import * as $models from "./models.js";
  * cannot be deleted (file-level deletes only).
  */
 export function Delete(path: string, opts: $models.DeleteOptions): $CancellablePromise<$models.DeleteOutcome | null> {
-    return $Call.ByID(1869824443, path, opts);
+    return $Call.ByID(2894188476, path, opts);
 }
 
 /**
@@ -28,7 +28,7 @@ export function Delete(path: string, opts: $models.DeleteOptions): $CancellableP
  * becomes the one index sync re-reads and emits on EventDirectoryChanged.
  */
 export function List(path: string): $CancellablePromise<$models.Entry[] | null> {
-    return $Call.ByID(2300287016, path);
+    return $Call.ByID(1946969127, path);
 }
 
 /**
@@ -36,7 +36,7 @@ export function List(path: string): $CancellablePromise<$models.Entry[] | null> 
  * store empty directories, so it is local-only until a file lands in it.
  */
 export function Mkdir(path: string): $CancellablePromise<void> {
-    return $Call.ByID(2095739627, path);
+    return $Call.ByID(1005102246, path);
 }
 
 /**
@@ -44,7 +44,7 @@ export function Mkdir(path: string): $CancellablePromise<void> {
  * bound channel. Directories cannot move (file-level moves only).
  */
 export function Move($from: string, to: string, opts: $models.MoveOptions): $CancellablePromise<void> {
-    return $Call.ByID(4061605997, $from, to, opts);
+    return $Call.ByID(317222262, $from, to, opts);
 }
 
 /**
@@ -53,14 +53,14 @@ export function Move($from: string, to: string, opts: $models.MoveOptions): $Can
  * carries the completed counts.
  */
 export function Scan(): $CancellablePromise<$models.ScanOutcome | null> {
-    return $Call.ByID(646652633);
+    return $Call.ByID(1601550214);
 }
 
 /**
  * Share returns the invite link and legacy hashtag for a remote path.
  */
 export function Share(path: string): $CancellablePromise<$models.ShareLink | null> {
-    return $Call.ByID(459880203, path);
+    return $Call.ByID(3296790, path);
 }
 
 /**
@@ -68,5 +68,5 @@ export function Share(path: string): $CancellablePromise<$models.ShareLink | nul
  * levels (0 for the service default).
  */
 export function Tree(path: string, maxDepth: number): $CancellablePromise<$models.TreeNode[] | null> {
-    return $Call.ByID(2765817736, path, maxDepth);
+    return $Call.ByID(3132039523, path, maxDepth);
 }

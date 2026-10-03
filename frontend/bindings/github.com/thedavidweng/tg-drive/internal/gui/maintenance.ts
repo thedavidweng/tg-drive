@@ -21,7 +21,7 @@ import * as $models from "./models.js";
  * with ERR_CONFIRMATION_REQUIRED.
  */
 export function Adopt(opts: $models.AdoptOptions): $CancellablePromise<$models.AdoptOutcome | null> {
-    return $Call.ByID(11547493, opts);
+    return $Call.ByID(879797616, opts);
 }
 
 /**
@@ -30,7 +30,7 @@ export function Adopt(opts: $models.AdoptOptions): $CancellablePromise<$models.A
  * facade never reimplements a check.
  */
 export function Doctor(): $CancellablePromise<$models.DoctorReport | null> {
-    return $Call.ByID(596083222);
+    return $Call.ByID(389689345);
 }
 
 /**
@@ -38,7 +38,7 @@ export function Doctor(): $CancellablePromise<$models.DoctorReport | null> {
  * slug mappings against the database.
  */
 export function PathCodecDoctor(): $CancellablePromise<$models.PathCodecReport | null> {
-    return $Call.ByID(700155479);
+    return $Call.ByID(3711706498);
 }
 
 /**
@@ -46,7 +46,7 @@ export function PathCodecDoctor(): $CancellablePromise<$models.PathCodecReport |
  * touching Telegram or the index.
  */
 export function PreviewAdopt(opts: $models.AdoptOptions): $CancellablePromise<$models.AdoptOutcome | null> {
-    return $Call.ByID(2009501791, opts);
+    return $Call.ByID(3397378852, opts);
 }
 
 /**
@@ -54,5 +54,5 @@ export function PreviewAdopt(opts: $models.AdoptOptions): $CancellablePromise<$m
  * EventRepairItem once per item the mode accounts for.
  */
 export function Repair(opts: $models.RepairOptions): $CancellablePromise<$models.RepairOutcome | null> {
-    return $Call.ByID(1135410096, opts);
+    return $Call.ByID(3540652803, opts);
 }

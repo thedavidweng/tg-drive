@@ -28,7 +28,7 @@ import * as $models from "./models.js";
  * data directory.
  */
 export function Bind(req: $models.BindRequest): $CancellablePromise<$models.BindResult | null> {
-    return $Call.ByID(1609817859, req);
+    return $Call.ByID(1088607006, req);
 }
 
 /**
@@ -36,7 +36,7 @@ export function Bind(req: $models.BindRequest): $CancellablePromise<$models.Bind
  * drives marked, plus the default title for a created channel.
  */
 export function Choices(): $CancellablePromise<$models.BindChoices | null> {
-    return $Call.ByID(2321931548);
+    return $Call.ByID(653420207);
 }
 
 /**
@@ -45,7 +45,7 @@ export function Choices(): $CancellablePromise<$models.BindChoices | null> {
  * channel can carry machine records (ADR 0018).
  */
 export function LinkDiscussion(): $CancellablePromise<$models.DiscussionLink | null> {
-    return $Call.ByID(3269868332);
+    return $Call.ByID(2080019973);
 }
 
 /**
@@ -53,7 +53,7 @@ export function LinkDiscussion(): $CancellablePromise<$models.DiscussionLink | n
  * one. It reads only the index, never Telegram, so it also works offline.
  */
 export function List(): $CancellablePromise<$models.ChannelInfo[] | null> {
-    return $Call.ByID(4263022068);
+    return $Call.ByID(3213464817);
 }
 
 /**
@@ -63,7 +63,7 @@ export function List(): $CancellablePromise<$models.ChannelInfo[] | null> {
  * current channel.
  */
 export function Select(channelID: string): $CancellablePromise<$models.ChannelStatus | null> {
-    return $Call.ByID(2032727796, channelID);
+    return $Call.ByID(4047971677, channelID);
 }
 
 /**
@@ -71,5 +71,5 @@ export function Select(channelID: string): $CancellablePromise<$models.ChannelSt
  * fails with ERR_CHANNEL_NOT_FOUND.
  */
 export function Status(): $CancellablePromise<$models.ChannelStatus | null> {
-    return $Call.ByID(3734676182);
+    return $Call.ByID(3180281727);
 }
