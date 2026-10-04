@@ -189,6 +189,17 @@ func retireTx(ctx context.Context, tx *sql.Tx, fileID int64, status, now string)
 	return err
 }
 
+// TouchActive records that the active row at a canonical path changed only on
+// its Telegram surface (a caption edit), without a status transition.
+func (d *DB) TouchActive(ctx context.Context, channelRowID int64, canonicalPath, now string) error {
+	return d.WithTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			update files set updated_at=? where channel_id=? and canonical_path=? and status='active'`,
+			now, channelRowID, canonicalPath)
+		return err
+	})
+}
+
 // SetManifest records the machine-record message (and its carrier chat; empty
 // means the legacy in-channel reply) on every row backed by messageIDs: one
 // row for a per-file manifest, every member for an album inventory.

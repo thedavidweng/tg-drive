@@ -141,12 +141,7 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 				return nil
 			}
 			obs.stage(it, StagePublishing)
-			tx, err := a.DB.Raw().BeginTx(ctx, nil)
-			if err != nil {
-				return apperr.Wrap(apperr.ErrDB, "begin caption cleanup", err)
-			}
 			if err := a.TG.EditCaption(ctx, tgChannelID, target.messageID, clean); err != nil {
-				_ = tx.Rollback()
 				var notEditable *telegram.MessageNotEditableError
 				if errors.As(err, &notEditable) {
 					item.Action = "skipped"
@@ -155,14 +150,8 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 				}
 				return telegram.MapError(err)
 			}
-			if _, err := tx.ExecContext(ctx,
-				`update files set updated_at=? where channel_id=? and canonical_path=? and status='active'`,
-				time.Now().UTC().Format(time.RFC3339), channelID, target.path); err != nil {
-				_ = tx.Rollback()
+			if err := a.DB.TouchActive(ctx, channelID, target.path, time.Now().UTC().Format(time.RFC3339)); err != nil {
 				return apperr.Wrap(apperr.ErrDB, "record caption cleanup", err)
-			}
-			if err := tx.Commit(); err != nil {
-				return apperr.Wrap(apperr.ErrDB, "commit caption cleanup", err)
 			}
 			item.Action = "clean"
 			return nil

@@ -2,10 +2,15 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 	"github.com/thedavidweng/tg-drive/core/pathcodec"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 func oldRenderedCaption(t *testing.T, app *App, channelID int64, path, display, prefix string) string {
@@ -165,5 +170,109 @@ func TestRepairCaptionsSkipsUneditableMessage(t *testing.T) {
 	}
 	if res.Skipped != 1 || res.Cleaned != 0 || res.Failed != 0 {
 		t.Fatalf("cleanup = %+v", res)
+	}
+}
+
+// slowCaptionEdit holds every EditCaption until release closes, after
+// signalling entered, so a test can act while a caption edit is in flight.
+type slowCaptionEdit struct {
+	telegram.Client
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *slowCaptionEdit) EditCaption(ctx context.Context, channelID int64, messageID int, caption string) error {
+	s.once.Do(func() { close(s.entered) })
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return s.Client.EditCaption(ctx, channelID, messageID, caption)
+}
+
+// A caption edit in flight holds no SQLite write lock: another process's
+// writer commits while Telegram is still answering, instead of queueing on
+// busy_timeout and failing with SQLITE_BUSY.
+func TestRepairCaptionsEditDoesNotBlockOtherWriters(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+	result, err := app.UploadFile(ctx, writeLocal(t, "caption body"), "/old/clip.mp4", ConflictFail, false, UploadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelID, _, err := app.channelID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tgChannelID, _ := app.tgChannelID(ctx)
+	if err := tg.EditCaption(ctx, tgChannelID, result.MessageID,
+		oldRenderedCaption(t, app, channelID, "/old/clip.mp4", "clip.mp4", "")); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second handle on the database stands in for another process.
+	other, err := sqlitestore.Open(app.Cfg.Storage.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = other.Close() }()
+
+	slow := &slowCaptionEdit{Client: app.TG, entered: make(chan struct{}), release: make(chan struct{})}
+	app.TG = slow
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(slow.release) }) }
+	t.Cleanup(release)
+
+	type repairOutcome struct {
+		res *RepairCaptionsResult
+		err error
+	}
+	repaired := make(chan repairOutcome, 1)
+	go func() {
+		res, err := app.RepairCaptions(ctx, "/old", false, false, Observer{})
+		repaired <- repairOutcome{res, err}
+	}()
+	select {
+	case <-slow.entered:
+	case out := <-repaired:
+		t.Fatalf("repair finished before editing a caption: %+v, %v", out.res, out.err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("caption edit never started")
+	}
+
+	wrote := make(chan error, 1)
+	go func() {
+		wrote <- other.WithTx(ctx, func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, `update channels set updated_at=? where id=?`,
+				time.Now().UTC().Format(time.RFC3339), channelID)
+			return err
+		})
+	}()
+	select {
+	case err := <-wrote:
+		if err != nil {
+			t.Fatalf("writer during caption edit: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("writer blocked while a caption edit was in flight")
+	}
+
+	release()
+	out := <-repaired
+	if out.err != nil {
+		t.Fatal(out.err)
+	}
+	if out.res.Cleaned != 1 || out.res.Failed != 0 {
+		t.Fatalf("cleanup = %+v", out.res)
+	}
+	msg, err := tg.GetMessage(ctx, tgChannelID, result.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Caption != "clip.mp4" {
+		t.Fatalf("caption = %q", msg.Caption)
 	}
 }
