@@ -20,15 +20,30 @@ import { SettingsScreen } from "@/settings"
 import { applyTheme, storedTheme, type ThemeMode } from "@/theme"
 import { TransfersScreen } from "@/transfers"
 
+// inDemo marks the tabs the website's live demo (ADR 0041) keeps open.
 const tabs = [
-  { id: "drive", label: "tab.drive" },
-  { id: "transfers", label: "tab.transfers" },
-  { id: "import", label: "tab.import" },
-  { id: "maintenance", label: "tab.maintenance" },
-  { id: "settings", label: "tab.settings" },
-] as const satisfies readonly { id: string; label: MessageKey }[]
+  { id: "drive", label: "tab.drive", inDemo: true },
+  { id: "transfers", label: "tab.transfers", inDemo: true },
+  { id: "import", label: "tab.import", inDemo: false },
+  { id: "maintenance", label: "tab.maintenance", inDemo: false },
+  { id: "settings", label: "tab.settings", inDemo: false },
+] as const satisfies readonly { id: string; label: MessageKey; inDemo: boolean }[]
 
-export function App({ backend, languages }: { backend: Backend; languages: readonly string[] }) {
+/**
+ * demo is the website's live demo (ADR 0041): the same screens on an
+ * in-memory backend, with everything that would reach the account or the
+ * local disk (uploads, logout, drive binding, Import, Maintenance,
+ * Settings) disabled.
+ */
+export function App({
+  backend,
+  languages,
+  demo = false,
+}: {
+  backend: Backend
+  languages: readonly string[]
+  demo?: boolean
+}) {
   const [theme, setTheme] = useState<ThemeMode>(storedTheme)
   const [language, setLanguage] = useState<LanguagePref>(storedLanguage)
   const [omarchy, setOmarchy] = useState<OmarchyState | null>(null)
@@ -60,6 +75,7 @@ export function App({ backend, languages }: { backend: Backend; languages: reado
     <I18nProvider languages={languages} language={language}>
       <Shell
         backend={backend}
+        demo={demo}
         theme={theme}
         onTheme={(mode) => {
           applyTheme(mode)
@@ -93,6 +109,7 @@ type Gate =
 
 interface ShellProps {
   backend: Backend
+  demo: boolean
   theme: ThemeMode
   onTheme: (mode: ThemeMode) => void
   language: LanguagePref
@@ -103,7 +120,7 @@ interface ShellProps {
 }
 
 function Shell(props: ShellProps) {
-  const { backend } = props
+  const { backend, demo } = props
   const { t } = useI18n()
   const [gate, setGate] = useState<Gate>({ state: "loading" })
   // The channel the drive is bound to; switching remounts the Drive view,
@@ -144,7 +161,7 @@ function Shell(props: ShellProps) {
       <header className="app-drag app-header grid h-13 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-line px-3.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <Logo />
-          <ChannelSwitcher backend={backend} onActiveChange={setActiveChannel} />
+          <ChannelSwitcher backend={backend} onActiveChange={setActiveChannel} disabled={demo} />
         </div>
         <TabsList
           aria-label={t("tabs.label")}
@@ -154,6 +171,8 @@ function Shell(props: ShellProps) {
             <TabsTrigger
               key={tab.id}
               value={tab.id}
+              disabled={demo && !tab.inDemo}
+              title={demo && !tab.inDemo ? t("demo.unavailable") : undefined}
               className="h-6 flex-none rounded-control border-0 px-3 text-[12.5px] font-normal text-ctl-fg transition-colors duration-180 ease-quiet hover:text-fg-2 data-active:bg-seg-thumb data-active:text-fg data-active:shadow-seg dark:data-active:border-0 dark:data-active:bg-seg-thumb"
             >
               {t(tab.label)}
@@ -164,6 +183,7 @@ function Shell(props: ShellProps) {
           {gate.status.user && (
             <AccountChip
               user={gate.status.user}
+              logoutDisabled={demo}
               onLogout={() => {
                 // A failed logout leaves the session as it was; refresh
                 // either way so the chip reflects the truth.
@@ -176,7 +196,7 @@ function Shell(props: ShellProps) {
       </header>
       <main className="min-h-0 flex-1 overflow-auto p-3.5">
         <TabsContent value="drive">
-          <DriveScreen key={activeChannel} backend={backend} />
+          <DriveScreen key={activeChannel} backend={backend} uploadsDisabled={demo} />
         </TabsContent>
         <TabsContent value="transfers">
           <TransfersScreen backend={backend} />
@@ -218,7 +238,15 @@ function Logo() {
 }
 
 /** The logged-in account with the logout action, in the header's right. */
-function AccountChip({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function AccountChip({
+  user,
+  logoutDisabled,
+  onLogout,
+}: {
+  user: AuthUser
+  logoutDisabled: boolean
+  onLogout: () => void
+}) {
   const { t } = useI18n()
   return (
     <span
@@ -232,9 +260,10 @@ function AccountChip({ user, onLogout }: { user: AuthUser; onLogout: () => void 
       <button
         type="button"
         aria-label={t("auth.logout")}
-        title={t("auth.logout")}
+        title={logoutDisabled ? t("demo.unavailable") : t("auth.logout")}
+        disabled={logoutDisabled}
         onClick={onLogout}
-        className="grid size-6 shrink-0 place-items-center rounded-full text-ctl-fg transition-[background-color,color,scale] duration-150 ease-quiet hover:bg-pill-hover hover:text-fg active:scale-94"
+        className="grid size-6 shrink-0 place-items-center rounded-full text-ctl-fg transition-[background-color,color,scale] duration-150 ease-quiet hover:bg-pill-hover hover:text-fg active:scale-94 disabled:pointer-events-none disabled:opacity-40"
       >
         <LogOut aria-hidden className="size-3.5" />
       </button>

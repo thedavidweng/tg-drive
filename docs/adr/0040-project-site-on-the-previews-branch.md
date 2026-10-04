@@ -1,6 +1,6 @@
 # 0040: Project site on the previews branch
 
-Status: Accepted.
+Status: Accepted. The no-build-tool point is amended by ADR 0041 (live demo).
 
 Context: The project needs a public website at
 `thedavidweng.github.io/tg-drive/`. A repository has one GitHub Pages site,

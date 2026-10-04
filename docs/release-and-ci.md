@@ -222,7 +222,7 @@ required branch-protection checks.
 ## Project site
 
 The website at <https://thedavidweng.github.io/tg-drive/> is plain static
-files in `site/` (HTML, CSS, a little JS; no build tool). Its images come
+files in `site/` (HTML, CSS, a little JS). Its images come
 from `assets/icon.png` and `assets/screenshot.png`, the same files the
 README shows. `.github/workflows/site.yml` runs on pushes to `main` that
 touch them (or by hand) and calls `site/publish.mjs publish`, which
@@ -230,9 +230,19 @@ replaces the root of the `previews` branch while keeping the UI preview's
 `pr-*/` directories (ADR 0040). The UI preview never overwrites the site's
 `index.html`.
 
+The showcase is a live demo on wide screens (ADR 0041): the real frontend
+built with `bun run build:demo` (`frontend/demo.html`, `src/demo/`) runs
+`App` in demo mode on the screen tests' in-memory backend, filled with the
+public sample files in `src/demo/samples.ts`. `site.js` loads it into an
+iframe only when the showcase scrolls near; the screenshot is only the
+fallback for narrow screens, no JavaScript, or a demo that fails to start. The site
+workflow also runs on `frontend/**` changes and builds the demo before
+publishing, so the demo always matches `main`.
+
 Preview locally:
 
 ```sh
+(cd frontend && bun run build:demo)
 node site/publish.mjs build /tmp/td-site
 python3 -m http.server -d /tmp/td-site 8765
 ```

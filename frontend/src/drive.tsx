@@ -55,7 +55,7 @@ type TransferNote =
   | { state: "started"; kind: "upload" | "download" }
   | { state: "failed"; error: BackendError }
 
-export function DriveScreen({ backend }: { backend: Backend }) {
+export function DriveScreen({ backend, uploadsDisabled = false }: { backend: Backend; uploadsDisabled?: boolean }) {
   const { t } = useI18n()
   const [path, setPath] = useState("/")
   const [result, setResult] = useState<FetchResult<Entry[]> | null>(null)
@@ -162,13 +162,20 @@ export function DriveScreen({ backend }: { backend: Backend }) {
       <div className="mb-3 flex min-h-7 flex-wrap items-center justify-between gap-2">
         <Breadcrumbs path={path} onNavigate={setPath} />
         <div className="flex items-center gap-1.5">
-          <Button size="sm" onClick={() => pickAndUpload(() => backend.transfers.pickFiles())}>
+          <Button
+            size="sm"
+            disabled={uploadsDisabled}
+            title={uploadsDisabled ? t("demo.unavailable") : undefined}
+            onClick={() => pickAndUpload(() => backend.transfers.pickFiles())}
+          >
             <Upload data-icon="inline-start" />
             {t("drive.uploadFiles")}
           </Button>
           <Button
             variant="outline"
             size="sm"
+            disabled={uploadsDisabled}
+            title={uploadsDisabled ? t("demo.unavailable") : undefined}
             onClick={async () => pickAndUpload(async () => [await backend.transfers.pickDirectory()])}
           >
             <FolderUp data-icon="inline-start" />
@@ -407,7 +414,7 @@ function ListingCard({
           <span className="w-16 shrink-0 text-right text-[11.5px] text-muted-foreground tabular-nums">
             {e.type === "dir" ? "" : formatSize(e.size, t)}
           </span>
-          <span className="w-32 shrink-0 text-right text-[11.5px] text-muted-foreground tabular-nums">
+          <span className="w-36 shrink-0 text-right text-[11.5px] whitespace-nowrap text-muted-foreground tabular-nums">
             {formatDate(e.date, locale)}
           </span>
           {e.type === "file" && (

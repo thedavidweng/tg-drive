@@ -85,15 +85,25 @@
           </div>
         </section>
 
-        <section class="showcase" aria-label="td-gui screenshot">
+        <section class="showcase" aria-label="td-gui">
           <div class="glow" aria-hidden="true"></div>
-          <img
-            class="shot"
-            src="img/screenshot.png"
-            width="2142"
-            height="1502"
-            alt="td-gui showing the Drive tab: two folders and a file stored in a Telegram channel"
-          />
+          <!-- On wide screens site.js loads the live demo (the real frontend
+               on an in-memory drive) here once it scrolls near; the
+               screenshot is only the fallback, inserted by site.js. -->
+          <div class="shot" data-demo data-shot-alt="td-gui showing the Drive tab: two folders and a file stored in a Telegram channel">
+            <noscript>
+              <img
+                src="img/screenshot.png"
+                width="2142"
+                height="1502"
+                alt="td-gui showing the Drive tab: two folders and a file stored in a Telegram channel"
+              />
+            </noscript>
+          </div>
+          <p class="demo-note" data-demo-note hidden>
+            Live demo. The real td-gui running in your browser on sample files. Nothing is uploaded, and
+            settings are off.
+          </p>
         </section>
 
         <section id="features" class="section">

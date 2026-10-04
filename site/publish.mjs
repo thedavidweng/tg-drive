@@ -17,10 +17,19 @@ const root = path.dirname(here)
 const files = ["index.html", "site.css", "site.js"]
 const images = { "icon.png": "assets/icon.png", "screenshot.png": "assets/screenshot.png" }
 
+// The live demo (ADR 0041) is the GUI frontend's demo build.
+const demo = path.join(root, "frontend", "dist-demo")
+
 async function build(out) {
+  try {
+    await fs.access(path.join(demo, "demo.html"))
+  } catch {
+    throw new Error("no demo build: run `bun run build:demo` in frontend/ first")
+  }
   await fs.mkdir(path.join(out, "img"), { recursive: true })
   for (const f of files) await fs.copyFile(path.join(here, f), path.join(out, f))
   for (const [name, src] of Object.entries(images)) await fs.copyFile(path.join(root, src), path.join(out, "img", name))
+  await fs.cp(demo, path.join(out, "demo"), { recursive: true })
 }
 
 function git(args, cwd) {

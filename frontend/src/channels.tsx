@@ -37,9 +37,11 @@ export function storeChannel(id: string) {
 export function ChannelSwitcher({
   backend,
   onActiveChange,
+  disabled = false,
 }: {
   backend: Backend
   onActiveChange: (channelID: string) => void
+  disabled?: boolean
 }) {
   const { t } = useI18n()
   const [channels, setChannels] = useState<ChannelInfo[] | null>(null)
@@ -106,12 +108,13 @@ export function ChannelSwitcher({
       <button
         type="button"
         aria-label={t("channels.switcher")}
-        title={t("channels.switcher")}
+        title={disabled ? t("demo.unavailable") : t("channels.switcher")}
+        disabled={disabled}
         onClick={() => {
           setSelectError(null)
           setSheet("channels")
         }}
-        className="flex h-7 max-w-44 items-center gap-1 rounded-control px-2 text-[12.5px] text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+        className="flex h-7 max-w-44 items-center gap-1 rounded-control px-2 text-[12.5px] text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg disabled:pointer-events-none"
       >
         <HardDrive aria-hidden className="size-3.5 shrink-0" />
         <span className="truncate">{active ? active.title : t("channels.none")}</span>

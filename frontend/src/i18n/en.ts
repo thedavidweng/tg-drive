@@ -7,6 +7,7 @@ export const en = {
   "tab.settings": "Settings",
   "tabs.label": "Sections",
   "placeholder.notYet": "Not available yet.",
+  "demo.unavailable": "Not available in the demo",
   "drive.listLabel": "Files in {path}",
   "drive.treeLabel": "Tree of {path}",
   "drive.loading": "Loading…",

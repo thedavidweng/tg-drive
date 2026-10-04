@@ -432,11 +432,98 @@ h1 {
   filter: blur(40px);
 }
 
+/* The box keeps the screenshot's 2142x1502 proportions whether it holds
+   the demo or the fallback screenshot, so neither shifts the layout. */
 .shot {
-  width: 100%;
+  position: relative;
   max-width: 1080px;
-  height: auto;
+  aspect-ratio: 2142 / 1502;
   margin: 0 auto;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The demo window takes the screenshot capture's window box (at 112,76,
+   sized 1918x1278), leaving the same room around it for the shadow. */
+.demo-window {
+  position: absolute;
+  left: 5.229%;
+  top: 5.06%;
+  width: 89.543%;
+  height: 85.087%;
+  overflow: hidden;
+  border-radius: 11px;
+  background: #f3f3f6;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.18),
+    0 22px 60px -10px rgb(0 0 0 / 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+  .demo-window {
+    background: #1a1a1e;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.9),
+      0 22px 60px -10px rgb(0 0 0 / 0.6);
+  }
+}
+
+.demo-window iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  opacity: 0;
+  transition: opacity 500ms var(--ease-out);
+}
+
+.demo-window.live iframe {
+  opacity: 1;
+}
+
+.demo-window::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(127 127 140 / 0.35);
+  pointer-events: none;
+}
+
+.demo-lights {
+  position: absolute;
+  top: 18.5px;
+  left: 19px;
+  display: flex;
+  gap: 9px;
+  pointer-events: none;
+}
+
+.demo-lights span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f35b51;
+}
+
+.demo-lights span:nth-child(2) {
+  background: #fdbd00;
+}
+
+.demo-lights span:nth-child(3) {
+  background: #24bf00;
+}
+
+.demo-note {
+  margin: 4px auto 0;
+  max-width: 1080px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 /* Sections */

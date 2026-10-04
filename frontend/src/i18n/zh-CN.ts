@@ -8,6 +8,7 @@ export const zhCN: Record<MessageKey, string> = {
   "tab.settings": "设置",
   "tabs.label": "分区",
   "placeholder.notYet": "暂不可用。",
+  "demo.unavailable": "演示中不可用",
   "drive.listLabel": "{path} 中的文件",
   "drive.treeLabel": "{path} 的树形视图",
   "drive.loading": "正在加载…",
