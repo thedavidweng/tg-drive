@@ -112,7 +112,7 @@ outranks the live comment during scans, so the result is not stale.
 Without `--allow-stale-manifest`, a stale record fails `td rm` with
 `ERR_TELEGRAM_RPC` (exit code 4) after the file is already removed and its
 row marked deleted, so rerunning the same `td rm` fails with
-`ERR_REMOTE_NOT_FOUND`. `details` reports that outcome (ADR 0042):
+`ERR_REMOTE_NOT_FOUND`. `details` reports that outcome (ADR 0044):
 
 ```json
 {

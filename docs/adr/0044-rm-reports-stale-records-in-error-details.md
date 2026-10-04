@@ -1,4 +1,4 @@
-# 0042: td rm reports a stale record in its error details
+# 0044: td rm reports a stale record in its error details
 
 Status: Accepted.
 
