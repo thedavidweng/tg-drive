@@ -85,9 +85,9 @@ runs and after it ends, and the command waits for it in the foreground.
 Result output is unchanged. The Transfer kinds are `upload` (single-file
 cp), `download` (single-file get), `album_upload` (multi-file cp, one
 Transfer for the whole album call), `recursive_upload`, and
-`recursive_download`. A single-file `td cp --events` also emits one
-`transfer.stage` event per stage the Transfer enters, alongside the
-`cp.progress` events. Ctrl-C cancels the command's Transfers: they end
+`recursive_download`. `td cp --events` emits one `transfer.stage` event
+per stage the Transfer enters and one `transfer.progress` event per
+confirmed upload part, then the final `cp` line. Ctrl-C cancels the command's Transfers: they end
 `cancelled`.
 
 `--as photo` sends a native photo message: Telegram recompresses the bytes,
@@ -137,8 +137,8 @@ td transfers retry <id>
   # ERR_TRANSFER_NOT_FOUND. Unlike the other transfers subcommands, retry
   # connects to Telegram, so it can wait for the Session lock.
   # --events streams one transfer.stage event per stage the retried
-  # Transfer enters, cp.progress lines for upload kinds as td cp emits
-  # them, then a final transfers.retry line with the ended Transfer.td mv <remote-from> <remote-to>
+  # Transfer enters, transfer.progress lines for upload kinds as td cp
+  # emits them, then a final transfers.retry line with the ended Transfer.td mv <remote-from> <remote-to>
   [--confirm] [--dry-run]
 td rm <remote-path>
   [--tombstone] [--allow-stale-manifest]

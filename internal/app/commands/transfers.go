@@ -3,7 +3,7 @@ package commands
 import (
 	"github.com/spf13/cobra"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
-	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/internal/output"
 	"github.com/thedavidweng/tg-drive/internal/service"
 	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
@@ -118,24 +118,11 @@ func newTransfersRetryCmd(rt Runtime) *cobra.Command {
 			}
 			defer cleanup()
 			var observer transfer.Observer
-			var callObserver service.Observer
 			if events {
-				observer.OnStage = func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) }
-				callObserver.OnProgress = func(p service.Progress) {
-					if p.Part == nil {
-						return
-					}
-					_ = r.Event("cp.progress", telegram.UploadProgressState{
-						FileName: p.Part.FileName,
-						Part:     p.Part.Index,
-						PartSize: p.Part.Size,
-						Uploaded: p.Done,
-						Total:    p.Total,
-					})
-				}
+				observer = transferEvents(r)
 			}
 			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
-			handle, err := manager.Retry(cmd.Context(), args[0], callObserver)
+			handle, err := manager.Retry(cmd.Context(), args[0], service.Observer{})
 			if err != nil {
 				return r.Error(err)
 			}
@@ -180,6 +167,42 @@ func newTransfersShowCmd(rt Runtime) *cobra.Command {
 			}
 			PrintKV(cmd.OutOrStdout(), t)
 			return nil
+		},
+	}
+}
+
+// transferPart is one confirmed upload part as a transfer.progress event
+// reports it. Uploaded and Total are the bytes of the part's own file, which
+// for a multi-file Transfer is one member rather than the whole Transfer.
+type transferPart struct {
+	FileName string `json:"file_name"`
+	Index    int    `json:"index"`
+	Size     int    `json:"size"`
+	Uploaded int64  `json:"uploaded"`
+	Total    int64  `json:"total"`
+}
+
+// transferProgress is the transfer.progress payload: the Transfer as
+// td transfers show returns it, plus the part behind the report.
+type transferProgress struct {
+	transfer.Transfer
+	Part transferPart `json:"part"`
+}
+
+// transferEvents is the --events observer (ADR 0045): a transfer.stage line
+// each time a Transfer enters a stage and a transfer.progress line for each
+// confirmed upload part.
+func transferEvents(r *output.Renderer) transfer.Observer {
+	return transfer.Observer{
+		OnStage: func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) },
+		OnPart: func(t transfer.Transfer, p service.Progress) {
+			_ = r.Event("transfer.progress", transferProgress{Transfer: t, Part: transferPart{
+				FileName: p.Part.FileName,
+				Index:    p.Part.Index,
+				Size:     p.Part.Size,
+				Uploaded: p.Done,
+				Total:    p.Total,
+			}})
 		},
 	}
 }

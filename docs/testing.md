@@ -66,7 +66,7 @@ long-running use case are pinned against the fake in `internal/service`
 (`*_observer_test.go`).
 
 `e2e_cancel_test.go` sends SIGINT during a large `td cp` (after its first
-`cp.progress` event), during `td get --recursive` (after its first file
+`transfer.progress` event), during `td get --recursive` (after its first file
 lands), and at the `td auth login` code prompt. It asserts a prompt exit 130
 with `ERR_CANCELLED`, that the command's Transfers end `cancelled`, and that
 the next `td cp` resumes from the kept upload

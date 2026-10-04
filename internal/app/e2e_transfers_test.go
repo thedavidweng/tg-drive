@@ -31,7 +31,7 @@ func listTransfers(t *testing.T, bin, cfgPath, dbPath, statePath string, args ..
 
 // TestE2ECpEventsTransferStages: td cp --events reports the Transfer's
 // stages as transfer.stage events, in stage order and interleaved where
-// they happen, while the cp.progress lines stay what they were.
+// they happen, with a transfer.progress line for each confirmed part.
 func TestE2ECpEventsTransferStages(t *testing.T) {
 	dir := t.TempDir()
 	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
@@ -49,7 +49,7 @@ func TestE2ECpEventsTransferStages(t *testing.T) {
 	}
 	wantCommands := []string{
 		"transfer.stage", "transfer.stage", "transfer.stage",
-		"cp.progress", "cp.progress", "cp.progress",
+		"transfer.progress", "transfer.progress", "transfer.progress",
 		"transfer.stage", "transfer.stage", "cp",
 	}
 	if !jsonEqual(commands, wantCommands) {
@@ -115,7 +115,7 @@ func TestE2ECpIsATransfer(t *testing.T) {
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 	// The second part's report comes after a throttled progress write.
 	for parts := 0; parts < 2 && sc.Scan(); {
-		if strings.Contains(sc.Text(), `"command":"cp.progress"`) {
+		if strings.Contains(sc.Text(), `"command":"transfer.progress"`) {
 			parts++
 		}
 	}

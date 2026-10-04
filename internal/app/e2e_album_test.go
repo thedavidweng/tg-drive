@@ -70,16 +70,26 @@ func TestE2EAlbumLifecycle(t *testing.T) {
 		t.Fatalf("ls /albums = %d entries, want %d", len(entries), total)
 	}
 
-	// NDJSON: the final cp event carries the album payload.
+	// NDJSON: the album's Transfer reports its stages, and the final cp
+	// event carries the album payload.
 	events := runE2EEvents(t, bin, cfgPath, dbPath, statePath, append([]string{"cp"}, append(locals[:2], "/events/", "--events")...)...)
-	if len(events) != 1 {
-		t.Fatalf("event count = %d, want 1", len(events))
+	final := events[len(events)-1]
+	if cmd(final) != "cp" {
+		t.Fatalf("last event command = %q, want cp", cmd(final))
 	}
-	if cmd(events[0]) != "cp" {
-		t.Fatalf("event command = %q, want cp", cmd(events[0]))
+	for _, ev := range events[:len(events)-1] {
+		if cmd(ev) != "transfer.stage" {
+			t.Fatalf("event command = %q before cp, want transfer.stage only", cmd(ev))
+		}
+		if kind := ev["data"].(map[string]any)["kind"]; kind != "album_upload" {
+			t.Fatalf("transfer.stage kind = %v, want album_upload", kind)
+		}
 	}
-	if _, ok := events[0]["data"].(map[string]any)["albums"]; !ok {
-		t.Fatalf("cp event data missing albums key: %v", events[0])
+	if len(events) < 3 {
+		t.Fatalf("events = %v, want at least queued and completed stages before cp", events)
+	}
+	if _, ok := final["data"].(map[string]any)["albums"]; !ok {
+		t.Fatalf("cp event data missing albums key: %v", final)
 	}
 
 	// Usage contract: multi-file destinations must be directory-shaped, and
