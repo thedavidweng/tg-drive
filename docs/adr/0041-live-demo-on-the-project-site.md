@@ -25,12 +25,14 @@ Vite entry, running on the existing in-memory backend.
   Kodak images, sample audio and documents) listed in `src/demo/samples.ts`
   by path, real size, and source URL. No media is in the repository or
   fetched by the demo; the source URL is for a future file preview.
-- On screens at least 1000px wide, `site.js` shows an empty window and
+- On screens at least 760px wide, `site.js` shows an empty window and
   loads the demo into it in an iframe once the showcase scrolls near. The
-  iframe isolates the app's global styles from the site's. The screenshot
-  goes stale as the GUI changes, so it is only a fallback: narrow screens,
-  no JavaScript, a demo that does not start, and `og:image`. Wide screens
-  never download it.
+  app lays out at the desktop window's size and is scaled to fit, so a
+  narrower screen sees the same layout smaller. The iframe isolates the
+  app's global styles from the site's. The screenshot goes stale as the
+  GUI changes, so it is only a fallback: phones, no JavaScript, a demo
+  that does not start within 15 seconds, and `og:image`. Screens that get
+  the demo never download it.
 - The site workflow also runs on `frontend/**`, builds the demo, and
   `site/publish.mjs` copies it to `demo/`, so the demo follows `main`.
 

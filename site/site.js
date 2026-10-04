@@ -25,11 +25,11 @@ if ("IntersectionObserver" in window) {
   reveals.forEach((el) => el.classList.add("in"))
 }
 
-// The showcase is the live demo on screens wide enough for the desktop
-// layout: an empty window until the showcase scrolls near, then the demo
-// in an iframe. The screenshot is only the fallback (narrow screens, no
-// IntersectionObserver, a demo that does not start), so a wide screen
-// never downloads it.
+// The showcase is the live demo on screens wide enough to use it: an
+// empty window until the showcase scrolls near, then the demo in an
+// iframe, scaled to fit. The screenshot is only the fallback (phones, old
+// browsers, a demo that does not start), so those screens never download
+// it.
 const shot = document.querySelector("[data-demo]")
 
 function showScreenshot() {
@@ -42,15 +42,20 @@ function showScreenshot() {
   shot.append(img)
 }
 
-if ("IntersectionObserver" in window && matchMedia("(min-width: 1000px)").matches) {
+const demoReady = "IntersectionObserver" in window && "ResizeObserver" in window
+if (demoReady && matchMedia("(min-width: 760px)").matches) {
   const win = document.createElement("div")
   win.className = "demo-window"
+  const stage = document.createElement("div")
+  stage.className = "demo-stage"
   const lights = document.createElement("div")
   lights.className = "demo-lights"
   lights.setAttribute("aria-hidden", "true")
   lights.append(...[0, 1, 2].map(() => document.createElement("span")))
-  win.append(lights)
+  stage.append(lights)
+  win.append(stage)
   shot.replaceChildren(win)
+  new ResizeObserver(() => win.style.setProperty("--demo-scale", String(win.clientWidth / 959))).observe(win)
 
   const io = new IntersectionObserver(
     (entries) => {
@@ -59,17 +64,21 @@ if ("IntersectionObserver" in window && matchMedia("(min-width: 1000px)").matche
       const frame = document.createElement("iframe")
       frame.src = "demo/demo.html"
       frame.title = "td-gui live demo"
-      frame.addEventListener("load", () => {
-        // The page loads even when its bundle does not; give React a
-        // moment, then fall back if nothing rendered.
-        setTimeout(() => {
-          const root = frame.contentDocument?.getElementById("root")
-          if (!root || root.childElementCount === 0) return showScreenshot()
+      // Live once React has rendered into the frame; a demo that never
+      // gets there (a failed bundle, a stalled network) falls back.
+      const started = Date.now()
+      const poll = setInterval(() => {
+        const root = frame.contentDocument?.getElementById("root")
+        if (root && root.childElementCount > 0) {
+          clearInterval(poll)
           win.classList.add("live")
           document.querySelector("[data-demo-note]").hidden = false
-        }, 300)
-      })
-      win.prepend(frame)
+        } else if (Date.now() - started > 15000) {
+          clearInterval(poll)
+          showScreenshot()
+        }
+      }, 100)
+      stage.prepend(frame)
     },
     { rootMargin: "200px 0px" },
   )

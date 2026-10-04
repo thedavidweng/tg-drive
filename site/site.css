@@ -202,26 +202,6 @@ li code {
   scroll-margin-top: 40px;
 }
 
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 22px;
-  padding: 5px 12px 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.eyebrow-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--sky);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sky) 22%, transparent);
-}
-
 h1 {
   margin: 0;
   font-size: clamp(2.5rem, 6.4vw, 4.25rem);
@@ -470,6 +450,19 @@ h1 {
       0 0 0 1px rgb(0 0 0 / 0.9),
       0 22px 60px -10px rgb(0 0 0 / 0.6);
   }
+}
+
+/* The app lays out at the window's full size (959x639, the capture at 1x)
+   and site.js scales it to fit, so narrower screens see the same layout
+   smaller instead of a squeezed one. */
+.demo-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 959px;
+  height: 639px;
+  transform: scale(var(--demo-scale, 1));
+  transform-origin: 0 0;
 }
 
 .demo-window iframe {
