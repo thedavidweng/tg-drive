@@ -1330,6 +1330,8 @@ _td_scan()
     flags_with_completion=()
     flags_completion=()
 
+    flags+=("--events")
+    local_nonpersistent_flags+=("--events")
     flags+=("--full")
     local_nonpersistent_flags+=("--full")
     flags+=("--include-deleted")
@@ -1397,6 +1399,221 @@ _td_status()
     command_aliases=()
 
     commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--channel=")
+    two_word_flags+=("--channel")
+    flags+=("--config=")
+    two_word_flags+=("--config")
+    flags+=("--db=")
+    two_word_flags+=("--db")
+    flags+=("--json")
+    flags+=("--no-wait")
+    flags+=("--quiet")
+    flags+=("--session=")
+    two_word_flags+=("--session")
+    flags+=("--verbose")
+    flags+=("--wait")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_td_transfers_cancel()
+{
+    last_command="td_transfers_cancel"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--channel=")
+    two_word_flags+=("--channel")
+    flags+=("--config=")
+    two_word_flags+=("--config")
+    flags+=("--db=")
+    two_word_flags+=("--db")
+    flags+=("--json")
+    flags+=("--no-wait")
+    flags+=("--quiet")
+    flags+=("--session=")
+    two_word_flags+=("--session")
+    flags+=("--verbose")
+    flags+=("--wait")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_td_transfers_list()
+{
+    last_command="td_transfers_list"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--active")
+    local_nonpersistent_flags+=("--active")
+    flags+=("--all")
+    local_nonpersistent_flags+=("--all")
+    flags+=("--stage=")
+    two_word_flags+=("--stage")
+    local_nonpersistent_flags+=("--stage")
+    local_nonpersistent_flags+=("--stage=")
+    flags+=("--channel=")
+    two_word_flags+=("--channel")
+    flags+=("--config=")
+    two_word_flags+=("--config")
+    flags+=("--db=")
+    two_word_flags+=("--db")
+    flags+=("--json")
+    flags+=("--no-wait")
+    flags+=("--quiet")
+    flags+=("--session=")
+    two_word_flags+=("--session")
+    flags+=("--verbose")
+    flags+=("--wait")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_td_transfers_retry()
+{
+    last_command="td_transfers_retry"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--events")
+    local_nonpersistent_flags+=("--events")
+    flags+=("--channel=")
+    two_word_flags+=("--channel")
+    flags+=("--config=")
+    two_word_flags+=("--config")
+    flags+=("--db=")
+    two_word_flags+=("--db")
+    flags+=("--json")
+    flags+=("--no-wait")
+    flags+=("--quiet")
+    flags+=("--session=")
+    two_word_flags+=("--session")
+    flags+=("--verbose")
+    flags+=("--wait")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_td_transfers_show()
+{
+    last_command="td_transfers_show"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--channel=")
+    two_word_flags+=("--channel")
+    flags+=("--config=")
+    two_word_flags+=("--config")
+    flags+=("--db=")
+    two_word_flags+=("--db")
+    flags+=("--json")
+    flags+=("--no-wait")
+    flags+=("--quiet")
+    flags+=("--session=")
+    two_word_flags+=("--session")
+    flags+=("--verbose")
+    flags+=("--wait")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_td_transfers_watch()
+{
+    last_command="td_transfers_watch"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--events")
+    local_nonpersistent_flags+=("--events")
+    flags+=("--channel=")
+    two_word_flags+=("--channel")
+    flags+=("--config=")
+    two_word_flags+=("--config")
+    flags+=("--db=")
+    two_word_flags+=("--db")
+    flags+=("--json")
+    flags+=("--no-wait")
+    flags+=("--quiet")
+    flags+=("--session=")
+    two_word_flags+=("--session")
+    flags+=("--verbose")
+    flags+=("--wait")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_td_transfers()
+{
+    last_command="td_transfers"
+
+    command_aliases=()
+
+    commands=()
+    commands+=("cancel")
+    commands+=("list")
+    commands+=("retry")
+    commands+=("show")
+    commands+=("watch")
 
     flags=()
     two_word_flags=()
@@ -1518,6 +1735,7 @@ _td_root_command()
     commands+=("scan")
     commands+=("share")
     commands+=("status")
+    commands+=("transfers")
     commands+=("tree")
     commands+=("version")
 

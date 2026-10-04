@@ -253,7 +253,8 @@ group.
 
 ## NDJSON event stream
 
-Long-running commands such as `td cp --events` emit one JSON envelope per line:
+Long-running commands such as `td cp --events` emit one JSON envelope per line
+(`td scan --events` is described under [Scan](#scan)):
 
 ```json
 {"ok":true,"data":{"file_name":"big.bin","part":5,"part_size":524288,"uploaded":2621440,"total":4294967296},"meta":{"command":"cp.progress","duration_ms":120,"schema_version":"2026-07-29","request_id":"..."}}
@@ -386,6 +387,26 @@ events only.
 ```
 
 Incremental scans may include `full_scan_warning`. `--include-deleted` adds `tombstones`. A full scan that continued an interrupted run adds `"resumed": true`.
+
+With `--events` (ADR 0042), `td scan` streams NDJSON envelopes on stdout,
+with or without `--json`, all sharing one `meta.request_id`:
+
+- `scan.stage` — `{"stage":"reading"}` when the history read starts, then
+  `{"stage":"indexing"}` when the index rebuild starts.
+- `scan.item` — one per message the scan accounts for: `status` is
+  `completed` for each file indexed (with its `path`) and `failed` for each
+  scan error recorded (with the error's `code` and `message`). `indexed` and
+  `failed` are the running tallies including this item.
+- `scan` — the final line, carrying the result above. A failed scan ends the
+  stream with the error envelope instead.
+
+```json
+{"ok":true,"data":{"stage":"reading"},"meta":{"command":"scan.stage","duration_ms":3,"schema_version":"2026-07-29","request_id":"..."}}
+{"ok":true,"data":{"stage":"indexing"},"meta":{"command":"scan.stage","duration_ms":910,"schema_version":"2026-07-29","request_id":"..."}}
+{"ok":true,"data":{"message_id":7001,"status":"failed","error":{"code":"ERR_ALBUM_INVENTORY_INVALID","message":"..."},"indexed":0,"failed":1},"meta":{"command":"scan.item","duration_ms":912,"schema_version":"2026-07-29","request_id":"..."}}
+{"ok":true,"data":{"message_id":7002,"path":"/docs/a.pdf","status":"completed","indexed":1,"failed":1},"meta":{"command":"scan.item","duration_ms":915,"schema_version":"2026-07-29","request_id":"..."}}
+{"ok":true,"data":{"active":1,"channel":"1001","deleted":0,"invalid":1,"missing":0,"mode":"full"},"meta":{"command":"scan","duration_ms":930,"schema_version":"2026-07-29","request_id":"..."}}
+```
 
 ## List
 

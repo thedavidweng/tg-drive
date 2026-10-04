@@ -37,7 +37,9 @@ td status
 td doctor
   td doctor path-codec
 td scan [remote-root]
-  [--full] [--strict] [--repair] [--include-deleted]
+  [--full] [--strict] [--repair] [--include-deleted] [--events]
+  # --events streams NDJSON scan.stage / scan.item events, then the final
+  # scan line (see the JSON contract)
 td ls [remote-path]
 td tree [remote-path]
   [--depth <n>]
