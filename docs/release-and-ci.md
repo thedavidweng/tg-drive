@@ -219,6 +219,24 @@ screenshots link `raw.githubusercontent.com` and only the video player
 page needs Pages. The workflow is informational — never add it to the
 required branch-protection checks.
 
+## Project site
+
+The website at <https://thedavidweng.github.io/tg-drive/> is plain static
+files in `site/` (HTML, CSS, a little JS; no build tool). Its images come
+from `assets/icon.png` and `assets/screenshot.png`, the same files the
+README shows. `.github/workflows/site.yml` runs on pushes to `main` that
+touch them (or by hand) and calls `site/publish.mjs publish`, which
+replaces the root of the `previews` branch while keeping the UI preview's
+`pr-*/` directories (ADR 0040). The UI preview never overwrites the site's
+`index.html`.
+
+Preview locally:
+
+```sh
+node site/publish.mjs build /tmp/td-site
+python3 -m http.server -d /tmp/td-site 8765
+```
+
 ## Local checks
 
 ```sh

@@ -1,0 +1,46 @@
+name: Site
+
+# The project website (site/) goes to the root of the previews branch,
+# which GitHub Pages serves at https://thedavidweng.github.io/tg-drive/.
+# The UI preview's pr-*/ directories on that branch are left in place.
+# See docs/release-and-ci.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - assets/icon.png
+      - assets/screenshot.png
+      - .github/workflows/site.yml
+  workflow_dispatch:
+
+concurrency:
+  group: site
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            site
+            assets
+          persist-credentials: false
+      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          version: 2026.9.14
+          install_args: node
+      - name: Publish the site
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: node site/publish.mjs publish

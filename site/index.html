@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tg-drive · Your Telegram channel, as a file system</title>
+    <meta
+      name="description"
+      content="tg-drive turns a Telegram channel into a recoverable, scriptable file tree. A CLI and a desktop app for macOS, Windows, and Linux."
+    />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)" />
+    <meta property="og:title" content="tg-drive" />
+    <meta property="og:description" content="Your Telegram channel, as a file system." />
+    <meta property="og:image" content="https://thedavidweng.github.io/tg-drive/img/screenshot.png" />
+    <meta property="og:url" content="https://thedavidweng.github.io/tg-drive/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="img/icon.png" type="image/png" />
+    <link rel="stylesheet" href="site.css" />
+    <!-- Hide reveal-on-scroll content only when the script that reveals it runs. -->
+    <script>document.documentElement.classList.add("js")</script>
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <div class="page">
+      <header class="header" data-header>
+        <a class="brand" href="./" aria-label="tg-drive home">
+          <img src="img/icon.png" alt="" width="22" height="22" />
+          <span class="brand-name">tg-drive</span>
+          <span class="brand-by">by <span>thedavidweng</span></span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a class="nav-link" href="#features">Features</a>
+          <a class="nav-link" href="#how">How it works</a>
+          <a class="nav-link" href="https://github.com/thedavidweng/tg-drive/tree/main/docs/guides">Docs</a>
+          <a
+            class="icon-link"
+            href="https://github.com/thedavidweng/tg-drive"
+            aria-label="tg-drive on GitHub"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a10.9 10.9 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"
+              />
+            </svg>
+          </a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <p class="eyebrow enter" style="--i: 0">
+            <span class="eyebrow-dot" aria-hidden="true"></span>
+            Open source · CLI and desktop app
+          </p>
+          <h1 class="enter" style="--i: 1">Your Telegram channel,<br />as a file system.</h1>
+          <p class="lede enter" style="--i: 2">
+            tg-drive uploads files as ordinary Telegram media, keeps a rebuildable index, and gives you
+            <code>ls</code>, <code>tree</code>, and a native app on top. Lose the database, and the channel
+            rebuilds it.
+          </p>
+
+          <div class="cta enter" style="--i: 3">
+            <div class="install" data-install>
+              <div class="install-tabs" role="tablist" aria-label="Install method">
+                <button role="tab" aria-selected="true" data-cmd="curl -fsSL https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.sh | sh">macOS / Linux</button>
+                <button role="tab" aria-selected="false" tabindex="-1" data-cmd="irm https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.ps1 | iex">Windows</button>
+                <button role="tab" aria-selected="false" tabindex="-1" data-cmd="brew tap thedavidweng/tap && brew install --cask tg-drive">Homebrew</button>
+              </div>
+              <button class="install-cmd" type="button" data-copy aria-label="Copy install command">
+                <span class="prompt" aria-hidden="true">$</span>
+                <code data-cmd-text>curl -fsSL https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.sh | sh</code>
+                <span class="copy-icon" aria-hidden="true">
+                  <svg class="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></svg>
+                  <svg class="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+                </span>
+              </button>
+              <span class="sr-only" role="status" data-copy-status></span>
+            </div>
+            <a class="button button-secondary" href="https://github.com/thedavidweng/tg-drive/releases/latest">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" /></svg>
+              Download td-gui
+            </a>
+          </div>
+        </section>
+
+        <section class="showcase" aria-label="td-gui screenshot">
+          <div class="glow" aria-hidden="true"></div>
+          <img
+            class="shot"
+            src="img/screenshot.png"
+            width="2142"
+            height="1502"
+            alt="td-gui showing the Drive tab: two folders and a file stored in a Telegram channel"
+          />
+        </section>
+
+        <section id="features" class="section">
+          <div class="section-head reveal">
+            <h2>Everything a drive needs. Nothing Telegram doesn't already have.</h2>
+            <p>The channel stays a normal channel. tg-drive adds the structure on top, and can always rebuild it.</p>
+          </div>
+          <div class="grid reveal-group">
+            <article class="card reveal">
+              <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 3.6 2.9 10.7c-1 .4-1 1.8 0 2.1l4.6 1.5 1.8 5.5c.3.8 1.3 1 1.9.4l2.6-2.5 4.6 3.4c.7.5 1.6.1 1.8-.7L23 4.8c.2-.9-.7-1.6-1.6-1.2Z" /></svg>
+              <h3>Plain Telegram underneath</h3>
+              <p>Files are ordinary media messages. Any Telegram client can browse them and filter folders by hashtag.</p>
+            </article>
+            <article class="card reveal">
+              <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8.5M20 4v4.5h-4.5M20 12a8 8 0 0 1-13.7 5.6L4 15.5M4 20v-4.5h4.5" /></svg>
+              <h3>Recoverable by design</h3>
+              <p>Telegram is the source of truth. Lose the database and <code>td scan --full</code> rebuilds the index from the channel.</p>
+            </article>
+            <article class="card reveal">
+              <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6l2 2.5h8V19H4z" /></svg>
+              <h3>A real file tree</h3>
+              <p>Exact <code>ls</code> and <code>tree</code>. Upload and download whole trees; move, rename, delete, or tombstone files.</p>
+            </article>
+            <article class="card reveal">
+              <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 9-3 3 3 3m8-6 3 3-3 3M13.5 6l-3 12" /></svg>
+              <h3>Scriptable</h3>
+              <p>Every command speaks stable <code>--json</code> on stdout with documented exit codes. Logs stay on stderr.</p>
+            </article>
+            <article class="card reveal">
+              <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V7m0 0-4.5 4.5M12 7l4.5 4.5M5 4.5h14" /></svg>
+              <h3>Resumable uploads</h3>
+              <p>Files larger than 10 MB pick up where they stopped. Only the parts Telegram never confirmed are sent again.</p>
+            </article>
+            <article class="card reveal">
+              <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="13" rx="2.5" /><path d="M8.5 20.5h7" /></svg>
+              <h3>A desktop app, too</h3>
+              <p><code>td-gui</code> puts the same engine behind a native window: drive, transfers, import, and maintenance.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="how" class="section split">
+          <div class="reveal">
+            <h2>How it works</h2>
+            <ol class="steps">
+              <li>
+                <span class="step-n">1</span>
+                <div>
+                  <h3>One channel, one root</h3>
+                  <p><code>td init</code> binds a Telegram channel to a local folder and links a discussion group for machine records.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-n">2</span>
+                <div>
+                  <h3>Readable posts, precise records</h3>
+                  <p>Each file is a media message with a human caption. Its manifest lives in the comment thread, out of the timeline.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-n">3</span>
+                <div>
+                  <h3>A cache you can throw away</h3>
+                  <p>SQLite only mirrors the channel. On a new machine, bind the same channel again and the index comes back.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+          <div class="terminal reveal" aria-label="Quick start">
+            <div class="terminal-bar" aria-hidden="true"><i></i><i></i><i></i><span>zsh</span></div>
+            <pre><code><span class="c"># sign in once, as your own Telegram user</span>
+<span class="p">$</span> td auth setup
+<span class="p">$</span> td auth login
+
+<span class="c"># bind a channel and upload</span>
+<span class="p">$</span> td init ~/Pictures --create-channel
+<span class="p">$</span> td cp ~/Pictures/beach.jpg /2024/beach.jpg
+
+<span class="p">$</span> td tree /
+<span class="o">/
+└── 2024
+    └── beach.jpg</span>
+
+<span class="c"># new machine? the channel remembers</span>
+<span class="p">$</span> td init ~/Pictures --bind-channel</code></pre>
+          </div>
+        </section>
+
+        <section class="closing reveal">
+          <div>
+            <h2>Free, open source, and yours.</h2>
+            <p>Apache-2.0. Your files stay in your own Telegram account; tg-drive never runs a server.</p>
+          </div>
+          <div class="closing-actions">
+            <a class="button button-primary" href="https://github.com/thedavidweng/tg-drive/releases/latest">Download</a>
+            <a class="button button-secondary" href="https://github.com/thedavidweng/tg-drive">
+              View on GitHub
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 16 16 8m0 0H9.5M16 8v6.5" /></svg>
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>tg-drive · Apache-2.0</span>
+        <nav aria-label="Footer">
+          <a href="https://github.com/thedavidweng/tg-drive/blob/main/docs/guides/getting-started.md">Getting started</a>
+          <a href="https://github.com/thedavidweng/tg-drive/blob/main/docs/guides/cli-reference.md">CLI reference</a>
+          <a href="https://github.com/thedavidweng/tg-drive/blob/main/CHANGELOG.md">Changelog</a>
+          <a href="https://github.com/thedavidweng/tg-drive/blob/main/SECURITY.md">Security</a>
+        </nav>
+      </footer>
+    </div>
+  </body>
+</html>

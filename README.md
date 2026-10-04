@@ -1,11 +1,12 @@
 <p align="center">
-  <img src="assets/icon.png" alt="tg-drive" width="160" />
+  <img src="assets/icon.png" alt="" width="112" />
 </p>
 
-<h1 align="center">tg-drive (td)</h1>
+<h1 align="center">tg-drive</h1>
 
 <p align="center">
-  Turn a Telegram channel into a recoverable, scriptable file tree.
+  <b>Turn a Telegram channel into a recoverable, scriptable file tree.</b><br />
+  A CLI (<code>td</code>) and a desktop app (<code>td-gui</code>) for macOS, Windows, and Linux.
 </p>
 
 <p align="center">
@@ -15,9 +16,23 @@
   <img src="https://img.shields.io/badge/go-%3E%3D1.26-blue?style=flat-square" alt="Go">
 </p>
 
+<p align="center">
+  <a href="https://thedavidweng.github.io/tg-drive/"><b>Website</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/thedavidweng/tg-drive/releases/latest"><b>Download</b></a>
+  &nbsp;·&nbsp;
+  <a href="docs/guides/getting-started.md"><b>Getting started</b></a>
+  &nbsp;·&nbsp;
+  <a href="docs/guides/cli-reference.md"><b>CLI reference</b></a>
+</p>
+
+<p align="center">
+  <img src="assets/screenshot.png" alt="td-gui showing the Drive tab: two folders and a file in a Telegram channel" width="820" />
+</p>
+
 `td` uploads local files as ordinary Telegram media, stamps each message with
 machine-readable metadata, and keeps a rebuildable SQLite index. You get
-`ls`, `tree`, upload, download, move, and share — and if the local database is
+`ls`, `tree`, upload, download, move, and share. If the local database is
 lost, `td scan --full` rebuilds it from the channel.
 
 The channel stays a normal Telegram channel. Any native client can browse,
@@ -25,59 +40,51 @@ download, and filter folders by hashtag.
 
 ## Features
 
-- Upload and download files, including recursive trees
-- Exact `ls` / `tree` over a local cache
-- File-level move, rename, delete, or tombstone
-- Adopt existing channel messages without re-uploading
-- Import Saved Messages with provenance and hash dedupe
-- Recover the index from Telegram after database loss
-- Native hashtag navigation in Telegram clients
-- Stable `--json` output for scripts
-- Resumable uploads for files larger than 10 MB
+- **Plain Telegram underneath.** Files are ordinary media messages. Any Telegram client can browse them and filter folders by hashtag.
+- **Recoverable.** Telegram is the source of truth. Lose the database and `td scan --full` rebuilds the index from the channel.
+- **A real file tree.** Exact `ls` / `tree` over a local cache; upload and download whole trees; move, rename, delete, or tombstone files.
+- **Scriptable.** Every command speaks stable `--json` on stdout, with documented exit codes.
+- **Resumable uploads.** Files larger than 10 MB resume where they stopped; only unconfirmed parts are re-sent.
+- **Bring what you have.** Adopt existing channel messages without re-uploading, and import Saved Messages with provenance and hash dedupe.
+- **Desktop app.** `td-gui` puts the same engine behind a native window: drive, transfers, import, and maintenance.
 
 ## Install
 
-### macOS / Linux
+macOS / Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.sh | sh
 ```
 
-Installs into `~/.local/bin` by default (`TD_INSTALL_DIR` overrides). If
-Homebrew is present, the script uses the cask instead. Uninstall with
-`install.sh uninstall`.
-
-### Windows
+Windows (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/thedavidweng/tg-drive/main/install.ps1 | iex
 ```
 
-Installs `td.exe` into `%LOCALAPPDATA%\tg-drive\bin` (`$env:TD_INSTALL_DIR`
-overrides) and adds it to the user `PATH`.
+The script installs into `~/.local/bin` (`%LOCALAPPDATA%\tg-drive\bin` on
+Windows, added to the user `PATH`); `TD_INSTALL_DIR` overrides. If Homebrew
+is present, the script uses the cask instead. Uninstall with
+`install.sh uninstall`.
 
-### Homebrew
+<details>
+<summary><b>Homebrew, <code>go install</code>, or from source</b></summary>
 
 ```sh
+# Homebrew
 brew tap thedavidweng/tap
 brew install --cask tg-drive
-```
 
-### go install
-
-```sh
+# go install (Go 1.26 or newer)
 go install github.com/thedavidweng/tg-drive/cmd/td@latest
-```
 
-Requires Go 1.26 or newer.
-
-### From source
-
-```sh
+# From source
 git clone https://github.com/thedavidweng/tg-drive.git
 cd tg-drive
 make build          # ./dist/td
 ```
+
+</details>
 
 ### Desktop app (td-gui)
 
@@ -95,14 +102,15 @@ Each artifact has a `.sha256` sidecar. The Linux `.deb` depends on
 with `sudo apt install ./td-gui_<version>_linux_amd64.deb`. The AppImage is
 self-contained: `chmod +x` and run.
 
-**The GUI artifacts are unsigned.** macOS and Windows will warn on first
-launch; this is expected and safe to bypass:
-
-- **macOS (Gatekeeper):** after copying `td-gui.app` to Applications,
-  right-click it and choose **Open**, then confirm. Or remove the quarantine
-  flag: `xattr -d com.apple.quarantine /Applications/td-gui.app`.
-- **Windows (SmartScreen):** click **More info** → **Run anyway**. The
-  installer also installs the WebView2 runtime if your system lacks it.
+> [!NOTE]
+> **The GUI artifacts are unsigned.** macOS and Windows warn on first
+> launch; this is expected and safe to bypass.
+>
+> - **macOS (Gatekeeper):** after copying `td-gui.app` to Applications,
+>   right-click it and choose **Open**, then confirm. Or remove the
+>   quarantine flag: `xattr -d com.apple.quarantine /Applications/td-gui.app`.
+> - **Windows (SmartScreen):** click **More info** → **Run anyway**. The
+>   installer also installs the WebView2 runtime if your system lacks it.
 
 ## Requirements
 

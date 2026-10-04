@@ -91,10 +91,15 @@ async function pushMedia(sha, dir) {
     const manifest = JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8"))
     await fs.writeFile(path.join(to, "index.html"), player(sha, manifest))
     await fs.writeFile(path.join(work, ".nojekyll"), "")
+    // The branch root belongs to the project site (site/publish.mjs); the
+    // placeholder only fills it before the site's first deploy.
     await fs.writeFile(
       path.join(work, "index.html"),
       `<!doctype html><meta charset="utf-8"><title>td-gui previews</title><p>Screenshots and recordings of <a href="https://github.com/${repo}/pulls">${repo}</a> pull requests, made by .github/workflows/ui-preview.yml.</p>`,
-    )
+      { flag: "wx" },
+    ).catch((e) => {
+      if (e.code !== "EEXIST") throw e
+    })
     git(["checkout", "-q", "--orphan", `tmp-${attempt}`], work)
     git(["add", "-A"], work)
     git(["commit", "-q", "-m", `ui preview for #${pr} at ${short(sha)}`], work)
