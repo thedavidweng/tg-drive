@@ -23,7 +23,7 @@ td --json version
 Captured from a real run:
 
 ```json
-{"ok":true,"data":{"built_by":"source","commit":"none","date":"unknown","version":"dev"},"meta":{"command":"td version","duration_ms":0,"schema_version":"2026-07-29","request_id":"39873102-920f-4485-951d-517fe6bf495e"}}
+{"ok":true,"data":{"built_by":"source","commit":"none","date":"unknown","version":"dev"},"meta":{"command":"td version","duration_ms":0,"schema_version":"2026-10-03","request_id":"39873102-920f-4485-951d-517fe6bf495e"}}
 ```
 
 Failure — same envelope shape, `ok: false`, machine-readable `code`:
@@ -35,7 +35,7 @@ td --json get /nope.jpg ./x
 Captured from a real run:
 
 ```json
-{"ok":false,"error":{"code":"ERR_REMOTE_NOT_FOUND","message":"remote path \"/nope.jpg\" not found","category":"validation","retryable":false,"details":{}},"meta":{"command":"td get","duration_ms":14,"schema_version":"2026-07-29","request_id":"14fa7429-e030-4487-9b11-e7e49033dd82"}}
+{"ok":false,"error":{"code":"ERR_REMOTE_NOT_FOUND","message":"remote path \"/nope.jpg\" not found","category":"validation","retryable":false,"details":{}},"meta":{"command":"td get","duration_ms":14,"schema_version":"2026-10-03","request_id":"14fa7429-e030-4487-9b11-e7e49033dd82"}}
 ```
 
 The full data shapes per command are frozen in
@@ -80,8 +80,10 @@ The full mapping lives in
 ## Stream progress for big uploads
 
 **Scenario:** an upload runs for minutes and your wrapper wants progress.
-`td cp --events` emits one JSON envelope per line: `cp.progress` events while
-parts confirm, then the final result.
+`td cp --events` emits one JSON envelope per line: `transfer.stage` events as
+the upload's Transfer changes stage, `transfer.progress` events while parts
+confirm, then the final result. Each event's `data` is the Transfer; a
+`transfer.progress` line adds the confirmed `part`.
 
 ```sh
 td cp --events ~/big.bin /big.bin
@@ -90,8 +92,8 @@ td cp --events ~/big.bin /big.bin
 *Illustrative:*
 
 ```json
-{"ok":true,"data":{"file_name":"big.bin","part":5,"part_size":524288,"uploaded":2621440,"total":4294967296},"meta":{"command":"cp.progress","duration_ms":120,"schema_version":"2026-07-29","request_id":"..."}}
-{"ok":true,"data":{"path":"/big.bin","message_id":1234,"size":4294967296},"meta":{"command":"cp","duration_ms":4200,"schema_version":"2026-07-29","request_id":"..."}}
+{"ok":true,"data":{"id":"6f1c...","kind":"upload","stage":"uploading","source":"/home/me/big.bin","dest":"/big.bin","bytes_done":2621440,"bytes_total":4294967296,"...":"...","part":{"file_name":"big.bin","index":4,"size":524288,"uploaded":2621440,"total":4294967296}},"meta":{"command":"transfer.progress","duration_ms":120,"schema_version":"2026-10-03","request_id":"..."}}
+{"ok":true,"data":{"path":"/big.bin","message_id":1234,"size":4294967296},"meta":{"command":"cp","duration_ms":4200,"schema_version":"2026-10-03","request_id":"..."}}
 ```
 
 ## Handle rate limits programmatically

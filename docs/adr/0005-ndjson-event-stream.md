@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted. Superseded in part by ADR 0042: `cp.progress` is removed in
+favour of `transfer.stage` and `transfer.progress`.
 
 ## Context
 

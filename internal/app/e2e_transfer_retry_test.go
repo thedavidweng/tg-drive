@@ -45,14 +45,16 @@ func TestE2ERetryFailedUploadResumes(t *testing.T) {
 	var final map[string]any
 	for _, ev := range lines {
 		switch ev.Meta["command"] {
-		case "cp.progress":
+		case "transfer.progress":
 			var p struct {
-				Part int `json:"Part"`
+				Part struct {
+					Index int `json:"index"`
+				} `json:"part"`
 			}
 			if err := json.Unmarshal(ev.Data, &p); err != nil {
 				t.Fatal(err)
 			}
-			parts = append(parts, p.Part)
+			parts = append(parts, p.Part.Index)
 		case "transfer.stage":
 			var tr map[string]any
 			if err := json.Unmarshal(ev.Data, &tr); err != nil {
@@ -126,7 +128,7 @@ func TestE2ERetryInterruptedUploadResumes(t *testing.T) {
 	// the kill leaves saved parts to resume from.
 	confirmed := 0
 	for confirmed < 2 && sc.Scan() {
-		if strings.Contains(sc.Text(), `"command":"cp.progress"`) {
+		if strings.Contains(sc.Text(), `"command":"transfer.progress"`) {
 			confirmed++
 		}
 	}
@@ -164,14 +166,16 @@ func TestE2ERetryInterruptedUploadResumes(t *testing.T) {
 	var final map[string]any
 	for _, ev := range lines {
 		switch ev.Meta["command"] {
-		case "cp.progress":
+		case "transfer.progress":
 			var p struct {
-				Part int `json:"Part"`
+				Part struct {
+					Index int `json:"index"`
+				} `json:"part"`
 			}
 			if err := json.Unmarshal(ev.Data, &p); err != nil {
 				t.Fatal(err)
 			}
-			parts = append(parts, p.Part)
+			parts = append(parts, p.Part.Index)
 		case "transfers.retry":
 			if err := json.Unmarshal(ev.Data, &final); err != nil {
 				t.Fatal(err)

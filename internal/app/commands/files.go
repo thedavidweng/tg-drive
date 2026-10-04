@@ -7,7 +7,6 @@ import (
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
 
 	"github.com/spf13/cobra"
-	"github.com/thedavidweng/tg-drive/core/telegram"
 	"github.com/thedavidweng/tg-drive/internal/service"
 	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
@@ -114,20 +113,11 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 			if cmd.Flags().Changed("upload-part-size-kb") {
 				opts.PartSizeKB = uploadPartSizeKB
 			}
+			var observer transfer.Observer
 			if events {
-				opts.Observer.OnProgress = func(p service.Progress) {
-					if p.Part == nil {
-						return
-					}
-					_ = r.Event("cp.progress", telegram.UploadProgressState{
-						FileName: p.Part.FileName,
-						Part:     p.Part.Index,
-						PartSize: p.Part.Size,
-						Uploaded: p.Done,
-						Total:    p.Total,
-					})
-				}
+				observer = transferEvents(r)
 			}
+			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
 			if len(args) > 2 {
 				if recursive {
 					return r.Error(apperr.New(apperr.ErrUsage, "--recursive accepts exactly one source directory"))
@@ -135,7 +125,6 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if includeEmptyDirs {
 					return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 				}
-				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
 				handle, err := manager.SubmitAlbumUpload(cmd.Context(), transfer.AlbumUpload{
 					Sources: args[:len(args)-1], Dest: args[len(args)-1],
 					Policy: policy, NoHash: noHash, Presentation: pres, Options: opts,
@@ -163,7 +152,6 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 				if presentationFlagsSet(cmd) {
 					return r.Error(apperr.New(apperr.ErrUsage, "presentation flags apply to single-file uploads only"))
 				}
-				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
 				handle, err := manager.SubmitRecursiveUpload(cmd.Context(), transfer.RecursiveUpload{
 					Source: args[0], Dest: args[1], Policy: policy,
 					ContinueOnError: continueOnError, NoHash: noHash, IncludeEmptyDirs: includeEmptyDirs, Options: opts,
@@ -190,11 +178,6 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 			if includeEmptyDirs {
 				return r.Error(apperr.New(apperr.ErrUsage, "--include-empty-dirs requires --recursive"))
 			}
-			var observer transfer.Observer
-			if events {
-				observer.OnStage = func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) }
-			}
-			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
 			handle, err := manager.SubmitUpload(cmd.Context(), transfer.Upload{
 				Source: args[0], Dest: args[1], Policy: policy, NoHash: noHash, Presentation: pres, Options: opts,
 			})

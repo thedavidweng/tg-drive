@@ -33,6 +33,11 @@ type Observer struct {
 	// OnProgress reports a Transfer's byte or item progress, at most as
 	// often as it is written to the index.
 	OnProgress func(Transfer)
+	// OnPart reports every confirmed upload part of a Transfer, unthrottled,
+	// with the Transfer as it stands once the part is counted. The Progress
+	// is the part's file's own: for a multi-file Transfer its Done and Total
+	// are that member's bytes, not the Transfer's.
+	OnPart func(Transfer, service.Progress)
 }
 
 // Options configures a Manager.
@@ -735,7 +740,7 @@ func (tr *tracker) observe(next service.Observer) service.Observer {
 			}
 		},
 		OnProgress: func(p service.Progress) {
-			tr.progress(p.Done, p.Total)
+			tr.progress(p)
 			if next.OnProgress != nil {
 				next.OnProgress(p)
 			}
@@ -773,17 +778,19 @@ func (k Kind) tracksBytes() bool {
 	return k == KindUpload || k == KindDownload
 }
 
-func (tr *tracker) progress(done, total int64) {
+func (tr *tracker) progress(p service.Progress) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if !tr.t.Kind.tracksBytes() {
-		return
+	if tr.t.Kind.tracksBytes() {
+		tr.t.BytesDone = p.Done
+		if p.Total > 0 {
+			tr.t.BytesTotal = p.Total
+		}
+		tr.throttledWrite(time.Now().UTC())
 	}
-	tr.t.BytesDone = done
-	if total > 0 {
-		tr.t.BytesTotal = total
+	if p.Part != nil && tr.m.opts.Observer.OnPart != nil {
+		tr.m.opts.Observer.OnPart(tr.t, p)
 	}
-	tr.throttledWrite(time.Now().UTC())
 }
 
 // item records one item's outcome. Done counts completed and skipped items,

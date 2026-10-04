@@ -11,10 +11,11 @@ import (
 	"testing"
 )
 
-// TestE2ECpEventsProgress pins the td cp --events NDJSON stream byte for byte
-// (ADR 0005): one cp.progress line per confirmed part of every resumable
-// member, in order, then the final cp line. --upload-part-size-kb sets the
-// part size the stream reports, so this also pins the per-call override.
+// TestE2ECpEventsProgress pins the td cp --events part reports byte for byte
+// (ADR 0042): one transfer.progress line per confirmed part of every
+// resumable member, in order, each carrying its Transfer, then the final cp
+// line. --upload-part-size-kb sets the part size the stream reports, so this
+// also pins the per-call override.
 func TestE2ECpEventsProgress(t *testing.T) {
 	dir := t.TempDir()
 	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
@@ -24,9 +25,9 @@ func TestE2ECpEventsProgress(t *testing.T) {
 	const mib = 1024 * 1024
 	big := e2eSizedFile(t, filepath.Join(dir, "single", "big.bin"), 12*mib)
 	bigProgress := []string{
-		`{"FileName":"big.bin","Part":0,"PartSize":4194304,"Uploaded":4194304,"Total":12582912}`,
-		`{"FileName":"big.bin","Part":1,"PartSize":4194304,"Uploaded":8388608,"Total":12582912}`,
-		`{"FileName":"big.bin","Part":2,"PartSize":4194304,"Uploaded":12582912,"Total":12582912}`,
+		`{"file_name":"big.bin","index":0,"size":4194304,"uploaded":4194304,"total":12582912}`,
+		`{"file_name":"big.bin","index":1,"size":4194304,"uploaded":8388608,"total":12582912}`,
+		`{"file_name":"big.bin","index":2,"size":4194304,"uploaded":12582912,"total":12582912}`,
 	}
 
 	t.Run("single", func(t *testing.T) {
@@ -60,7 +61,7 @@ func TestE2ECpEventsProgress(t *testing.T) {
 		var want []string
 		const part, total = 128 * 1024, 11 * mib
 		for i := 0; i*part < total; i++ {
-			want = append(want, fmt.Sprintf(`{"FileName":"cfg.bin","Part":%d,"PartSize":%d,"Uploaded":%d,"Total":%d}`,
+			want = append(want, fmt.Sprintf(`{"file_name":"cfg.bin","index":%d,"size":%d,"uploaded":%d,"total":%d}`,
 				i, part, min((i+1)*part, total), total))
 		}
 		assertProgressThenCp(t, lines, want)
@@ -102,11 +103,21 @@ func assertProgressThenCp(t *testing.T, lines []eventLine, progress []string) {
 	}
 	for i, want := range progress {
 		ev := lines[i]
-		if !ev.OK || ev.Meta["command"] != "cp.progress" || ev.Meta["schema_version"] == nil {
-			t.Fatalf("line %d envelope = ok:%v meta:%v, want a cp.progress success", i, ev.OK, ev.Meta)
+		if !ev.OK || ev.Meta["command"] != "transfer.progress" || ev.Meta["schema_version"] == nil {
+			t.Fatalf("line %d envelope = ok:%v meta:%v, want a transfer.progress success", i, ev.OK, ev.Meta)
 		}
-		if string(ev.Data) != want {
-			t.Fatalf("line %d data = %s, want %s", i, ev.Data, want)
+		var data struct {
+			ID   string          `json:"id"`
+			Part json.RawMessage `json:"part"`
+		}
+		if err := json.Unmarshal(ev.Data, &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.ID == "" {
+			t.Fatalf("line %d data = %s, want the Transfer the part belongs to", i, ev.Data)
+		}
+		if string(data.Part) != want {
+			t.Fatalf("line %d part = %s, want %s", i, data.Part, want)
 		}
 	}
 	last := lines[len(lines)-1]

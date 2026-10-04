@@ -107,13 +107,13 @@ func TestE2EInterruptedCpResumes(t *testing.T) {
 	cmd, sc, stderr := startTD(t, bin, cfgPath, dbPath, statePath, []string{"TD_FAKE_TRANSFER_DELAY=400ms"}, args...)
 	sawProgress := false
 	for sc.Scan() {
-		if strings.Contains(sc.Text(), `"command":"cp.progress"`) {
+		if strings.Contains(sc.Text(), `"command":"transfer.progress"`) {
 			sawProgress = true
 			break
 		}
 	}
 	if !sawProgress {
-		t.Fatalf("no cp.progress before exit; stderr=%s", stderr)
+		t.Fatalf("no transfer.progress before exit; stderr=%s", stderr)
 	}
 	lines, code, took := interruptAndWait(t, cmd, sc)
 	assertCancelled(t, lines, code, took, stderr.String())
@@ -139,7 +139,7 @@ func TestE2EInterruptedCpResumes(t *testing.T) {
 	evs := strings.Split(strings.TrimSpace(stdout), "\n")
 	progress := 0
 	for _, l := range evs {
-		if strings.Contains(l, `"command":"cp.progress"`) {
+		if strings.Contains(l, `"command":"transfer.progress"`) {
 			progress++
 		}
 	}

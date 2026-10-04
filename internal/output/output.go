@@ -13,7 +13,7 @@ import (
 )
 
 // SchemaVersion is the stable JSON output schema version.
-const SchemaVersion = "2026-07-29"
+const SchemaVersion = "2026-10-03"
 
 // Renderer writes human or JSON output.
 type Renderer struct {

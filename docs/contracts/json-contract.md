@@ -11,7 +11,7 @@ All JSON command output uses an envelope.
   "meta": {
     "command": "cp",
     "duration_ms": 125,
-    "schema_version": "2026-07-29",
+    "schema_version": "2026-10-03",
     "request_id": "...",
     "warnings": []
   }
@@ -34,7 +34,7 @@ All JSON command output uses an envelope.
   "meta": {
     "command": "cp",
     "duration_ms": 10,
-    "schema_version": "2026-07-29",
+    "schema_version": "2026-10-03",
     "request_id": "..."
   }
 }
@@ -253,25 +253,40 @@ group.
 
 ## NDJSON event stream
 
-Long-running commands such as `td cp --events` emit one JSON envelope per line:
+Long-running commands such as `td cp --events` emit one JSON envelope per
+line. Every `td cp --events` form (single file, multi-file album, and
+`--recursive`) runs as a Transfer and emits `transfer.stage` and
+`transfer.progress` events, then the final `cp` line (or error envelope):
+
+- `transfer.stage`: one each time the Transfer enters a stage: `queued`,
+  then `hashing` (when the file is hashed), `uploading`, `publishing`, and
+  finally `completed`, `failed`, or `cancelled`. A multi-item Transfer
+  reports each stage once, the first time any of its items reaches it.
+- `transfer.progress`: one per confirmed upload part, in the order the
+  parts confirm. A resumed upload reports only the parts it actually sends.
+
+Both carry, in `data`, the Transfer as `td transfers show` returns it, at
+the moment of the event. `transfer.progress` adds `part`, the confirmed
+part: `file_name` (the name the upload carries on Telegram), `index`
+(0-based), `size` (the part size in bytes), and `uploaded` / `total`, the
+bytes confirmed so far and the size of the part's own file. For a
+single-file upload these equal the Transfer's `bytes_done` /
+`bytes_total`; for an album or recursive Transfer they describe the one
+member being sent, while the Transfer itself counts items.
 
 ```json
-{"ok":true,"data":{"file_name":"big.bin","part":5,"part_size":524288,"uploaded":2621440,"total":4294967296},"meta":{"command":"cp.progress","duration_ms":120,"schema_version":"2026-07-29","request_id":"..."}}
-{"ok":true,"data":{"path":"/big.bin","message_id":1234,"size":4294967296},"meta":{"command":"cp","duration_ms":4200,"schema_version":"2026-07-29","request_id":"..."}}
+{"ok":true,"data":{"id":"6f1c...","kind":"upload","stage":"queued","channel":"1001","source":"/home/me/big.bin","dest":"/big.bin","bytes_done":0,"bytes_total":12582912,"items_done":0,"items_total":1,"front_end":"cli","cancel_requested":false,"created_at":"2026-10-02T10:40:01.927632222Z","updated_at":"2026-10-02T10:40:01.927632222Z"},"meta":{"command":"transfer.stage","duration_ms":3,"schema_version":"2026-10-03","request_id":"..."}}
+{"ok":true,"data":{"id":"6f1c...","kind":"upload","stage":"uploading","channel":"1001","source":"/home/me/big.bin","dest":"/big.bin","bytes_done":4194304,"bytes_total":12582912,"items_done":0,"items_total":1,"front_end":"cli","cancel_requested":false,"created_at":"2026-10-02T10:40:01.927632222Z","updated_at":"2026-10-02T10:40:02.104411873Z","part":{"file_name":"big.bin","index":0,"size":4194304,"uploaded":4194304,"total":12582912}},"meta":{"command":"transfer.progress","duration_ms":180,"schema_version":"2026-10-03","request_id":"..."}}
+{"ok":true,"data":{"path":"/big.bin","message_id":1234,"size":12582912},"meta":{"command":"cp","duration_ms":4200,"schema_version":"2026-10-03","request_id":"..."}}
 ```
 
-A single-file `td cp --events` also emits `transfer.stage` events, one each
-time its Transfer enters a stage: `queued`, then `hashing` (when the file is
-hashed), `uploading`, `publishing`, and finally `completed`, `failed`, or
-`cancelled`.
-They are interleaved with the `cp.progress` lines in the order the stages
-happen, before the final `cp` line (or error envelope). `data` is the
-Transfer as `td transfers show` returns it, at the moment it entered the
-stage:
+The Transfer fields in a `transfer.progress` line are a snapshot: the index
+records byte progress at most every 250 ms, so its `updated_at` may lag
+the part, while `bytes_done` already counts it.
 
-```json
-{"ok":true,"data":{"id":"6f1c...","kind":"upload","stage":"uploading","channel":"1001","source":"/home/me/big.bin","dest":"/big.bin","bytes_done":0,"bytes_total":12582912,"items_done":0,"items_total":1,"front_end":"cli","cancel_requested":false,"created_at":"2026-10-02T10:40:01.927632222Z","updated_at":"2026-10-02T10:40:01.931002117Z"},"meta":{"command":"transfer.stage","duration_ms":4,"schema_version":"2026-07-29","request_id":"..."}}
-```
+Schema version `2026-10-03` removed the `cp.progress` event (ADR 0042).
+`transfer.progress` carries every field it did: `file_name`, `part`
+(now `part.index`), `part_size` (now `part.size`), `uploaded`, and `total`.
 
 ## Transfers
 
@@ -283,10 +298,10 @@ its `id` and `created_at`, and the retrying process becomes its owner. A
 retry of a `running` or `completed` Transfer fails with `ERR_USAGE`, an
 unknown ID with `ERR_TRANSFER_NOT_FOUND`, and a failed re-run reports the
 call's own error envelope, exactly as the equivalent `cp`/`get` would.
-`--events` emits one `transfer.stage` event per stage the retried Transfer
-enters and, for upload kinds, the `cp.progress` lines `td cp --events`
-emits — a resumed upload reports only the parts it actually sends — then a
-final `transfers.retry` line carrying the ended Transfer.
+`--events` emits the `transfer.stage` and, for upload kinds,
+`transfer.progress` events `td cp --events` emits — a resumed upload
+reports only the parts it actually sends — then a final `transfers.retry`
+line carrying the ended Transfer.
 
 `td transfers watch --events` (or `--json`) streams `transfer.stage`
 events — the same payload shape as `td cp --events` emits — for the
