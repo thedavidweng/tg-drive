@@ -1,6 +1,6 @@
 # 0035: Frontend toolchain: Bun for packages and tests, Node for Vite, shadcn/ui on magpie tokens
 
-Status: Accepted.
+Status: Accepted. The Vite runtime decision is superseded by ADR 0042.
 
 Context: ADR 0031 fixes the GUI stack (Wails v3, React, TypeScript, Vite,
 Tailwind CSS, shadcn/ui) and the magpie design, but leaves the JavaScript

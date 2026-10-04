@@ -84,8 +84,8 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   in the webview's local storage, not in td's config file (see the config
   contract).
 - The frontend lives in `frontend/` (React, TypeScript, Vite, Tailwind CSS,
-  shadcn/ui; Bun as package manager, Node LTS running Vite, pinned in
-  `mise.toml`). It calls Go only through the generated bindings in
+  shadcn/ui; Bun as package manager, test runner, and Vite runtime,
+  pinned in `mise.toml`). It calls Go only through the generated bindings in
   `frontend/bindings` (committed, drift-checked by `make
   gui-bindings-check`) and typed events. The `gui`-tagged `frontend` Go
   package embeds the built `frontend/dist`, because `go:embed` cannot reach
