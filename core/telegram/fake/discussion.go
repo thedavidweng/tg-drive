@@ -100,7 +100,7 @@ func (c *Client) EditThreadMessage(ctx context.Context, channelID int64, msgID i
 	if gid == 0 {
 		return &telegram.DiscussionMissingError{}
 	}
-	if c.failEditText {
+	if c.failEditText || c.failCommentEdit {
 		return fmt.Errorf("simulated edit failure")
 	}
 	for i, m := range c.messages[gid] {
@@ -127,7 +127,7 @@ func (c *Client) DeleteThreadMessage(ctx context.Context, channelID int64, msgID
 		return &telegram.DiscussionMissingError{}
 	}
 	c.deleteCalls++
-	if c.failDelete || (c.failDeleteAfterOne && c.deleteCalls > 1) {
+	if c.failDelete || c.failCommentDelete || (c.failDeleteAfterOne && c.deleteCalls > 1) {
 		return fmt.Errorf("delete failed")
 	}
 	for i, m := range c.messages[gid] {

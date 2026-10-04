@@ -143,6 +143,9 @@ td transfers retry <id>
 td rm <remote-path>
   [--tombstone] [--allow-stale-manifest]
   [--confirm] [--dry-run]
+  # a machine record left stale (manifest not redacted, album inventory
+  # not rewritten) fails with ERR_TELEGRAM_RPC after the file is removed;
+  # --allow-stale-manifest exits 0 with stale_manifest: true instead
 td share [remote-path]
 td adopt [message-id] [remote-path]
   [--unmanaged] [--into <dir>]

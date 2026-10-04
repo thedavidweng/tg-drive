@@ -31,7 +31,7 @@ Binary-level end-to-end tests live in `internal/app`
 `e2e_session_lock_test.go`, `e2e_cancel_test.go`, `e2e_transfers_test.go`,
 `e2e_transfer_kinds_test.go`, `e2e_transfer_cancel_test.go`,
 `e2e_transfer_watch_test.go`, `e2e_transfer_retention_test.go`,
-`e2e_transfer_retry_test.go`, `resume_cli_test.go`,
+`e2e_transfer_retry_test.go`, `e2e_rm_stale_test.go`, `resume_cli_test.go`,
 `app_test.go`). They build the real `td` binary and drive the full user
 journey — login, init, channels,
 cp, ls, tree, get (single and recursive), mv, rm, share, scan, status,
@@ -51,6 +51,15 @@ observed stage, no more. Both watch forms must exit 130 on Ctrl-C.
 `e2e_transfer_retention_test.go` seeds old Transfer rows straight into the
 index and asserts a Manager start prunes the terminal ones past 30 days
 while keeping recent and active ones.
+
+`e2e_rm_stale_test.go` runs `td rm` with `TD_FAKE_FAIL_COMMENTS=edit` or
+`delete`, which fails discussion-thread comment edits or deletes while media
+writes succeed. It covers a per-file record delete, a tombstone whose
+comment edit falls back to a tombstone caption, an album member whose
+inventory rewrite fails, and the last album member whose inventory delete
+fails, each with and without `--allow-stale-manifest`. It asserts the exit
+code, the `stale_manifest` result or `ERR_TELEGRAM_RPC` details, the index
+and Telegram state, and that a full rebuild from the channel agrees.
 
 Observer reports (stages, byte progress, per-item results) of every
 long-running use case are pinned against the fake in `internal/service`

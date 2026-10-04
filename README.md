@@ -298,7 +298,9 @@ td repair --orphaned   # uploads that only partially landed on Telegram
 ```
 
 - `ERR_MESSAGE_NOT_EDITABLE`: the message is too old to edit. Check `td doctor`.
-- Tombstone could not redact a manifest reply: rerun with `--allow-stale-manifest`.
+- `td rm` removed the file but could not update its machine record
+  (`ERR_TELEGRAM_RPC` with `details.stale_manifest`): the file is already
+  gone; pass `--allow-stale-manifest` to accept stale records.
 - Rate limited: retry with `--wait`, or raise `rate_limit.max_wait_seconds`.
 
 ## Documentation

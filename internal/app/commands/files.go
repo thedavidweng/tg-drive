@@ -373,7 +373,7 @@ func NewRmCmd(rt Runtime) *cobra.Command {
 			}
 			if !rt.JSON() {
 				if data.StaleManifest {
-					fmt.Fprintln(os.Stderr, "warning: manifest reply could not be redacted and remains on Telegram")
+					fmt.Fprintln(os.Stderr, "warning: the file's machine record could not be updated and remains stale on Telegram")
 				}
 				if data.Mode == "tombstone" {
 					return r.SuccessLine("tombstoned %s (hidden from td ls; the Telegram message is kept with a tombstone caption)", args[0])
