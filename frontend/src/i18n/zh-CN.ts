@@ -12,6 +12,7 @@ export const zhCN: Record<MessageKey, string> = {
   "drive.treeLabel": "{path} 的树形视图",
   "drive.loading": "正在加载…",
   "drive.empty": "此文件夹为空。",
+  "drive.emptyHint": "将文件拖到此处，或点击“上传文件”。",
   "drive.folder": "文件夹",
   "drive.file": "文件",
   "drive.breadcrumbs": "当前位置",

@@ -11,6 +11,7 @@ export const en = {
   "drive.treeLabel": "Tree of {path}",
   "drive.loading": "Loading…",
   "drive.empty": "This folder is empty.",
+  "drive.emptyHint": "Drop files here, or use Upload files.",
   "drive.folder": "Folder",
   "drive.file": "File",
   "drive.breadcrumbs": "Current location",

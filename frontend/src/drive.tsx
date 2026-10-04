@@ -4,6 +4,7 @@ import {
   Download,
   File,
   Folder,
+  FolderOpen,
   FolderPlus,
   FolderUp,
   List,
@@ -158,10 +159,10 @@ export function DriveScreen({ backend }: { backend: Backend }) {
 
   return (
     <div data-file-drop-target="">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex min-h-7 flex-wrap items-center justify-between gap-2">
         <Breadcrumbs path={path} onNavigate={setPath} />
         <div className="flex items-center gap-1.5">
-          <Button variant="outline" size="sm" onClick={() => pickAndUpload(() => backend.transfers.pickFiles())}>
+          <Button size="sm" onClick={() => pickAndUpload(() => backend.transfers.pickFiles())}>
             <Upload data-icon="inline-start" />
             {t("drive.uploadFiles")}
           </Button>
@@ -177,10 +178,18 @@ export function DriveScreen({ backend }: { backend: Backend }) {
             <FolderPlus data-icon="inline-start" />
             {t("drive.newFolder")}
           </Button>
-          <Button variant="outline" size="sm" onClick={startScan} disabled={scan.state === "running"}>
-            <RefreshCw data-icon="inline-start" />
-            {t("drive.scan")}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("drive.scan")}
+            title={t("drive.scan")}
+            onClick={startScan}
+            disabled={scan.state === "running"}
+            className="text-ctl-fg"
+          >
+            <RefreshCw aria-hidden className={`size-[15px] ${scan.state === "running" ? "animate-spin" : ""}`} />
           </Button>
+          <span aria-hidden className="mx-1 h-4 w-px bg-line" />
           <span
             role="group"
             aria-label={t("drive.viewLabel")}
@@ -309,10 +318,16 @@ function Breadcrumbs({ path, onNavigate }: { path: string; onNavigate: (path: st
   const crumbClass =
     "rounded-control px-1 py-0.5 text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
   return (
-    <nav aria-label={t("drive.breadcrumbs")} className="flex min-w-0 items-center gap-0.5 text-[12.5px]">
-      <button type="button" onClick={() => onNavigate("/")} className={crumbClass}>
-        {t("drive.root")}
-      </button>
+    <nav aria-label={t("drive.breadcrumbs")} className="-ml-1 flex min-w-0 items-center gap-0.5 text-[12.5px]">
+      {segments.length === 0 ? (
+        <span aria-current="page" className="px-1 py-0.5 text-[13px] font-semibold tracking-[-.01em] text-fg">
+          {t("drive.root")}
+        </span>
+      ) : (
+        <button type="button" onClick={() => onNavigate("/")} className={crumbClass}>
+          {t("drive.root")}
+        </button>
+      )}
       {segments.map((segment, i) => {
         const target = "/" + segments.slice(0, i + 1).join("/")
         const last = i === segments.length - 1
@@ -320,7 +335,7 @@ function Breadcrumbs({ path, onNavigate }: { path: string; onNavigate: (path: st
           <span key={target} className="flex min-w-0 items-center gap-0.5">
             <ChevronRight aria-hidden className="size-3 shrink-0 text-faint" />
             {last ? (
-              <span aria-current="page" className="truncate px-1 py-0.5 font-medium text-fg">
+              <span aria-current="page" className="truncate px-1 py-0.5 text-[13px] font-semibold tracking-[-.01em] text-fg">
                 {segment}
               </span>
             ) : (
@@ -361,7 +376,7 @@ function ListingCard({
     )
   }
   if (listing.entries.length === 0) {
-    return <p className="px-1 py-6 text-center text-muted-foreground">{t("drive.empty")}</p>
+    return <EmptyFolder />
   }
   return (
     <ul
@@ -396,7 +411,7 @@ function ListingCard({
             {formatDate(e.date, locale)}
           </span>
           {e.type === "file" && (
-            <span className="flex shrink-0 items-center gap-0.5">
+            <span className="flex w-[110px] shrink-0 items-center gap-0.5">
               <RowAction label={t("drive.download")} onClick={() => onDownload(e)} icon={Download} />
               <RowAction label={t("drive.rename")} onClick={() => onAction("move", e)} icon={Pencil} />
               <RowAction label={t("drive.share")} onClick={() => onAction("share", e)} icon={Share2} />
@@ -404,7 +419,7 @@ function ListingCard({
             </span>
           )}
           {e.type === "dir" && (
-            <span className="flex shrink-0 items-center gap-0.5">
+            <span className="flex w-[110px] shrink-0 items-center gap-0.5">
               <RowAction label={t("drive.download")} onClick={() => onDownload(e)} icon={Download} />
             </span>
           )}
@@ -429,7 +444,7 @@ function RowAction({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid size-[26px] place-items-center rounded-[7px] text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+      className="grid size-[26px] place-items-center rounded-[7px] text-ctl-fg transition-[background-color,color,scale] duration-150 ease-quiet hover:bg-pill-hover hover:text-fg active:scale-94"
     >
       <Icon aria-hidden className="size-4" />
     </button>
@@ -478,7 +493,7 @@ function TreeCard({
     )
   }
   if (tree.nodes.length === 0) {
-    return <p className="px-1 py-6 text-center text-muted-foreground">{t("drive.empty")}</p>
+    return <EmptyFolder />
   }
   return (
     <div className="rounded-card border border-line bg-card px-3.5 py-2">
@@ -514,6 +529,19 @@ function TreeItem({ node }: { node: TreeNode }) {
         </ul>
       )}
     </li>
+  )
+}
+
+function EmptyFolder() {
+  const { t } = useI18n()
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 rounded-card border border-dashed border-line px-6 py-14 text-center">
+      <span aria-hidden className="mb-2 grid size-10 place-items-center rounded-full bg-pill text-ctl-fg">
+        <FolderOpen className="size-5" />
+      </span>
+      <p className="font-medium text-fg">{t("drive.empty")}</p>
+      <p className="text-[12px] text-muted-foreground">{t("drive.emptyHint")}</p>
+    </div>
   )
 }
 

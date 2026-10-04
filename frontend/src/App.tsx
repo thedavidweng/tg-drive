@@ -141,8 +141,8 @@ function Shell(props: ShellProps) {
   }
   return (
     <Tabs defaultValue="drive" className="h-full gap-0">
-      <header className="app-drag app-header grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-line px-3.5">
-        <div className="flex min-w-0 items-center gap-2">
+      <header className="app-drag app-header grid h-13 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-line px-3.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <Logo />
           <ChannelSwitcher backend={backend} onActiveChange={setActiveChannel} />
         </div>
@@ -160,7 +160,7 @@ function Shell(props: ShellProps) {
             </TabsTrigger>
           ))}
         </TabsList>
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="flex min-w-0 items-center justify-end gap-1">
           {gate.status.user && (
             <AccountChip
               user={gate.status.user}
@@ -206,15 +206,14 @@ function Shell(props: ShellProps) {
 
 function Logo() {
   return (
-    <div className="flex items-center gap-2 font-semibold tracking-[-.01em]">
-      <svg aria-hidden viewBox="0 0 24 24" className="size-5 text-primary">
+    <span aria-hidden className="grid size-7 shrink-0 place-items-center text-primary">
+      <svg viewBox="0 0 24 24" className="size-[18px]">
         <path
           fill="currentColor"
           d="M21.4 3.6 2.9 10.7c-1 .4-1 1.8 0 2.1l4.6 1.5 1.8 5.5c.3.8 1.3 1 1.9.4l2.6-2.5 4.6 3.4c.7.5 1.6.1 1.8-.7L23 4.8c.2-.9-.7-1.6-1.6-1.2ZM9.9 14.6l-.5 3.6-1.3-4.3 9.6-6.3-7.8 7Z"
         />
       </svg>
-      <span>td</span>
-    </div>
+    </span>
   )
 }
 
@@ -224,18 +223,18 @@ function AccountChip({ user, onLogout }: { user: AuthUser; onLogout: () => void 
   return (
     <span
       aria-label={t("auth.account", { name: user.display_name })}
-      className="flex items-center gap-1.5 rounded-full bg-pill py-1 pr-1 pl-3 text-[12px] text-fg-2"
+      className="flex h-7 min-w-0 items-center gap-1 rounded-full bg-pill pr-0.5 pl-3 text-[12px] text-fg-2"
     >
-      <span className="max-w-40 truncate">
-        {user.display_name}
-        {user.phone ? ` (${user.phone})` : ""}
+      <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="max-w-32 truncate font-medium text-fg">{user.display_name}</span>
+        {user.phone && <span className="shrink-0 text-muted-foreground tabular-nums">{user.phone}</span>}
       </span>
       <button
         type="button"
         aria-label={t("auth.logout")}
         title={t("auth.logout")}
         onClick={onLogout}
-        className="grid size-[22px] place-items-center rounded-full text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+        className="grid size-6 shrink-0 place-items-center rounded-full text-ctl-fg transition-[background-color,color,scale] duration-150 ease-quiet hover:bg-pill-hover hover:text-fg active:scale-94"
       >
         <LogOut aria-hidden className="size-3.5" />
       </button>
@@ -257,9 +256,9 @@ function ThemeToggle({ theme, onTheme }: { theme: ThemeMode; onTheme: (mode: The
       aria-label={label}
       title={label}
       onClick={() => onTheme(nextMode[theme])}
-      className="om-hide grid size-[26px] place-items-center rounded-[7px] text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
+      className="om-hide grid size-7 place-items-center rounded-control text-ctl-fg transition-[background-color,color,scale] duration-150 ease-quiet hover:bg-pill-hover hover:text-fg active:scale-94"
     >
-      <Icon aria-hidden className="size-4" />
+      <Icon aria-hidden className="size-[15px]" />
     </button>
   )
 }
