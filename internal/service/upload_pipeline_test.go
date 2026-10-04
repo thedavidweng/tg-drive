@@ -11,6 +11,7 @@ import (
 
 	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/manifest"
 	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
@@ -291,5 +292,138 @@ func TestVideoAlbumCarriesThumbnail(t *testing.T) {
 		Presentation{Kind: telegram.KindPhoto, ThumbPath: writeThumb(t)}, UploadOptions{})
 	if code := appErrCode(t, err); code != apperr.ErrUsage {
 		t.Fatalf("photo album with thumbnail code = %s, want ERR_USAGE", code)
+	}
+}
+
+// manifestClaims counts the live td-manifest:v1 records claiming path on
+// either carrier.
+func manifestClaims(t *testing.T, app *App, ctx context.Context, path string) int {
+	t.Helper()
+	n := 0
+	for _, m := range machineRecords(t, app, ctx) {
+		meta, err := manifest.ParseManifestReply(m.Text)
+		if err == nil && !meta.Deleted && meta.CanonicalPath == path {
+			n++
+		}
+	}
+	return n
+}
+
+// wipeIndex drops the local index so a full scan rebuilds it from Telegram
+// alone.
+func wipeIndex(t *testing.T, app *App) {
+	t.Helper()
+	for _, table := range []string{"path_tags", "path_segment_slugs", "files", "nodes", "scan_state"} {
+		if _, err := app.DB.Raw().Exec(`delete from ` + table); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestFileIndexFailureLeavesNoManifestClaim pins the rollback of a single
+// file whose td-manifest:v1 comment reached Telegram before its index write
+// failed. Failure modes: (1) the comment outlives the rolled-back upload and
+// a full scan rebuild resurrects the path; (2) when the media cannot be
+// deleted, the orphaned row is contradicted by a live comment claiming its
+// path, which a later full scan indexes as active.
+func TestFileIndexFailureLeavesNoManifestClaim(t *testing.T) {
+	const path = "/leak.txt"
+
+	t.Run("clean-rollback", func(t *testing.T) {
+		app, tg := testApp(t)
+		loginAndInit(t, app, tg)
+		ctx := context.Background()
+		app.Index = failIndex{err: errors.New("index boom")}
+		_, err := app.UploadFile(ctx, writeLocal(t, "payload"), path, ConflictFail, false, UploadOptions{})
+		if code := appErrCode(t, err); code != apperr.ErrDB {
+			t.Fatalf("code = %s, want ERR_DB after a clean rollback (%v)", code, err)
+		}
+		if n := manifestClaims(t, app, ctx, path); n != 0 {
+			t.Fatalf("%d td-manifest:v1 records still claim %s", n, path)
+		}
+		app.Index = nil
+		wipeIndex(t, app)
+		if _, err := app.Scan(ctx, ScanOptions{Full: true}); err != nil {
+			t.Fatal(err)
+		}
+		if n := rowsAt(t, app, path); n != 0 {
+			t.Fatalf("full scan rebuild indexed %s (%d rows)", path, n)
+		}
+	})
+
+	t.Run("media-delete-fails", func(t *testing.T) {
+		app, tg := testApp(t)
+		loginAndInit(t, app, tg)
+		ctx := context.Background()
+		app.Index = failIndex{err: errors.New("index boom")}
+		// The rollback deletes the comment first, then the media.
+		tg.SetFailDeleteAfterFirst(true)
+		_, err := app.UploadFile(ctx, writeLocal(t, "payload"), path, ConflictFail, false, UploadOptions{})
+		if code := appErrCode(t, err); code != apperr.ErrOrphanedUpload {
+			t.Fatalf("code = %s, want ERR_ORPHANED_UPLOAD (%v)", code, err)
+		}
+		tg.SetFailDeleteAfterFirst(false)
+		if got := fileStatus(t, app, path); got != "orphaned" {
+			t.Fatalf("status = %q, want orphaned", got)
+		}
+		if n := manifestClaims(t, app, ctx, path); n != 0 {
+			t.Fatalf("%d td-manifest:v1 records claim orphaned %s", n, path)
+		}
+		app.Index = nil
+		if _, err := app.Scan(ctx, ScanOptions{Full: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := fileStatus(t, app, path); got != "orphaned" {
+			t.Fatalf("status after full scan = %q, want orphaned", got)
+		}
+	})
+}
+
+// TestRepairOrphanedIndexFailureKeepsOneRecord pins repeated failures of
+// td repair --orphaned whose index write fails after the comment was sent.
+// Failure modes: (1) every attempt leaves another td-manifest:v1 comment for
+// the same media message; (2) the row stops being repairable once the index
+// recovers.
+func TestRepairOrphanedIndexFailureKeepsOneRecord(t *testing.T) {
+	const path = "/again.txt"
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+	tg.SetFailReply(true)
+	tg.SetFailDelete(true)
+	_, _ = app.UploadFile(ctx, writeLocal(t, "payload"), path, ConflictFail, false, UploadOptions{})
+	tg.SetFailReply(false)
+	tg.SetFailDelete(false)
+	if got := fileStatus(t, app, path); got != "orphaned" {
+		t.Fatalf("status = %q, want orphaned", got)
+	}
+
+	app.Index = failIndex{err: errors.New("index boom")}
+	for i := 0; i < 3; i++ {
+		res, err := runOrphanRepair(ctx, app, RepairOptions{Orphaned: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Repaired != 0 {
+			t.Fatalf("attempt %d repaired %d with a failing index", i, res.Repaired)
+		}
+		if n := manifestClaims(t, app, ctx, path); n > 1 {
+			t.Fatalf("attempt %d left %d td-manifest:v1 records for one message", i, n)
+		}
+	}
+	if got := fileStatus(t, app, path); got != "orphaned" {
+		t.Fatalf("status = %q, want orphaned", got)
+	}
+
+	app.Index = nil
+	res, err := runOrphanRepair(ctx, app, RepairOptions{Orphaned: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Repaired != 1 {
+		t.Fatalf("repair = %+v, want 1 repaired", res)
+	}
+	if n := manifestClaims(t, app, ctx, path); n != 1 {
+		t.Fatalf("repaired file has %d td-manifest:v1 records, want 1", n)
 	}
 }

@@ -317,13 +317,19 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool, obs Observ
 				itemErr = err
 				return nil // stays orphaned for a later attempt
 			}
-			if _, err := pub.PublishFile(ctx, publisher.FileRequest{
+			pubRes, err := pub.PublishFile(ctx, publisher.FileRequest{
 				ChannelRowID: channelID,
 				ChannelID:    tgChID,
 				FileID:       r.id,
 				MessageID:    int(r.msgID.Int64),
 				Rendition:    rendition,
-			}); err != nil {
+			})
+			if err != nil {
+				// Each attempt sends a fresh record, so a failed one is
+				// deleted rather than left to pile up beside the next.
+				if pubRes != nil && pubRes.ManifestMsgID > 0 {
+					_ = a.manifestCarrier(manifestChat).Delete(ctx, tgChID, pubRes.ManifestMsgID)
+				}
 				itemErr = err
 				return nil // stays orphaned for a later attempt
 			}
