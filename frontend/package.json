@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:demo": "vite build --mode demo",
+    "dev": "bun --bun vite",
+    "build": "bun --bun vite build",
+    "build:demo": "bun --bun vite build --mode demo",
     "typecheck": "tsc -b",
     "lint": "eslint --max-warnings 0 .",
     "test": "bun test"
