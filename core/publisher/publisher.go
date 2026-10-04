@@ -213,18 +213,21 @@ func (p *Publisher) Render(req RenderRequest) (*Rendition, error) {
 }
 
 // PublishFile completes a new ungrouped file: it sends the per-file manifest
-// record and indexes the row as uploaded.
+// record and indexes the row as uploaded. As with PublishAlbum, the result
+// carries ManifestMsgID alongside an index error whenever the record reached
+// Telegram, so the caller's rollback can delete it.
 func (p *Publisher) PublishFile(ctx context.Context, req FileRequest) (*PublishResult, error) {
 	r := req.Rendition
 	manifestMsgID, _, err := p.writeRecord(ctx, req.ChannelID, req.MessageID, 0, r)
 	if err != nil {
 		return nil, telegram.MapError(err)
 	}
-	fileID, err := p.fileIndex.Index(ctx, indexRequest(req.ChannelRowID, req.FileID, req.MessageID, manifestMsgID, r, req.ReplaceFileID, true, p.now(req.Now)))
+	res := &PublishResult{ManifestMsgID: manifestMsgID}
+	res.FileID, err = p.fileIndex.Index(ctx, indexRequest(req.ChannelRowID, req.FileID, req.MessageID, manifestMsgID, r, req.ReplaceFileID, true, p.now(req.Now)))
 	if err != nil {
-		return nil, apperr.Wrap(apperr.ErrDB, "publish file record", err)
+		return res, apperr.Wrap(apperr.ErrDB, "publish file record", err)
 	}
-	return &PublishResult{FileID: fileID, ManifestMsgID: manifestMsgID}, nil
+	return res, nil
 }
 
 // PublishAlbum completes a new media group: it sends the group's one

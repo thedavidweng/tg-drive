@@ -573,7 +573,12 @@ func (a *App) sendUnit(ctx context.Context, opts UploadOptions, ch uploadChannel
 		}
 		pubRes, err := a.publisher().PublishFile(ctx, req)
 		if err != nil {
-			return nil, nil, a.abandonUnit(ctx, ch, unit, results, 0, now, err, "could not be completed or rolled back")
+			// The manifest id is set when the record reached Telegram; the
+			// rollback deletes it with the media.
+			if pubRes != nil {
+				replyID = pubRes.ManifestMsgID
+			}
+			return nil, nil, a.abandonUnit(ctx, ch, unit, results, replyID, now, err, "could not be completed or rolled back")
 		}
 		sent = append(sent, s.sentAs(results[0].MessageID, pubRes.ManifestMsgID))
 	}
