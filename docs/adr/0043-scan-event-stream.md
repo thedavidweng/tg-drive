@@ -1,4 +1,4 @@
-# 0042: NDJSON event stream for td scan
+# 0043: NDJSON event stream for td scan
 
 Status: Accepted. Extends ADR 0005 to `td scan`.
 

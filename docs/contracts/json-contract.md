@@ -388,7 +388,7 @@ events only.
 
 Incremental scans may include `full_scan_warning`. `--include-deleted` adds `tombstones`. A full scan that continued an interrupted run adds `"resumed": true`.
 
-With `--events` (ADR 0042), `td scan` streams NDJSON envelopes on stdout,
+With `--events` (ADR 0043), `td scan` streams NDJSON envelopes on stdout,
 with or without `--json`, all sharing one `meta.request_id`:
 
 - `scan.stage` — `{"stage":"reading"}` when the history read starts, then
