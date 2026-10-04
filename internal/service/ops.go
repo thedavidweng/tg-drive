@@ -608,14 +608,17 @@ func (o DeleteOptions) Validate() error {
 }
 
 // DeleteResult reports how a file was removed. StaleManifest marks a
-// manifest reply that could not be redacted.
+// manifest record that could not be redacted or an album inventory that
+// could not be rewritten.
 type DeleteResult struct {
 	Mode          string `json:"mode"`
 	Path          string `json:"path"`
 	StaleManifest bool   `json:"stale_manifest,omitempty"`
 }
 
-// DeleteFile removes a remote file according to the delete policy.
+// DeleteFile removes a remote file according to the delete policy. A record
+// left stale fails with ERR_TELEGRAM_RPC unless AllowStaleManifest is set;
+// the file is removed regardless, and the result is returned with the error.
 func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOptions) (*DeleteResult, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, err
@@ -651,16 +654,10 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	var out *DeleteResult
 	lockErr := a.operate(ctx, ch, []string{p}, func(ctx context.Context) error {
 		res, err := a.deleteFileLocked(ctx, ch.rowID, ch.tgID, row, opts)
-		if err != nil {
-			return err
-		}
 		out = res
-		return nil
+		return err
 	})
-	if lockErr != nil {
-		return nil, lockErr
-	}
-	return out, nil
+	return out, lockErr
 }
 
 func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, row sqlitestore.FileRow, opts DeleteOptions) (*DeleteResult, error) {
@@ -686,7 +683,7 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, row
 		return nil, retired.recordErr
 	}
 	out := &DeleteResult{Path: row.CanonicalPath, Mode: retired.mode, StaleManifest: retired.stale != nil}
-	if err := retired.staleErr(opts.AllowStaleManifest); err != nil {
+	if err := retired.staleErr(row.CanonicalPath, opts.AllowStaleManifest); err != nil {
 		return out, err
 	}
 	return out, nil

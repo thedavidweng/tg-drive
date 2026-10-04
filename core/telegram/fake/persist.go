@@ -48,6 +48,9 @@ type persistedState struct {
 //     reports missing; the operations themselves still succeed.
 //   - TD_FAKE_FAIL_DOCTOR=1: capability probes fail, without blocking
 //     other Telegram operations.
+//   - TD_FAKE_FAIL_COMMENTS: a comma-separated list of discussion-thread
+//     comment writes (edit, delete) that fail, as when a machine record
+//     cannot be redacted; drive-channel media writes still succeed.
 func NewPersistent(path string) *Client {
 	c := New()
 	c.statePath = path
@@ -81,6 +84,14 @@ func NewPersistent(path string) *Client {
 		}
 	}
 	c.failDoctor = os.Getenv("TD_FAKE_FAIL_DOCTOR") == "1"
+	for _, name := range strings.Split(os.Getenv("TD_FAKE_FAIL_COMMENTS"), ",") {
+		switch strings.TrimSpace(name) {
+		case "edit":
+			c.failCommentEdit = true
+		case "delete":
+			c.failCommentDelete = true
+		}
+	}
 	c.load()
 	return c
 }

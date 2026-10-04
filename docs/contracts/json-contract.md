@@ -88,6 +88,48 @@ Transfer has the ID `td transfers show` was given.
 `ERR_DIRECTORY_MOVE_UNSUPPORTED` and `ERR_DIRECTORY_DELETE_UNSUPPORTED` carry
 the offending remote directory in `details.path`.
 
+## Delete result
+
+```json
+{
+  "ok": true,
+  "data": {
+    "path": "/docs/report.pdf",
+    "mode": "delete",
+    "stale_manifest": true
+  }
+}
+```
+
+`mode` is `delete` or `tombstone`; album members are always deleted, so they
+report `delete`. `stale_manifest` is present only when the file's machine
+record was left stale on Telegram: a per-file `td-manifest:v1` record that
+could not be deleted or redacted, or a `td-album:v1` inventory that could not
+be rewritten (or deleted with the last member). A tombstone whose comment
+edit fails falls back to a tombstone caption on the media post; that caption
+outranks the live comment during scans, so the result is not stale.
+
+Without `--allow-stale-manifest`, a stale record fails `td rm` with
+`ERR_TELEGRAM_RPC` (exit code 4) after the file is already removed and its
+row marked deleted, so rerunning the same `td rm` fails with
+`ERR_REMOTE_NOT_FOUND`. `details` reports that outcome (ADR 0042):
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "ERR_TELEGRAM_RPC",
+    "message": "/docs/report.pdf was removed, but manifest reply 42 could not be redacted: ...; pass --allow-stale-manifest to accept a stale record",
+    "details": {
+      "path": "/docs/report.pdf",
+      "mode": "delete",
+      "stale_manifest": true,
+      "manifest_message_id": 42
+    }
+  }
+}
+```
+
 ## Version
 
 ```json

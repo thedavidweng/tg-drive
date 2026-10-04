@@ -43,6 +43,10 @@ type Client struct {
 	deleteCalls        int
 	failEditText       bool
 	denyPerms          bool
+	// failCommentEdit and failCommentDelete fail discussion-thread comment
+	// edits and deletes only, leaving drive-channel media writes working.
+	failCommentEdit   bool
+	failCommentDelete bool
 
 	// Resumable-upload simulation knobs. The resumable path only engages
 	// above ResumableBigFileBytes, matching the real adapter's uploader

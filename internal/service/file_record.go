@@ -79,17 +79,22 @@ type recordRetirement struct {
 }
 
 // staleErr is the td rm failure for a stale record; nil when nothing is
-// stale or the caller accepts stale records.
-func (rt recordRetirement) staleErr(allowStale bool) error {
+// stale or the caller accepts stale records. The file is already removed
+// when it fails, so the details report that outcome alongside the record.
+func (rt recordRetirement) staleErr(path string, allowStale bool) error {
 	if rt.stale == nil || allowStale {
 		return nil
 	}
+	msg := fmt.Sprintf("%s was removed, but manifest reply %d could not be redacted: %v; pass --allow-stale-manifest to accept a stale record", path, rt.manID, rt.stale)
 	if rt.inAlbum {
-		return apperr.New(apperr.ErrTelegramRPC,
-			fmt.Sprintf("album inventory %d could not be updated: %v; rerun with --allow-stale-manifest to ignore", rt.manID, rt.stale))
+		msg = fmt.Sprintf("%s was removed, but album inventory %d could not be updated: %v; pass --allow-stale-manifest to accept a stale record", path, rt.manID, rt.stale)
 	}
-	return apperr.New(apperr.ErrTelegramRPC,
-		fmt.Sprintf("manifest reply %d could not be redacted: %v; rerun with --allow-stale-manifest to ignore", rt.manID, rt.stale))
+	return apperr.New(apperr.ErrTelegramRPC, msg).WithDetails(map[string]any{
+		"path":                path,
+		"mode":                rt.mode,
+		"stale_manifest":      true,
+		"manifest_message_id": rt.manID,
+	})
 }
 
 // Retire removes the file from Telegram for td rm. mode "delete" deletes the
