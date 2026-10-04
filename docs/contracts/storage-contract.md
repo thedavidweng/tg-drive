@@ -23,17 +23,18 @@ CLI needs a handful of concurrent statements and WAL allows one writer.
 transaction together with its version row, so a database can never be left
 half-migrated.
 
-**Pre-release squash policy.** The product has not shipped; the schema is
-iterated internally and the migration list is squashed instead of
-accumulated. The baseline (version 1) always carries the full current shape
-idempotently (`create ... if not exists`). Local databases that predate a
-squash are discarded, not upgraded: delete the database file and run
-`td scan --full` — Telegram is the recoverable source, so the rebuild is
-lossless for managed content. Version numbering restarts at each squash;
-versioned migrations resume when the schema freezes for release.
+The baseline (version 1) creates the core index idempotently. Earlier local
+pre-release databases may already record versions 2 and 3 from before those
+numbers were assigned to the Transfer schema. Opening them preserves their
+channel bindings and indexed files while completing the missing Transfer
+schema in migration 4 (ADR 0039). Do not delete the database merely because
+the Transfer table is missing.
 
 Version 2 adds the `transfers` table to databases already at version 1.
 Version 3 adds `items_failed` to it.
+Version 4 converges pre-Transfer databases with colliding version numbers
+and current databases, creating the table and missing column only when absent.
+All migration steps and their version records run in a transaction.
 
 ## Schema
 

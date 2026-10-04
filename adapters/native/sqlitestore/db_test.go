@@ -31,6 +31,74 @@ func TestMigrationCreatesFreshDB(t *testing.T) {
 	}
 }
 
+// Older pre-release databases used versions 2 and 3 before those numbers
+// were reused for Transfers. Opening them must repair the missing schema
+// without discarding the indexed files and channel bindings.
+func TestMigrationRepairsPreTransferVersionCollision(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		prepare string
+	}{
+		{"version 2 without transfers", `drop table transfers; delete from schema_version where version>=3`},
+		{"version 3 without transfers", `drop table transfers; delete from schema_version where version=4`},
+		{"version 3 without failed-item column", `alter table transfers drop column items_failed; delete from schema_version where version=4`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "legacy.db")
+			db, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Raw().Exec(`insert into accounts(id,tg_user_id,created_at,updated_at)
+				values(1,'old-account','2026-01-01','2026-01-01');
+				insert into channels(id,account_id,tg_channel_id,title,root_local_path,created_at,updated_at)
+				values(1,1,'old-channel','Drive','/root','2026-01-01','2026-01-01');
+				insert into files(id,channel_id,canonical_path,display_name,status,updated_at)
+				values(1,1,'/kept.txt','kept.txt','active','2026-01-01')`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Raw().Exec(tc.prepare); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				reopened, err := Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var count, version int
+				if err := reopened.Raw().QueryRow(`select count(*) from files where canonical_path='/kept.txt'`).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				if count != 1 {
+					t.Fatalf("file count = %d, want 1", count)
+				}
+				if err := reopened.Raw().QueryRow(`select max(version) from schema_version`).Scan(&version); err != nil {
+					t.Fatal(err)
+				}
+				if version != 4 {
+					t.Fatalf("schema version = %d, want 4", version)
+				}
+				var tables int
+				if err := reopened.Raw().QueryRow(`select count(*) from sqlite_master where type='table' and name='transfers'`).Scan(&tables); err != nil {
+					t.Fatal(err)
+				}
+				if tables != 1 {
+					t.Fatalf("transfers table count = %d, want 1", tables)
+				}
+				if _, err := reopened.Raw().Exec(`select items_failed from transfers limit 0`); err != nil {
+					t.Fatalf("transfer schema incomplete: %v", err)
+				}
+				if err := reopened.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestWALMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "wal.db")
 	d, err := Open(path)

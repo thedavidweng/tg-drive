@@ -239,18 +239,51 @@ type migration struct {
 	// stmts are executed in order. The baseline is idempotent (create if not
 	// exists) so fresh databases converge through the same steps.
 	stmts []string
+	// run handles migrations whose SQL depends on the shape left by a
+	// pre-release database with colliding version numbers.
+	run func(context.Context, *sql.Tx) error
 }
 
-// Pre-release the schema is squashed instead of accumulated: schema changes
-// rewrite the baseline in place, and local databases that predate the squash
-// are discarded (delete the file; `td scan --full` rebuilds it from
-// Telegram, which is the recoverable source). Version numbering restarts at
-// each squash. Versioned migrations resume when the schema freezes for
-// release.
+// Pre-release the schema was squashed instead of accumulated. Some local
+// databases already recorded versions 2/3 for an earlier schema without
+// Transfers. Migration 4 repairs that collision while retaining their
+// indexed files and bindings (ADR 0039).
 var migrations = []migration{
 	{version: 1, stmts: []string{schemaSQL}},
 	{version: 2, stmts: []string{transfersSQL}},
-	{version: 3, stmts: []string{transfersFailedItemsSQL}},
+	// Old version-2 databases can lack transfers entirely.
+	{version: 3, stmts: []string{transfersSQL, transfersFailedItemsSQL}},
+	// Older version-3 databases skipped both Transfer migrations.
+	{version: 4, run: repairTransferSchema},
+}
+
+// repairTransferSchema converges both pre-Transfer and current v3 databases
+// without resetting their channel bindings or file index. It runs in the
+// same transaction as the new schema_version row.
+func repairTransferSchema(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, transfersSQL); err != nil {
+		return err
+	}
+	var hasTable int
+	if err := tx.QueryRowContext(ctx,
+		`select count(*) from sqlite_master where type='table' and name='transfers'`,
+	).Scan(&hasTable); err != nil {
+		return err
+	}
+	if hasTable == 0 {
+		return fmt.Errorf("transfer table missing after creation")
+	}
+	var hasFailedItems int
+	if err := tx.QueryRowContext(ctx,
+		`select count(*) from pragma_table_info('transfers') where name='items_failed'`,
+	).Scan(&hasFailedItems); err != nil {
+		return err
+	}
+	if hasFailedItems == 0 {
+		_, err := tx.ExecContext(ctx, transfersFailedItemsSQL)
+		return err
+	}
+	return nil
 }
 
 // currentVersion reports the highest applied schema version, 0 for a fresh
@@ -281,6 +314,11 @@ func applyMigrations(ctx context.Context, tx *sql.Tx) error {
 		}
 		for _, stmt := range m.stmts {
 			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				return apperr.Wrap(apperr.ErrDB, fmt.Sprintf("apply migration %d", m.version), err)
+			}
+		}
+		if m.run != nil {
+			if err := m.run(ctx, tx); err != nil {
 				return apperr.Wrap(apperr.ErrDB, fmt.Sprintf("apply migration %d", m.version), err)
 			}
 		}
