@@ -26,7 +26,8 @@ scan, move, delete, repair, and crash-recovery paths.
 
 Binary-level end-to-end tests live in `internal/app`
 (`e2e_lifecycle_test.go`, `e2e_album_test.go`, `e2e_hardening_test.go`,
-`e2e_events_test.go`, `e2e_observed_output_test.go`,
+`e2e_events_test.go`, `e2e_scan_events_test.go`,
+`e2e_observed_output_test.go`,
 `e2e_session_lock_test.go`, `e2e_cancel_test.go`, `e2e_transfers_test.go`,
 `e2e_transfer_kinds_test.go`, `e2e_transfer_cancel_test.go`,
 `e2e_transfer_watch_test.go`, `e2e_transfer_retention_test.go`,
@@ -35,7 +36,8 @@ Binary-level end-to-end tests live in `internal/app`
 journey — login, init, channels,
 cp, ls, tree, get (single and recursive), mv, rm, share, scan, status,
 doctor, config get/set, `doctor path-codec`, logout — asserting JSON
-envelopes, the `cp --events` NDJSON stream byte for byte, contract exit
+envelopes, the `cp --events` NDJSON stream byte for byte, the `scan --events`
+stream (stages, per-item tallies, final result, one shared request ID), contract exit
 codes, human output, `--verbose` diagnostics, the Session lock, and private
 file modes against the fake. The stdout of get, scan, every repair mode,
 adopt, and import saved is pinned byte for byte, so service observer reports

@@ -94,6 +94,18 @@ td cp --events ~/big.bin /big.bin
 {"ok":true,"data":{"path":"/big.bin","message_id":1234,"size":4294967296},"meta":{"command":"cp","duration_ms":4200,"schema_version":"2026-07-29","request_id":"..."}}
 ```
 
+## Track a long scan
+
+**Scenario:** a `td scan --full` on a large channel runs for minutes and your
+wrapper wants progress. `td scan --events` emits `scan.stage` lines as the
+scan moves from reading history to indexing, one `scan.item` line per file
+indexed or scan error recorded (each with the running `indexed` and `failed`
+tallies), then the final `scan` result. Every line shares `meta.request_id`.
+
+```sh
+td scan --full --events | jq -c 'select(.meta.command == "scan.item") | .data | [.indexed, .failed]'
+```
+
 ## Handle rate limits programmatically
 
 **Scenario:** Telegram flood-waits your account. By default the command fails

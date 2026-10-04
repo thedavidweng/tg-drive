@@ -5,15 +5,18 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/output"
 	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
 // Scan, listing, and tree browsing commands plus their display helpers.
 
 func NewScanCmd(rt Runtime) *cobra.Command {
-	var full, strict, repair, includeDeleted bool
+	var full, strict, repair, includeDeleted, events bool
 	c := &cobra.Command{
 		Use:   "scan [remote-root]",
 		Short: "Scan Telegram channel and rebuild index",
@@ -29,11 +32,18 @@ func NewScanCmd(rt Runtime) *cobra.Command {
 			if len(args) > 0 {
 				root = args[0]
 			}
-			data, err := app.Scan(cmd.Context(), service.ScanOptions{
+			opts := service.ScanOptions{
 				Full: full, Strict: strict, Repair: repair, IncludeDeleted: includeDeleted, Root: root,
-			})
+			}
+			if events {
+				opts.Observer = (&scanEvents{r: r}).observer()
+			}
+			data, err := app.Scan(cmd.Context(), opts)
 			if err != nil {
 				return r.Error(err)
+			}
+			if events {
+				return r.Event("scan", data)
 			}
 			if rt.JSON() {
 				return r.Success(data)
@@ -50,7 +60,67 @@ func NewScanCmd(rt Runtime) *cobra.Command {
 	c.Flags().BoolVar(&strict, "strict", false, "exit on invalid messages")
 	c.Flags().BoolVar(&repair, "repair", false, "repair DB-only inconsistencies")
 	c.Flags().BoolVar(&includeDeleted, "include-deleted", false, "record tombstoned files")
+	c.Flags().BoolVar(&events, "events", false, "emit NDJSON progress events during the scan")
 	return c
+}
+
+// ScanStageEvent is the payload of a scan.stage event.
+type ScanStageEvent struct {
+	Stage service.Stage `json:"stage"`
+}
+
+// ScanItemEvent is the payload of a scan.item event: one message the scan
+// indexed or recorded a scan error for, plus the running tallies so far.
+type ScanItemEvent struct {
+	MessageID int                `json:"message_id"`
+	Path      string             `json:"path,omitempty"`
+	Status    service.ItemStatus `json:"status"`
+	Error     *ScanItemError     `json:"error,omitempty"`
+	Indexed   int                `json:"indexed"`
+	Failed    int                `json:"failed"`
+}
+
+// ScanItemError is the scan error a failed scan.item recorded.
+type ScanItemError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// scanEvents turns the scan's observer callbacks into NDJSON events.
+// Observer callbacks may run on several goroutines at once; the lock also
+// keeps the tallies in the order the lines are written.
+type scanEvents struct {
+	r *output.Renderer
+
+	mu      sync.Mutex
+	indexed int
+	failed  int
+}
+
+func (s *scanEvents) observer() service.Observer {
+	return service.Observer{
+		OnStage: func(_ service.Item, st service.Stage) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			_ = s.r.Event("scan.stage", ScanStageEvent{Stage: st})
+		},
+		OnItem: func(res service.ItemResult) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			ev := ScanItemEvent{MessageID: res.Item.MessageID, Path: res.Item.Path, Status: res.Status}
+			if res.Status == service.ItemFailed {
+				s.failed++
+				ev.Error = &ScanItemError{Code: apperr.ErrScanFailed, Message: fmt.Sprint(res.Err)}
+				if ae, ok := apperr.As(res.Err); ok {
+					ev.Error = &ScanItemError{Code: ae.Code, Message: ae.Message}
+				}
+			} else {
+				s.indexed++
+			}
+			ev.Indexed, ev.Failed = s.indexed, s.failed
+			_ = s.r.Event("scan.item", ev)
+		},
+	}
 }
 
 func NewLsCmd(rt Runtime) *cobra.Command {
