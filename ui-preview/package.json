@@ -1,6 +1,7 @@
 {
   "name": "td-gui-ui-preview",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "record": "node record.mjs",

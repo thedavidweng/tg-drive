@@ -7,7 +7,7 @@
 			"ProductVersion": "@VERSION@",
 			"CompanyName": "thedavidweng",
 			"FileDescription": "td-gui - Telegram-backed drive",
-			"LegalCopyright": "Apache-2.0",
+			"LegalCopyright": "AGPL-3.0-only",
 			"ProductName": "td"
 		}
 	}

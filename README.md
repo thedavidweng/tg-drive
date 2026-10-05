@@ -349,4 +349,9 @@ Developer documentation
 
 ## License
 
-[Apache-2.0](LICENSE)
+[AGPL-3.0-only](LICENSE)
+
+See [LICENSING.md](LICENSING.md) for historical and third-party licenses.
+External contributions require [CLA version 1.0](CLA.md), signed by replying
+to the bot in your PR. Contributors retain copyright and permit commercial
+and proprietary licensing of accepted contributions.

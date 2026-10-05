@@ -44,7 +44,7 @@ VIAddVersionKey "FileDescription" "td-gui installer"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
-VIAddVersionKey "LegalCopyright" "Apache-2.0"
+VIAddVersionKey "LegalCopyright" "AGPL-3.0-only"
 
 !include "MUI2.nsh"
 !include "x64.nsh"

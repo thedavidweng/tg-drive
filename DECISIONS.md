@@ -15,7 +15,7 @@ This document exists to prevent implementation drift. Do not replace these choic
 
 - Module path: `github.com/thedavidweng/tg-drive`.
 - Main package: `./cmd/td`.
-- License: Apache-2.0.
+- License: AGPL-3.0-only.
 - Go version: 1.26.
 - Package layout is `cmd/td`, `cmd/td-gui`, `frontend/`, `internal/{app,gui,service,transfer,config,output}`, `core/*`, and `adapters/*`.
 

@@ -100,7 +100,7 @@ nfpms:
     maintainer: thedavidweng <noreply@github.com>
     homepage: https://github.com/thedavidweng/tg-drive
     description: Telegram-backed virtual file tree CLI
-    license: Apache-2.0
+    license: AGPL-3.0-only
     formats:
       - deb
       - rpm
