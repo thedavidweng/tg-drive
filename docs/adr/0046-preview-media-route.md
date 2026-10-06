@@ -75,8 +75,11 @@ everything else stays on bindings and typed events.
 - **Bundled preview libraries.** The viewers that need one use, all
   exact-pinned and bundled into the frontend build with no runtime CDN:
   ArtPlayer for video, an APlayer-style player for audio, EmbedPDF with its
-  PDFium WASM asset for PDF, a syntax highlighter and a Markdown renderer
-  with an HTML sanitizer for text, code, and Markdown, and docx-preview,
+  PDFium WASM asset for PDF, highlight.js and marked for text, code, and
+  Markdown (their output rebuilt against an element and attribute
+  allowlist rather than passed to a sanitizer library: DOMPurify's
+  NodeIterator walk misbehaves under the happy-dom test DOM, so its
+  output could not be verified in tests), and docx-preview,
   ExcelJS, and a PPTX renderer for Office files. Each is added by the
   viewer that uses it.
 

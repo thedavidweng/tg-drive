@@ -1,4 +1,6 @@
 import { imagePreview } from "@/preview/image"
+import { markdownPreview } from "@/preview/markdown"
+import { textPreview } from "@/preview/text"
 import type { PreviewProvider } from "@/preview/types"
 
 /**
@@ -8,4 +10,7 @@ import type { PreviewProvider } from "@/preview/types"
  */
 export const previewProviders: readonly PreviewProvider[] = [
   imagePreview,
+  markdownPreview,
+  // Last: its text/* catch-all must not shadow a more specific provider.
+  textPreview,
 ]
