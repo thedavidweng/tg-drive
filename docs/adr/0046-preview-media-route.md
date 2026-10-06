@@ -28,10 +28,14 @@ everything else stays on bindings and typed events.
   mounts the media handler at `/td-media/` through the Wails asset
   middleware, ahead of the embedded frontend. Desktop builds therefore open
   no listener or port; server mode serves the route over Wails' existing
-  loopback server (with its write timeout raised so a long stream is not
-  cut). The handler is a framework-neutral `http.Handler` in
-  `internal/gui`, so Wails stays confined to `cmd/td-gui` and the handler
-  is tested with `httptest`.
+  loopback server. That server's write timeout is raised from Wails' 30
+  seconds to 24 hours: a player may stream a whole film as one open-ended
+  range response, and the default would cut it mid-playback. The timeout
+  bounds only how long one response may take to write; a closed preview or
+  a disconnected client still ends it at once through the request context.
+  The handler is a framework-neutral `http.Handler` in `internal/gui`, so
+  Wails stays confined to `cmd/td-gui` and the handler is tested with
+  `httptest`.
 - **A per-process capability.** Every media URL carries a random 256-bit
   capability generated when the GUI opens. It is never persisted or logged
   (it travels as a query value because the Wails request log prints paths
@@ -75,14 +79,32 @@ everything else stays on bindings and typed events.
   `<img>`, which runs no SVG script) need no library.
 - **Bundled preview libraries.** The viewers that need one use, all
   exact-pinned and bundled into the frontend build with no runtime CDN:
-  ArtPlayer for video, an APlayer-style player for audio, EmbedPDF with its
-  PDFium WASM asset for PDF, highlight.js and marked for text, code, and
-  Markdown (their output rebuilt against an element and attribute
-  allowlist rather than passed to a sanitizer library: DOMPurify's
-  NodeIterator walk misbehaves under the happy-dom test DOM, so its
-  output could not be verified in tests), and docx-preview,
-  ExcelJS, and a PPTX renderer for Office files. Each is added by the
-  viewer that uses it.
+  ArtPlayer for video, EmbedPDF
+  (`@embedpdf/react-pdf-viewer`, `@embedpdf/pdfium` and its WASM asset) for
+  PDF, highlight.js and marked for text, code, and Markdown, and
+  docx-preview, ExcelJS, and pptxviewjs for Office files. pptxviewjs
+  requires its peers chart.js and jszip as direct dependencies. Each is
+  loaded only when its viewer first opens. Audio needs no library: an
+  APlayer-style control drives the webview's own `<audio>`.
+- **Renderer HTML is rebuilt, not sanitized in place.** Markup a renderer
+  produces (highlight.js, marked, docx-preview) is rebuilt node by node
+  against a per-viewer element and attribute allowlist, rather than passed
+  to a sanitizer library: DOMPurify throws or misbehaves under the
+  happy-dom test DOM, so its output could not be verified in tests. Word
+  documents keep their generated stylesheet and inline styles, inside a
+  shadow root, only when the CSS cannot load anything: no `@import`, and
+  no `url()` or other resource-naming function except an embedded `data:`
+  image, checked after CSS escapes are decoded. Images keep only embedded
+  `data:` sources. A document that smuggles a remote reference into its
+  styles loses that stylesheet, not its text, so viewing a file never
+  reaches the network.
+- **Unreachable library fallbacks.** pptxviewjs carries a last-resort
+  loader that injects jszip from cdnjs when no jszip is in scope. It never
+  runs in td-gui: the bundled module sets `globalThis.JSZip` from its
+  bundled jszip import when it is evaluated, before any file is opened,
+  and the loader checks that global first. EmbedPDF's own CDN defaults
+  (jsDelivr fonts and stamps, Google Fonts) are turned off in its
+  configuration.
 
 Considered options:
 
