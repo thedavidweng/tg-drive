@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 import { App } from "@/App"
 import type { PreviewDescriptor } from "@/backend"
@@ -158,6 +158,31 @@ test("a Word document renders its text with its own stylesheet, inside a shadow 
   expect(shadow.textContent).toContain("Quarterly summary")
   expect(shadow.querySelector("style")).not.toBeNull()
   expect(document.head.querySelector("style")?.textContent ?? "").not.toContain("docx-wrapper")
+})
+
+// Embedded viewers (the PDF viewer's menus and page field, here the Word
+// view) live in a shadow root and act on Escape without preventDefault.
+test("Escape from inside a view's shadow root stays with the view; from the surface it closes", async () => {
+  const backend = backendWithDocs()
+  backend.putPreviewForTest("/docs/report.docx", { data: await minimalDocx() })
+  render(<App backend={backend} languages={["en"]} />)
+  const dialog = await openInDocs("report.docx")
+  const shadow = await waitFor(
+    () => {
+      const root = Array.from(dialog.querySelectorAll("div")).find((d) => d.shadowRoot)?.shadowRoot
+      if (!root?.querySelector("p")) throw new Error("document not rendered yet")
+      return root
+    },
+    { timeout: 5000 },
+  )
+
+  act(() => {
+    shadow.querySelector("p")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }))
+  })
+  expect(screen.getByRole("dialog", { name: "report.docx" })).toBe(dialog)
+
+  fireEvent.keyDown(within(dialog).getByRole("button", { name: "Close preview" }), { key: "Escape" })
+  expect(screen.queryByRole("dialog")).toBeNull()
 })
 
 // docx-preview copies run colours and other values into CSS verbatim, so a

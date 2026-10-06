@@ -22,6 +22,20 @@ function topmostModal(): Element | null {
 }
 
 /**
+ * Whether a key began in a view's own interactive content: inside a shadow
+ * root in the view (an embedded viewer's menus and fields, whose Escape
+ * handlers do not call preventDefault) or in a text field the view owns.
+ */
+function viewOwnsKey(e: KeyboardEvent, body: HTMLElement | null): boolean {
+  const path = e.composedPath()
+  if (!body || path.indexOf(body) <= 0) return false
+  const origin = path[0]
+  if (!(origin instanceof Element)) return false
+  if (origin.getRootNode() instanceof ShadowRoot) return true
+  return (origin instanceof HTMLElement && origin.isContentEditable) || origin.matches("input, textarea, select")
+}
+
+/**
  * The one preview surface: a full-window modal over the Drive listing, so
  * the directory and its scroll position stay exactly as they were. It
  * prepares the file through drive.preview, picks the registry's provider,
@@ -41,6 +55,7 @@ export function PreviewSurface({
   const { t, locale } = useI18n()
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   // The opener, captured at mount before focus moves into the surface.
   const [returnFocus] = useState<HTMLElement | null>(() => document.activeElement as HTMLElement | null)
   const [prepared, setPrepared] = useState<Prepared>({ state: "loading" })
@@ -70,6 +85,7 @@ export function PreviewSurface({
       // a sheet opened above the preview closes first.
       if (document.fullscreenElement) return
       if (topmostModal() !== dialogRef.current) return
+      if (viewOwnsKey(e, bodyRef.current)) return
       e.stopPropagation()
       onCloseRef.current()
     }
@@ -163,7 +179,9 @@ export function PreviewSurface({
           <X aria-hidden className="size-4" />
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto">{body}</div>
+      <div ref={bodyRef} className="min-h-0 flex-1 overflow-auto">
+        {body}
+      </div>
     </div>
   )
 }
