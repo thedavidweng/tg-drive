@@ -4,13 +4,33 @@ import type { BackendError } from "@/backend"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 
-/** The focusable controls of a modal sheet, in tab order. */
-export function focusableIn(root: HTMLElement): HTMLElement[] {
-  return Array.from(
-    root.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  )
+const focusable =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+// Older system webviews lack checkVisibility; treat everything as shown there.
+function shown(el: HTMLElement): boolean {
+  return typeof el.checkVisibility !== "function" || el.checkVisibility()
+}
+
+/**
+ * The focusable controls of a modal, in tab order, including those inside
+ * open shadow roots (a preview viewer may render its controls in one) and
+ * leaving out hidden ones, which Tab skips.
+ */
+export function focusableIn(root: HTMLElement | ShadowRoot): HTMLElement[] {
+  const out: HTMLElement[] = []
+  for (const el of root.querySelectorAll<HTMLElement>("*")) {
+    if (el.matches(focusable) && shown(el)) out.push(el)
+    if (el.shadowRoot) out.push(...focusableIn(el.shadowRoot))
+  }
+  return out
+}
+
+/** The focused element, followed into open shadow roots. */
+export function deepActiveElement(): Element | null {
+  let active = document.activeElement
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement
+  return active
 }
 
 /** The centred modal sheet every destructive or confirming action uses. */

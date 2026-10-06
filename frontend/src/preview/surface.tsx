@@ -8,7 +8,7 @@ import { useI18n } from "@/i18n"
 import { FileDetails } from "@/preview/fallback"
 import { previewProviders } from "@/preview/providers"
 import { choosePreview, extensionOf, fallbackPreview } from "@/preview/registry"
-import { focusableIn } from "@/sheet"
+import { deepActiveElement, focusableIn } from "@/sheet"
 
 type Prepared =
   | { state: "loading" }
@@ -89,11 +89,12 @@ export function PreviewSurface({
     }
     const first = controls[0]
     const last = controls[controls.length - 1]
-    const active = document.activeElement
-    if (e.shiftKey && (active === first || !dialogRef.current.contains(active))) {
+    const active = deepActiveElement()
+    const inside = dialogRef.current.contains(document.activeElement)
+    if (e.shiftKey && (active === first || !inside)) {
       e.preventDefault()
       last.focus()
-    } else if (!e.shiftKey && (active === last || !dialogRef.current.contains(active))) {
+    } else if (!e.shiftKey && (active === last || !inside)) {
       e.preventDefault()
       first.focus()
     }

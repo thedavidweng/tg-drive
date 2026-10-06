@@ -2,6 +2,7 @@ import { audioPreview } from "@/preview/audio"
 import { docxPreview } from "@/preview/docx"
 import { imagePreview } from "@/preview/image"
 import { markdownPreview } from "@/preview/markdown"
+import { pdfPreview } from "@/preview/pdf"
 import { pptxPreview } from "@/preview/pptx"
 import { textPreview } from "@/preview/text"
 import type { PreviewProvider } from "@/preview/types"
@@ -17,6 +18,7 @@ export const previewProviders: readonly PreviewProvider[] = [
   imagePreview,
   videoPreview,
   audioPreview,
+  pdfPreview,
   docxPreview,
   xlsxPreview,
   pptxPreview,
