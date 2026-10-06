@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thedavidweng/tg-drive/core/telegram"
 	"github.com/thedavidweng/tg-drive/internal/gui"
 	"github.com/thedavidweng/tg-drive/internal/service"
 )
@@ -363,34 +364,122 @@ func TestPreviewClientDisconnectCancelsTheTelegramRead(t *testing.T) {
 	})
 }
 
+// uploadNativePhoto sends local bytes as a native Telegram photo message at
+// remote, the way td cp --as photo does.
+func uploadNativePhoto(t *testing.T, remote string, body []byte) {
+	t.Helper()
+	app, closeApp, err := service.Open(service.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeApp()
+	local := filepath.Join(t.TempDir(), filepath.Base(remote))
+	if err := os.WriteFile(local, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.UploadFileAs(context.Background(), local, remote, service.ConflictFail, false, service.Presentation{Kind: "photo"}, service.UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPreviewServesANativePhotoWholeWithoutRanges(t *testing.T) {
 	seedDrive(t, nil)
-	func() {
-		app, closeApp, err := service.Open(service.Options{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer closeApp()
-		local := filepath.Join(t.TempDir(), "shot.jpg")
-		if err := os.WriteFile(local, []byte("jpeg bytes"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := app.UploadFileAs(context.Background(), local, "/shot.jpg", service.ConflictFail, false, service.Presentation{Kind: "photo"}, service.UploadOptions{}); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	// The name says PNG, but Telegram stores native photos as JPEG.
+	uploadNativePhoto(t, "/shot.png", []byte("jpeg bytes"))
 	svc := openGUI(t)
 	srv := mediaServer(t, svc)
 
-	d := preview(t, svc, "/shot.jpg")
+	d := preview(t, svc, "/shot.png")
 	if d.Capabilities.Ranges || d.Capabilities.MediaSize != -1 {
 		t.Fatalf("native photo capabilities = %+v, want no ranges and an unknown size", d.Capabilities)
 	}
+
+	head := mediaRequest(t, http.MethodHead, srv.URL+d.URL, nil)
+	if head.StatusCode != http.StatusOK || head.Header.Get("Content-Type") != "image/jpeg" {
+		t.Fatalf("HEAD = %d Content-Type %q, want 200 image/jpeg", head.StatusCode, head.Header.Get("Content-Type"))
+	}
+	if head.Header.Get("Accept-Ranges") != "none" || head.Header.Get("Content-Length") != "" {
+		t.Fatalf("HEAD Accept-Ranges %q Content-Length %q, want none and no length",
+			head.Header.Get("Accept-Ranges"), head.Header.Get("Content-Length"))
+	}
+
 	resp := mediaRequest(t, http.MethodGet, srv.URL+d.URL, map[string]string{"Range": "bytes=0-3"})
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Accept-Ranges") != "none" {
-		t.Fatalf("GET = %d Accept-Ranges %q, want a whole 200 without ranges", resp.StatusCode, resp.Header.Get("Accept-Ranges"))
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Accept-Ranges") != "none" || resp.Header.Get("Content-Range") != "" {
+		t.Fatalf("GET = %d Accept-Ranges %q Content-Range %q, want a whole 200 without ranges",
+			resp.StatusCode, resp.Header.Get("Accept-Ranges"), resp.Header.Get("Content-Range"))
+	}
+	if resp.Header.Get("Content-Type") != "image/jpeg" {
+		t.Fatalf("GET Content-Type = %q, want image/jpeg", resp.Header.Get("Content-Type"))
 	}
 	if got := string(readBody(t, resp)); got != "jpeg bytes" {
 		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestPreviewServesATextMessageAsWholeText(t *testing.T) {
+	seedUnmanaged(t, telegram.Message{
+		ID: 601, Kind: telegram.KindText, MIME: "text/plain", Text: "shopping list\nmilk",
+		Date: time.Date(2024, 5, 1, 12, 0, 0, 0, time.UTC),
+	})
+	svc := openGUI(t)
+	if _, err := svc.Maintenance.Adopt(context.Background(), gui.AdoptOptions{Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	srv := mediaServer(t, svc)
+
+	d := preview(t, svc, "/notes/shopping list.txt")
+	if d.Capabilities.Ranges || d.Capabilities.MediaSize != -1 {
+		t.Fatalf("text message capabilities = %+v, want no ranges and an unknown size", d.Capabilities)
+	}
+	resp := mediaRequest(t, http.MethodGet, srv.URL+d.URL, map[string]string{"Range": "bytes=2-5"})
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Accept-Ranges") != "none" {
+		t.Fatalf("GET = %d Accept-Ranges %q, want a whole 200 without ranges", resp.StatusCode, resp.Header.Get("Accept-Ranges"))
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want plain text", got)
+	}
+	if got := string(readBody(t, resp)); got != "shopping list\nmilk" {
+		t.Fatalf("body = %q, want only the human text", got)
+	}
+}
+
+func TestPreviewFloodWaitIsARedactedErrorThatLeavesTheDriveIntact(t *testing.T) {
+	seedDrive(t, map[string]string{"/secret-plans/report.pdf": "pdf bytes"})
+	uploadNativePhoto(t, "/secret-plans/shot.jpg", []byte("jpeg bytes"))
+	t.Setenv("TD_FAKE_MEDIA_FLOOD_WAIT", "30")
+	svc := openGUI(t)
+	srv := mediaServer(t, svc)
+
+	for _, path := range []string{"/secret-plans/report.pdf", "/secret-plans/shot.jpg"} {
+		d := preview(t, svc, path)
+		u, err := neturl.Parse(d.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		capability := u.Query().Get("c")
+		resp := mediaRequest(t, http.MethodGet, srv.URL+d.URL, nil)
+		if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") != "30" {
+			t.Fatalf("%s: GET = %d Retry-After %q, want 429 after 30s", path, resp.StatusCode, resp.Header.Get("Retry-After"))
+		}
+		body := string(readBody(t, resp))
+		if body != http.StatusText(http.StatusTooManyRequests) {
+			t.Fatalf("%s: error body = %q, want only the status text", path, body)
+		}
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				if strings.Contains(v, "secret-plans") || strings.Contains(v, capability) ||
+					strings.Contains(v, "report") || strings.Contains(v, "shot") {
+					t.Fatalf("%s: error header %s = %q leaks the file or capability", path, k, v)
+				}
+			}
+		}
+	}
+
+	entries, err := svc.Drive.List(context.Background(), "/secret-plans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("List after a rate-limited preview = %+v, want both files", entries)
 	}
 }

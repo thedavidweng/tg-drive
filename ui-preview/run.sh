@@ -66,10 +66,12 @@ export TD_FAKE_TELEGRAM=1 TD_FAKE_TELEGRAM_STATE="$STATE/fake.json" \
 printf 'chapters outline and open questions\n' > "$WORK/files/notes.txt"
 printf 'Q3 report draft\n' > "$WORK/files/Documents/report-q3.md"
 printf 'roadmap: preview, auth, transfers\n' > "$WORK/files/Documents/roadmap.md"
-printf 'placeholder bytes for a photo\n' > "$WORK/files/Photos/kyoto.jpg"
-printf 'placeholder bytes for a photo\n' > "$WORK/files/Photos/taipei.jpg"
+# Real JPEGs, drawn deterministically: the image preview scene opens one
+# and waits for the browser to decode it.
 mkdir -p "$WORK/files/Photos/2024"
-printf 'placeholder bytes for a photo\n' > "$WORK/files/Photos/2024/alley.jpg"
+go run ui-preview/photo.go "$WORK/files/Photos/kyoto.jpg" dusk
+go run ui-preview/photo.go "$WORK/files/Photos/taipei.jpg" night
+go run ui-preview/photo.go "$WORK/files/Photos/2024/alley.jpg" dawn
 
 echo "12345" | "$WORK/td" auth login > /dev/null
 "$WORK/td" init "$STATE/root" --create-channel=Drive > /dev/null
