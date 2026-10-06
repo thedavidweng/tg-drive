@@ -1,5 +1,8 @@
+import { docxPreview } from "@/preview/docx"
 import { imagePreview } from "@/preview/image"
+import { pptxPreview } from "@/preview/pptx"
 import type { PreviewProvider } from "@/preview/types"
+import { xlsxPreview } from "@/preview/xlsx"
 
 /**
  * Every preview provider, in priority order. Each provider lives in its own
@@ -8,4 +11,7 @@ import type { PreviewProvider } from "@/preview/types"
  */
 export const previewProviders: readonly PreviewProvider[] = [
   imagePreview,
+  docxPreview,
+  xlsxPreview,
+  pptxPreview,
 ]
