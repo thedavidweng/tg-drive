@@ -14,6 +14,7 @@
   "dependencies": {
     "@tailwindcss/vite": "4.3.3",
     "@wailsio/runtime": "3.0.0-beta.27",
+    "artplayer": "5.4.0",
     "chart.js": "4.5.1",
     "class-variance-authority": "0.7.1",
     "cn": "0.4.0",

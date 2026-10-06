@@ -1,7 +1,9 @@
+import { audioPreview } from "@/preview/audio"
 import { docxPreview } from "@/preview/docx"
 import { imagePreview } from "@/preview/image"
 import { pptxPreview } from "@/preview/pptx"
 import type { PreviewProvider } from "@/preview/types"
+import { videoPreview } from "@/preview/video"
 import { xlsxPreview } from "@/preview/xlsx"
 
 /**
@@ -11,6 +13,8 @@ import { xlsxPreview } from "@/preview/xlsx"
  */
 export const previewProviders: readonly PreviewProvider[] = [
   imagePreview,
+  videoPreview,
+  audioPreview,
   docxPreview,
   xlsxPreview,
   pptxPreview,
