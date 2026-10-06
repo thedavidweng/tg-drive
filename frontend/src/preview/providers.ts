@@ -1,5 +1,7 @@
+import { audioPreview } from "@/preview/audio"
 import { imagePreview } from "@/preview/image"
 import type { PreviewProvider } from "@/preview/types"
+import { videoPreview } from "@/preview/video"
 
 /**
  * Every preview provider, in priority order. Each provider lives in its own
@@ -8,4 +10,6 @@ import type { PreviewProvider } from "@/preview/types"
  */
 export const previewProviders: readonly PreviewProvider[] = [
   imagePreview,
+  videoPreview,
+  audioPreview,
 ]
