@@ -154,16 +154,23 @@ func previewMIMEIsActive(mt string) bool {
 	return false
 }
 
-// PreviewContentType is the Content-Type a preview of f is served with.
-// Types a webview would execute or render as an active document (HTML,
-// XHTML, script, XML) are served as plain text: a preview shows a stored
-// page's source, it never runs it.
-func PreviewContentType(f PreviewFile) string {
-	if f.MIME == "" {
+// PreviewContentType is the Content-Type a preview of f is served with when
+// Telegram serves the representation info describes. The representation's
+// own type wins over the indexed one: a native photo is JPEG and a text
+// message is plain text whatever the file is named. Types a webview would
+// execute or render as an active document (HTML, XHTML, script, XML) are
+// served as plain text: a preview shows a stored page's source, it never
+// runs it.
+func PreviewContentType(f PreviewFile, info telegram.MediaInfo) string {
+	mt := info.MIME
+	if mt == "" || mt == "application/octet-stream" {
+		mt = f.MIME
+	}
+	if mt == "" {
 		return "application/octet-stream"
 	}
-	if previewMIMEIsActive(f.MIME) {
+	if previewMIMEIsActive(mt) {
 		return "text/plain; charset=utf-8"
 	}
-	return f.MIME
+	return mt
 }

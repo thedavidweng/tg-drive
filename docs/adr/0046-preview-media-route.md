@@ -47,8 +47,9 @@ everything else stays on bindings and typed events.
 - **HTTP semantics.** HEAD and GET with at most one byte range: 200 for the
   whole body, 206 with `Content-Range`, 416 with the total size for an
   unsatisfiable range. Ranges are advertised only for a representation
-  Telegram can read exactly (documents and attributed videos); a native
-  photo or text message is served whole without a length. Responses are
+  Telegram can read exactly (documents, attributed videos, and native
+  photos whose largest size Telegram states the exact length of); any other
+  native photo and every text message is served whole without a length. Responses are
   `private, no-store`, `nosniff`, inline with an RFC 5987 file name, and
   sandboxed by CSP if opened as a document; HTML, XHTML, XML, and script
   types are served as plain text so a stored page is shown, never run.
