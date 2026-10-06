@@ -36,9 +36,10 @@ type persistedState struct {
 //   - TD_FAKE_FAIL_UPLOAD_AFTER_PARTS: fail the first resumable upload once
 //     this many parts are confirmed (state stays persisted for resume); the
 //     knob disables itself after firing once so a retry can succeed.
-//   - TD_FAKE_TRANSFER_DELAY: a Go duration each resumable upload part and
-//     each media download waits before completing, honoring cancellation,
-//     so tests can interrupt a transfer midway.
+//   - TD_FAKE_TRANSFER_DELAY: a Go duration each resumable upload part,
+//     each media download, and each non-empty media range read waits before
+//     completing, honoring cancellation, so tests can interrupt a transfer
+//     midway.
 //   - TD_FAKE_AUTH_PASSWORD: the account has two-step verification; login
 //     asks for this password after the code.
 //   - TD_FAKE_LOGIN_FLOOD_WAIT: login fails with a flood wait of this many

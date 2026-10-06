@@ -286,6 +286,13 @@ type MediaClient interface {
 	DeleteMessage(ctx context.Context, channelID int64, messageID int) error
 	// DownloadMedia streams the media body of a message into dst.
 	DownloadMedia(ctx context.Context, channelID int64, messageID int, dst io.Writer) error
+	// ReadMediaRange describes the byte representation of a message's media
+	// and writes exactly bytes [offset, offset+length) of it into dst. A zero
+	// length writes nothing and only returns the MediaInfo. A non-zero length
+	// needs a Seekable representation and an interval within Size; otherwise
+	// it returns the MediaInfo with a *MediaRangeError and writes nothing.
+	// It reads only the bytes the interval needs, never the whole body.
+	ReadMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (MediaInfo, error)
 	Doctor(ctx context.Context, channelID int64) (*Capabilities, error)
 }
 
@@ -452,3 +459,47 @@ func (e *DiscussionMissingError) Error() string {
 }
 
 func (e *AuthRequiredError) Error() string { return "auth required" }
+
+// MediaInfo describes the byte representation ReadMediaRange serves for a
+// message.
+type MediaInfo struct {
+	// Size is the exact byte length of the representation, or -1 when the
+	// adapter cannot prove it.
+	Size int64
+	// Seekable reports that arbitrary intervals within Size can be read.
+	// It implies Size >= 0.
+	Seekable bool
+	// MIME is the representation's media type; empty when unknown.
+	MIME string
+}
+
+// MediaRangeError means a range read asked for an interval the media
+// representation cannot serve: a negative bound, an interval past Size, or
+// any non-empty interval of a non-seekable representation.
+type MediaRangeError struct {
+	Offset, Length int64
+	Info           MediaInfo
+}
+
+func (e *MediaRangeError) Error() string {
+	if !e.Info.Seekable {
+		return "media is not seekable"
+	}
+	return fmt.Sprintf("media range %d+%d is outside the %d-byte representation", e.Offset, e.Length, e.Info.Size)
+}
+
+// CheckMediaRange returns a *MediaRangeError when [offset, offset+length)
+// is not a readable interval of info. A zero length at a non-negative offset
+// is always valid: it only asks for the MediaInfo.
+func CheckMediaRange(info MediaInfo, offset, length int64) error {
+	if offset < 0 || length < 0 {
+		return &MediaRangeError{Offset: offset, Length: length, Info: info}
+	}
+	if length == 0 {
+		return nil
+	}
+	if !info.Seekable || info.Size < 0 || offset > info.Size || length > info.Size-offset {
+		return &MediaRangeError{Offset: offset, Length: length, Info: info}
+	}
+	return nil
+}
