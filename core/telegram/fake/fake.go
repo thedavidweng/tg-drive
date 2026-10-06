@@ -35,6 +35,10 @@ type Client struct {
 	// loginFloodWait makes Login fail with a FloodWaitError of this many
 	// seconds before any code is sent.
 	loginFloodWait int
+	// mediaFloodWait makes every media body read (DownloadMedia and
+	// non-empty ReadMediaRange) fail with a FloodWaitError of this many
+	// seconds; metadata-only range reads still succeed.
+	mediaFloodWait int
 
 	nextGroupedID      int64
 	failUpload         bool
@@ -615,6 +619,9 @@ func (c *Client) DeleteMessage(ctx context.Context, channelID int64, messageID i
 func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID int, dst io.Writer) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.mediaFloodWait > 0 {
+		return &telegram.FloodWaitError{Seconds: c.mediaFloodWait}
+	}
 	for _, m := range c.messages[channelID] {
 		if m.ID != messageID {
 			continue
@@ -699,6 +706,7 @@ func (c *Client) readMediaRange(ctx context.Context, channelID int64, messageID 
 	c.mu.Lock()
 	c.rangeReads = append(c.rangeReads, MediaRangeRead{ChannelID: channelID, MessageID: messageID, Offset: offset, Length: length})
 	delay := c.transferDelay
+	floodWait := c.mediaFloodWait
 	var (
 		data        []byte
 		info        telegram.MediaInfo
@@ -725,6 +733,9 @@ func (c *Client) readMediaRange(ctx context.Context, channelID int64, messageID 
 	}
 	if length == 0 {
 		return info, nil
+	}
+	if floodWait > 0 {
+		return info, &telegram.FloodWaitError{Seconds: floodWait}
 	}
 	if err := waitTransfer(ctx, delay); err != nil {
 		return info, err

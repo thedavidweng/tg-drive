@@ -28,6 +28,8 @@ type getFileCall struct {
 	offset  int64
 	limit   int
 	precise bool
+	// thumb is the photo size a photo location names; empty otherwise.
+	thumb string
 }
 
 // fileInvoker serves upload.getFile from data the way Telegram does: the
@@ -52,7 +54,11 @@ func (f *fileInvoker) Invoke(ctx context.Context, input bin.Encoder, output bin.
 	}
 	f.mu.Lock()
 	idx := len(f.calls)
-	f.calls = append(f.calls, getFileCall{offset: req.Offset, limit: req.Limit, precise: req.Precise})
+	call := getFileCall{offset: req.Offset, limit: req.Limit, precise: req.Precise}
+	if loc, ok := req.Location.(*tg.InputPhotoFileLocation); ok {
+		call.thumb = loc.ThumbSize
+	}
+	f.calls = append(f.calls, call)
 	f.mu.Unlock()
 	if f.fail != nil && idx == f.failAt {
 		return f.fail
@@ -297,7 +303,24 @@ func TestRangeReadDescribesRepresentation(t *testing.T) {
 		want tgtelegram.MediaInfo
 	}{
 		{"document", documentMessage(5000), tgtelegram.MediaInfo{Size: 5000, Seekable: true, MIME: "video/mp4"}},
-		{"photo", photo, tgtelegram.MediaInfo{Size: -1, MIME: "image/jpeg"}},
+		{"photo without sizes", photo, tgtelegram.MediaInfo{Size: -1, MIME: "image/jpeg"}},
+		{"photo with a sized largest size", photoMessage(
+			&tg.PhotoSize{Type: "s", W: 90, H: 90, Size: 2000},
+			&tg.PhotoSize{Type: "y", W: 1280, H: 960, Size: 90000},
+			&tg.PhotoSize{Type: "m", W: 320, H: 240, Size: 9000},
+		), tgtelegram.MediaInfo{Size: 90000, Seekable: true, MIME: "image/jpeg"}},
+		{"photo with a progressive largest size", photoMessage(
+			&tg.PhotoSize{Type: "m", W: 320, H: 240, Size: 9000},
+			&tg.PhotoSizeProgressive{Type: "y", W: 1280, H: 960, Sizes: []int{4000, 20000, 70000}},
+		), tgtelegram.MediaInfo{Size: 70000, Seekable: true, MIME: "image/jpeg"}},
+		{"photo whose largest size is unsized", photoMessage(
+			&tg.PhotoSize{Type: "m", W: 320, H: 240, Size: 9000},
+			&tg.PhotoSize{Type: "y", W: 1280, H: 960},
+		), tgtelegram.MediaInfo{Size: -1, MIME: "image/jpeg"}},
+		{"photo whose largest progressive size lists none", photoMessage(
+			&tg.PhotoSize{Type: "m", W: 320, H: 240, Size: 9000},
+			&tg.PhotoSizeProgressive{Type: "y", W: 1280, H: 960},
+		), tgtelegram.MediaInfo{Size: -1, MIME: "image/jpeg"}},
 		{"text", text, tgtelegram.MediaInfo{Size: -1, MIME: "text/plain; charset=utf-8"}},
 	}
 	for _, tc := range cases {
@@ -315,6 +338,33 @@ func TestRangeReadDescribesRepresentation(t *testing.T) {
 	}
 }
 
+func photoMessage(sizes ...tg.PhotoSizeClass) *tg.Message {
+	return &tg.Message{Media: &tg.MessageMediaPhoto{Photo: &tg.Photo{ID: 1, Sizes: sizes}}}
+}
+
+func TestRangeReadServesTheLargestSizedPhoto(t *testing.T) {
+	data := patterned(90000)
+	inv := &fileInvoker{data: data}
+	msg := photoMessage(
+		&tg.PhotoSize{Type: "m", W: 320, H: 240, Size: 9000},
+		&tg.PhotoSize{Type: "y", W: 1280, H: 960, Size: int(len(data))},
+	)
+	got, err := readRange(t, inv, msg, 85000, 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data[85000:]) {
+		t.Fatalf("got %d bytes, not the photo's last 5000", len(got))
+	}
+	calls := inv.recorded()
+	assertLegal(t, calls)
+	for i, c := range calls {
+		if c.thumb != "y" {
+			t.Fatalf("request %d read photo size %q, want the largest (y)", i, c.thumb)
+		}
+	}
+}
+
 func TestRangeReadRejectsUnservableIntervals(t *testing.T) {
 	photo := &tg.Message{Media: &tg.MessageMediaPhoto{Photo: &tg.Photo{ID: 1}}}
 	cases := []struct {
@@ -327,6 +377,7 @@ func TestRangeReadRejectsUnservableIntervals(t *testing.T) {
 		{"negative offset", documentMessage(5000), -1, 10},
 		{"negative length", documentMessage(5000), 0, -1},
 		{"not seekable", photo, 0, 10},
+		{"past a sized photo's end", photoMessage(&tg.PhotoSize{Type: "y", W: 10, H: 10, Size: 5000}), 4990, 11},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
