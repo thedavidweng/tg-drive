@@ -19,7 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thedavidweng/tg-drive/core/manifest"
 	"github.com/thedavidweng/tg-drive/core/telegram"
+	"github.com/thedavidweng/tg-drive/core/telegram/fake"
 	"github.com/thedavidweng/tg-drive/internal/gui"
 	"github.com/thedavidweng/tg-drive/internal/service"
 )
@@ -260,6 +262,48 @@ func TestPreviewURLStopsServingADeletedFile(t *testing.T) {
 	}
 	if resp := mediaRequest(t, http.MethodGet, url, nil); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("GET after delete = %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestPreviewURLStopsServingARowReboundByScan(t *testing.T) {
+	const replacement = "replacement body, longer than the original"
+	seedDriveEnv(t, map[string]string{"/same.txt": "original"}, func(statePath string) {
+		tg := fake.NewPersistent(statePath)
+		ch, err := tg.ResolveChannel(context.Background(), "Drive")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, msg := range tg.Messages(ch.ID) {
+			if msg.Kind == telegram.KindDocument {
+				msg.ID += 1000
+				msg.Data = []byte(replacement)
+				msg.FileSize = int64(len(replacement))
+				msg.Caption = manifest.RenderCompact(manifest.FileMeta{
+					CanonicalPath: "/same.txt", DisplayName: "same.txt",
+					Size: int64(len(replacement)), MIME: "text/plain",
+				})
+				tg.AddMessage(ch.ID, msg)
+				return
+			}
+		}
+		t.Fatal("seeded document not found")
+	})
+	svc := openGUI(t)
+	srv := mediaServer(t, svc)
+	stale := preview(t, svc, "/same.txt")
+	if _, err := svc.Drive.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{http.MethodHead, http.MethodGet} {
+		resp := mediaRequest(t, method, srv.URL+stale.URL, map[string]string{"Range": "bytes=0-3"})
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s stale preview = %d, want 404", method, resp.StatusCode)
+		}
+	}
+	fresh := preview(t, svc, "/same.txt")
+	resp := mediaRequest(t, http.MethodGet, srv.URL+fresh.URL, nil)
+	if resp.StatusCode != http.StatusOK || string(readBody(t, resp)) != replacement {
+		t.Fatalf("fresh preview = %d, want the complete replacement", resp.StatusCode)
 	}
 }
 

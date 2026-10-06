@@ -127,13 +127,14 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   capabilities, media URL) after describing its Telegram representation
   once with a zero-length `ReadMediaRange`. The media URL is
   `/td-media/<token>?c=<capability>`: the token maps, in memory, to the
-  files row and that description; the capability is random per process
+  files row, its Telegram message, and that description; the capability is random per process
   and never persisted or logged. `cmd/td-gui` mounts `Services.MediaHandler`
   (a plain `http.Handler`) at that prefix through the Wails asset
   middleware, so the desktop opens no extra listener; server mode serves it
   over Wails' loopback server with the write timeout raised. Each request
   re-resolves the row by id through `service.PreviewFileByID` (active rows
-  only, in whatever channel the row belongs to) and answers HEAD/GET with at
+  only, in whatever channel the row belongs to), rejects URLs whose row now
+  points to another message, and answers HEAD/GET with at
   most one byte range from `service.ReadPreviewRange`; representations that
   are not seekable stream whole through `service.StreamPreview`. A native
   photo serves Telegram's largest size as `image/jpeg`, seekable only when

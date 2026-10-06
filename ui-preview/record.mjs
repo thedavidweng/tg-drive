@@ -17,6 +17,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { spawn } from "node:child_process"
 import { chromium } from "playwright"
+import assert from "node:assert/strict"
 
 // The window size cmd/td-gui opens with; screenshots are taken at 2x.
 const VIEWPORT = { width: 960, height: 640 }
@@ -104,6 +105,63 @@ const scenes = [
       await openPhotoPreview(page)
     },
     leave: closePhotoPreview,
+  },
+  {
+    name: "drive-preview-text",
+    title: "Drive — text preview",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("button", { name: "notes.txt", exact: true }).click()
+      const surface = page.getByRole("dialog", { name: "notes.txt" })
+      await surface.getByLabel("Contents of notes.txt").getByText("chapters outline and open questions").waitFor()
+    },
+  },
+  {
+    name: "drive-preview-markdown",
+    title: "Drive — rendered Markdown",
+    colorScheme: "light",
+    settle: async (page) => {
+      const surface = await openDocumentPreview(page, "roadmap.md")
+      await surface.getByRole("heading", { name: "Preview roadmap" }).waitFor()
+      assert.equal(await surface.locator("strong").textContent(), "remote files")
+    },
+  },
+  {
+    name: "drive-preview-large-text",
+    title: "Drive — bounded text preview and load more",
+    colorScheme: "light",
+    settle: async (page) => {
+      const reads = []
+      page.on("request", (request) => {
+        if (request.url().includes("/td-media/")) reads.push(request.headers().range)
+      })
+      const firstRead = page.waitForResponse((response) => response.request().headers().range === "bytes=0-2097151")
+      const surface = await openDocumentPreview(page, "large.log")
+      await surface.getByRole("status").getByText(/^Partial file:/).waitFor()
+      assert.equal((await firstRead).status(), 206)
+      assert.deepEqual(reads, ["bytes=0-2097151"])
+      assert.ok(!(await surface.getByLabel("Contents of large.log").textContent()).includes("Final log chunk"))
+      const nextRead = page.waitForResponse((response) => response.request().headers().range === "bytes=2097152-4194303")
+      await surface.getByRole("button", { name: "Load more", exact: true }).click()
+      await surface.getByLabel("Contents of large.log").getByText(/Final log chunk/).waitFor()
+      assert.equal((await nextRead).status(), 206)
+      assert.deepEqual(reads, ["bytes=0-2097151", "bytes=2097152-4194303"])
+      assert.equal(await surface.getByRole("button", { name: "Load more", exact: true }).count(), 0)
+    },
+  },
+  {
+    name: "drive-preview-unsupported",
+    title: "Drive — unsupported preview keeps Download",
+    colorScheme: "light",
+    settle: async (page) => {
+      const surface = await openDocumentPreview(page, "archive.zip")
+      await surface.getByText("No preview is available for this file type.").waitFor()
+      await surface.getByRole("button", { name: "Download", exact: true }).first().click()
+      const sheet = page.getByRole("dialog", { name: "Download", exact: true })
+      await sheet.waitFor()
+      await sheet.getByRole("button", { name: "Cancel", exact: true }).click()
+      await sheet.waitFor({ state: "detached" })
+    },
   },
   // The channel switcher: the sheet lists the bound drives and the active
   // channel's status, and the bind sheet offers the account's unbound
@@ -494,6 +552,14 @@ async function closePhotoPreview(page) {
   await page.getByRole("button", { name: "Close preview" }).click()
   await page.getByRole("dialog", { name: "kyoto.jpg" }).waitFor({ state: "detached" })
   await page.getByRole("list", { name: "Files in /Photos" }).getByRole("button", { name: "kyoto.jpg", exact: true }).waitFor()
+}
+
+async function openDocumentPreview(page, name) {
+  await page.getByRole("button", { name: "Documents", exact: true }).click()
+  await page.getByRole("list", { name: "Files in /Documents" }).getByRole("button", { name, exact: true }).click()
+  const surface = page.getByRole("dialog", { name, exact: true })
+  await surface.waitFor()
+  return surface
 }
 
 // The auth screens render no <ul>; readiness is the role and name the

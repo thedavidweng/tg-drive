@@ -213,6 +213,12 @@ test("the Word rebuild keeps inert CSS and drops anything that could load a reso
     'p{background:-webkit-image-set("https://leak.example/a.png" 1x)}',
     "@font-face{font-family:x;src:url(https://leak.example/f.woff)}",
     "p{color:#000;background:url(/relative.png)}",
+    '/*"*/ p{background:url(https://leak.example/a.png)} /*"*/',
+    "/*'*/ @import 'https://leak.example/a.css'; /*'*/",
+    'p{content:"/*";background:url(https://leak.example/a.png)} /*"*/',
+    'p{--label:\\";background:url(https://leak.example/a.png)} /*"*/',
+    'p{content:"broken\n; background:url(https://leak.example/a.png)}',
+    'p{content:"unterminated; background:url(https://leak.example/a.png)}',
   ]) {
     expect(sheet(css)).toBe("")
   }
@@ -222,6 +228,9 @@ test("the Word rebuild keeps inert CSS and drops anything that could load a reso
     "section.docx:not(:last-child){margin:0}",
     `p{background:url(${png})}`,
     `p{background:url("${png}")}`,
+    '/* a "quoted" comment */ p{color:red}',
+    'p:before{content:"/* (1) */";color:red}',
+    'p:before{content:"an escaped \\" quote";color:red}',
   ]) {
     expect(sheet(css)).toBe(`<style>${css}</style>`)
   }

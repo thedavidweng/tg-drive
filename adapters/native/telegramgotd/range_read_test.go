@@ -41,6 +41,9 @@ type fileInvoker struct {
 	calls  []getFileCall
 	fail   error
 	failAt int
+	// shortAt limits one response to shortBytes even when more data exists.
+	shortAt    int
+	shortBytes int
 	// block, when set, makes the request with index blockAt report itself
 	// on block and wait for the caller's cancellation.
 	block   chan struct{}
@@ -70,6 +73,9 @@ func (f *fileInvoker) Invoke(ctx context.Context, input bin.Encoder, output bin.
 	}
 	start := min(req.Offset, int64(len(f.data)))
 	end := min(req.Offset+int64(req.Limit), int64(len(f.data)))
+	if f.shortBytes > 0 && idx == f.shortAt {
+		end = min(end, start+int64(f.shortBytes))
+	}
 	var buf bin.Buffer
 	if err := (&tg.UploadFile{Type: &tg.StorageFilePartial{}, Bytes: f.data[start:end]}).Encode(&buf); err != nil {
 		return err
@@ -192,6 +198,25 @@ func TestRangeReadFinalShortChunk(t *testing.T) {
 	assertLegal(t, calls)
 	if len(calls) != 1 || calls[0].offset != 2*mib || calls[0].limit != kib {
 		t.Fatalf("requests = %+v, want one 1 KiB request at 2 MiB", calls)
+	}
+}
+
+// A short mid-file response can leave the next position unaligned. The
+// persistent fake bypasses this RPC behavior, so verify exact output here.
+func TestRangeReadShortMidFileResponse(t *testing.T) {
+	data := patterned(2 * mib)
+	inv := &fileInvoker{data: data, shortBytes: 1501}
+	got, err := readRange(t, inv, documentMessage(len(data)), 100, 3000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data[100:3100]) {
+		t.Fatalf("short response produced %d bytes, want the exact interval", len(got))
+	}
+	calls := inv.recorded()
+	assertLegal(t, calls)
+	if len(calls) != 2 || calls[1].offset != kib {
+		t.Fatalf("requests = %+v, want an aligned overlapping second request", calls)
 	}
 }
 

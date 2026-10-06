@@ -37,6 +37,12 @@ type PreviewFile struct {
 	messageID   int
 }
 
+// MessageID identifies the Telegram message backing this resolved file.
+// It stays in the service/handler boundary, never in frontend descriptors.
+func (f PreviewFile) MessageID() int {
+	return f.messageID
+}
+
 // ResolvePreview resolves the active file at remotePath in the channel ctx
 // selects.
 func (a *App) ResolvePreview(ctx context.Context, remotePath string) (PreviewFile, error) {

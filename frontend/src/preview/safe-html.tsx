@@ -44,6 +44,41 @@ function decodeCSSEscapes(css: string): string {
   })
 }
 
+// Comments and strings share one scan: a quote in a comment cannot hide
+// live CSS, and comment delimiters in a string are only string content.
+function maskCSS(css: string): string | null {
+  let masked = ""
+  for (let i = 0; i < css.length;) {
+    const ch = css[i]
+    if (ch === "/" && css[i + 1] === "*") {
+      const end = css.indexOf("*/", i + 2)
+      i = end < 0 ? css.length : end + 2
+    } else if (ch === '"' || ch === "'") {
+      const start = ++i
+      while (i < css.length && css[i] !== ch) {
+        if (/[\n\r\f]/.test(css[i])) return null
+        if (css[i] === "\\") {
+          i += css[i + 1] === "\r" && css[i + 2] === "\n" ? 3 : 2
+        } else {
+          i++
+        }
+      }
+      if (i >= css.length) return null
+      const value = decodeCSSEscapes(css.slice(start, i))
+      masked += embeddedImage.test(value) ? '"data:image/"' : '""'
+      i++
+    } else if (ch === "\\") {
+      // An escaped quote or slash is not a string/comment delimiter.
+      masked += css.slice(i, i + 2)
+      i += 2
+    } else {
+      masked += ch
+      i++
+    }
+  }
+  return masked
+}
+
 /**
  * Whether CSS can apply without the page reaching for anything: no
  * @import, and no url() or other resource-naming function except an
@@ -53,11 +88,8 @@ function decodeCSSEscapes(css: string): string {
 export function inertCSS(css: string): boolean {
   // Strings stand in only for whether they hold an embedded image, so a
   // parenthesis in content: "(1)" is not read as a function call.
-  const masked = css
-    .replace(/"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'/g, (s) =>
-      embeddedImage.test(decodeCSSEscapes(s.slice(1, -1))) ? '"data:image/"' : '""',
-    )
-    .replace(/\/\*[\s\S]*?(?:\*\/|$)/g, "")
+  const masked = maskCSS(css)
+  if (masked === null) return false
   const plain = decodeCSSEscapes(masked)
   if (/@import/i.test(plain)) return false
   for (const m of plain.matchAll(/([a-z0-9_-]+)\(/gi)) {

@@ -128,7 +128,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   ignored), an adopted text message served whole as its human text, a
   flood wait answered 429 with `Retry-After` and no file name, path, or
   capability while the listing stays intact, a URL prepared before a channel switch still
-  serving the original file, a deleted file's URL answering 404, a range
+  serving the original file, a deleted file's URL answering 404, a scan
+  rebinding a row to a newer message invalidating its old URL while a fresh
+  preview serves the complete replacement, a range
   near the end of an 8 MiB file reading only that range, and a client
   disconnect cancelling the fake's read; a text file's first 2 MiB range
   answering exactly that chunk with no Telegram read past it, an HTML
@@ -140,7 +142,8 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   every media body read fail with a flood wait. The gotd adapter's
   largest-photo selection (exact size from `PhotoSize.Size` or the last
   progressive size, otherwise not seekable) is pinned against a fake
-  `upload.getFile` invoker.
+  `upload.getFile` invoker. The same invoker verifies a short mid-file
+  response resumes with legal aligned requests and returns exact bytes.
   The Channels facade is covered by listing bound channels with the active
   one marked, bind choices with bound channels marked, binding an existing
   channel and creating one (explicit and default title) with the result
@@ -282,7 +285,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   happy-dom's XML parser drops namespaced attributes, so no fixture
   document reaches docx-preview's CSS output; the rebuild's CSS rules
   (refusing `@import`, remote `url()` and other resource functions, also
-  when escaped, and remote image sources) are checked directly.
+  when escaped, and remote image sources) are checked directly, including
+  quotes inside comments, comment delimiters inside strings, and broken
+  strings that could otherwise hide resource loads.
   `a11y.test.tsx` walks the
   mounted app's interactive controls — exactly the selector set the global
   focus-visible rule styles — asserting every one is keyboard-focusable
@@ -302,7 +307,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   `ui-preview.yml` workflow builds the PR's td-gui in server mode, seeds a
   drive through the CLI against the fake Telegram, and records scripted
   scenes with Playwright — one 2x screenshot per scene plus a walkthrough
-  mp4, published into a marked block in the PR description. The same
+  mp4, published into a marked block in the PR description. Preview scenes
+  cover decoded images, text, rendered Markdown, bounded large-log reads
+  with Load more, and unsupported files retaining Download. The same
   `ui-preview/run.sh` reproduces a preview locally, so every run yields a
   verifiable repeatable artifact. See "UI preview" in
   `docs/release-and-ci.md`.

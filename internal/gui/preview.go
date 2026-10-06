@@ -72,6 +72,7 @@ type PreviewCapabilities struct {
 // time so range requests do not each pay for a metadata round trip.
 type preparedPreview struct {
 	fileID      int64
+	messageID   int
 	info        telegram.MediaInfo
 	contentType string
 	name        string
@@ -136,6 +137,7 @@ func (d *Drive) Preview(ctx context.Context, path string) (*PreviewDescriptor, e
 	}
 	url := d.media.prepare(&preparedPreview{
 		fileID:      f.ID,
+		messageID:   f.MessageID(),
 		info:        info,
 		contentType: service.PreviewContentType(f, info),
 		name:        f.Name,
@@ -206,7 +208,7 @@ func (m *media) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpStatus(w, http.StatusInternalServerError)
 		return
 	}
-	if !found {
+	if !found || f.MessageID() != p.messageID {
 		httpStatus(w, http.StatusNotFound)
 		return
 	}

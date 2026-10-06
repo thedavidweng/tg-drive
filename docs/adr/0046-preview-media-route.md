@@ -42,10 +42,12 @@ everything else stays on bindings and typed events.
   only); a request without it is refused. Another local web page cannot
   guess a URL, and a URL dies with the process.
 - **URLs are pinned to a file row.** The URL names an opaque per-preview
-  token mapped to the files row resolved when the preview was prepared, not
+  token mapped to the files row and Telegram message resolved when the preview was prepared, not
   to a path in whichever channel is active. A channel switch, a move, or a
   replace never makes an existing URL serve another file; the handler
-  serves only rows the current index still holds as active. A bounded
+  serves only rows the current index still holds as active with the same
+  Telegram message. A scan that rebinds the row invalidates the URL (404).
+  A bounded
   number of prepared URLs stays servable; an older one answers 404 and the
   frontend prepares it again.
 - **HTTP semantics.** HEAD and GET with at most one byte range: 200 for the
