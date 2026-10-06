@@ -1,7 +1,9 @@
 import { audioPreview } from "@/preview/audio"
 import { docxPreview } from "@/preview/docx"
 import { imagePreview } from "@/preview/image"
+import { markdownPreview } from "@/preview/markdown"
 import { pptxPreview } from "@/preview/pptx"
+import { textPreview } from "@/preview/text"
 import type { PreviewProvider } from "@/preview/types"
 import { videoPreview } from "@/preview/video"
 import { xlsxPreview } from "@/preview/xlsx"
@@ -18,4 +20,7 @@ export const previewProviders: readonly PreviewProvider[] = [
   docxPreview,
   xlsxPreview,
   pptxPreview,
+  markdownPreview,
+  // Last: its text/* catch-all must not shadow a more specific provider.
+  textPreview,
 ]

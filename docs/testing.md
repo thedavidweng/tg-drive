@@ -130,7 +130,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   capability while the listing stays intact, a URL prepared before a channel switch still
   serving the original file, a deleted file's URL answering 404, a range
   near the end of an 8 MiB file reading only that range, and a client
-  disconnect cancelling the fake's read. The fake knob
+  disconnect cancelling the fake's read; a text file's first 2 MiB range
+  answering exactly that chunk with no Telegram read past it, and an HTML
+  file served as `text/plain`. The fake knob
   `TD_FAKE_RANGE_LOG=<file>` appends a JSON line as each range read starts
   and ends (with its error), which is how those tests observe the requested
   ranges and the cancellation; `TD_FAKE_MEDIA_FLOOD_WAIT=<seconds>` makes
@@ -250,7 +252,18 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   Download; and the English and Simplified Chinese strings. The in-memory
   backend serves previews from data URLs (`putPreviewForTest`) and
   rejects them on demand (`failPreviewForTest`); the live demo points
-  them at its samples' public hosts. `a11y.test.tsx` walks the
+  them at its samples' public hosts. Text, code, and Markdown previews
+  (`preview-text.test.tsx`) cover the registry routing text, code,
+  Markdown, and HTML; HTML shown as highlighted source with no frame and
+  no script run; Markdown rendered with raw HTML kept as text, unsafe link
+  schemes and images dropped, and links never navigating the app; plain
+  text left unhighlighted; a failed read falling back to Download; a 5 MiB
+  file fetching only its first 2 MiB range, stating it is partial, and
+  Load more requesting each next range (a character split across chunks
+  joined intact); a body served whole without ranges read only as far as
+  the shown chunk; and the allowlist sanitiser itself, which the Markdown
+  renderer's escaping keeps end-to-end payloads from reaching.
+  `a11y.test.tsx` walks the
   mounted app's interactive controls — exactly the selector set the global
   focus-visible rule styles — asserting every one is keyboard-focusable
   with no positive tabindex, plus the tab strip's arrow-key navigation and
