@@ -48,6 +48,16 @@ export function Move($from: string, to: string, opts: $models.MoveOptions): $Can
 }
 
 /**
+ * Preview resolves the active file at path in the active channel into a
+ * preview descriptor. It describes the file's Telegram representation once
+ * (no body bytes) and prepares a media URL pinned to the file row. Preview
+ * is an ephemeral read: no Transfer, operation lock, or history.
+ */
+export function Preview(path: string): $CancellablePromise<$models.PreviewDescriptor | null> {
+    return $Call.ByID(3324997929, path);
+}
+
+/**
  * Scan rescans the bound channel from Telegram and rebuilds the local
  * index. While it runs it emits ScanProgress events; the final event
  * carries the completed counts.

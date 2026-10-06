@@ -30,6 +30,8 @@ import type {
   OmarchyState,
   OmarchyTheme,
   PathCodecReport,
+  PreviewCapabilities,
+  PreviewDescriptor,
   RepairItem,
   RepairOptions,
   RepairOutcome,
@@ -78,6 +80,8 @@ export type {
   OmarchyState,
   OmarchyTheme,
   PathCodecReport,
+  PreviewCapabilities,
+  PreviewDescriptor,
   RepairItem,
   RepairOptions,
   RepairOutcome,
@@ -124,6 +128,13 @@ export interface Backend {
     delete(path: string, opts: { confirm: boolean }): Promise<DeleteOutcome>
     share(path: string): Promise<ShareLink>
     scan(): Promise<ScanOutcome>
+    /**
+     * Prepare an in-app preview of a file: display metadata, what the
+     * media URL can serve (byte ranges, exact size), and the URL itself.
+     * The Wails backend's URL is the same-origin media route (ADR 0046),
+     * pinned to the file; the in-memory backend's is a data or sample URL.
+     */
+    preview(path: string): Promise<PreviewDescriptor>
   }
   events: {
     onDirectoryChanged(cb: (e: DirectoryChanged) => void): () => void

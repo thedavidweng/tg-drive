@@ -87,7 +87,9 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   shadcn/ui; Bun as package manager, test runner, and Vite runtime,
   pinned in `mise.toml`). It calls Go only through the generated bindings in
   `frontend/bindings` (committed, drift-checked by `make
-  gui-bindings-check`) and typed events. The `gui`-tagged `frontend` Go
+  gui-bindings-check`) and typed events; the one exception is preview
+  bytes, which the frontend's viewers fetch from the same-origin media
+  route (ADR 0046). The `gui`-tagged `frontend` Go
   package embeds the built `frontend/dist`, because `go:embed` cannot reach
   parent directories; `frontend/dist` is built, not committed.
 - `go.mod` carries `ignore ./frontend/node_modules` so a stray `*.go` file
@@ -120,6 +122,43 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   `ERR_CONFIRMATION_REQUIRED`, and disallowed for albums. The download
   sheet carries `td get`'s: the local conflict policy, and
   continue-on-error for folders.
+- File preview (ADR 0046): `Drive.Preview` resolves an active file in the
+  active channel into a descriptor (name, path, MIME, indexed size, date,
+  capabilities, media URL) after describing its Telegram representation
+  once with a zero-length `ReadMediaRange`. The media URL is
+  `/td-media/<token>?c=<capability>`: the token maps, in memory, to the
+  files row, its Telegram message, and that description; the capability is random per process
+  and never persisted or logged. `cmd/td-gui` mounts `Services.MediaHandler`
+  (a plain `http.Handler`) at that prefix through the Wails asset
+  middleware, so the desktop opens no extra listener; server mode serves it
+  over Wails' loopback server with the write timeout raised. Each request
+  re-resolves the row by id through `service.PreviewFileByID` (active rows
+  only, in whatever channel the row belongs to), rejects URLs whose row now
+  points to another message, and answers HEAD/GET with at
+  most one byte range from `service.ReadPreviewRange`; representations that
+  are not seekable stream whole through `service.StreamPreview`. A native
+  photo serves Telegram's largest size as `image/jpeg`, seekable only when
+  Telegram states that size's exact length; a text message serves its
+  human text part as plain text. The Content-Type is the representation's
+  type when Telegram reports one, else the indexed MIME type. Preview takes no operation lock and creates no
+  Transfer. In the frontend, `src/preview/surface.tsx` is the one preview
+  surface: a full-window modal over the Drive listing, so closing it leaves
+  the directory and scroll position as they were. It picks a view from the
+  ordered registry (`src/preview/registry.ts`, providers listed in
+  `src/preview/providers.ts`, one module each): MIME types first, then
+  extensions, then the fallback (file details and Download), which is also
+  what any failure shows. Text, code, and Markdown views read the media URL
+  in 2 MiB Range chunks, one more per "load more" (a 200 answer is streamed
+  only to the chunk's end), and render nothing executable: HTML is
+  highlighted source, Markdown's raw HTML stays text, and renderer output
+  is rebuilt against an element and attribute allowlist. Word documents
+  render into a shadow root and keep their CSS only when it cannot load
+  anything (ADR 0046). Escape that starts inside a view's shadow root or
+  text field stays with the view instead of closing the preview. The PDF view
+  (`src/preview/pdf.tsx`) lazy-loads
+  EmbedPDF and runs PDFium from the WASM bundled in the embedded frontend,
+  with EmbedPDF's CDN fonts, stamp library, and webfonts turned off, so a
+  PDF preview fetches nothing but the app's own assets and its media URL.
 - Index sync (ADR 0033): `Services.StartSync` polls `PRAGMA data_version`
   on a pinned connection (the pragma advances only for *other* connections'
   commits) and, on change, re-reads the directory the frontend last listed

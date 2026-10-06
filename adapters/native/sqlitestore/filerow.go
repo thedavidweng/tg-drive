@@ -63,6 +63,28 @@ func (d *DB) ActiveByPath(ctx context.Context, channelRowID int64, canonicalPath
 	return d.fileRowAt(ctx, channelRowID, canonicalPath, "active")
 }
 
+// ActiveByID returns the active files row with this id and the Telegram ID
+// of the channel it belongs to (found false when the row does not exist or
+// is no longer active).
+func (d *DB) ActiveByID(ctx context.Context, id int64) (FileRow, string, bool, error) {
+	var tgChannelID string
+	var f FileRow
+	err := d.sql.QueryRowContext(ctx, `select f.id, f.canonical_path, f.display_name, f.original_local_path, f.size,
+		f.content_hash, coalesce(f.mime,''), f.status, f.message_id, f.manifest_message_id,
+		coalesce(f.manifest_chat_tg_id,''), f.updated_at, c.tg_channel_id
+		from files f join channels c on c.id = f.channel_id
+		where f.id=? and f.status='active'`, id).Scan(&f.ID, &f.CanonicalPath, &f.DisplayName, &f.LocalPath,
+		&f.Size, &f.ContentHash, &f.MIME, &f.Status, &f.MessageID, &f.ManifestMsgID, &f.ManifestChat,
+		&f.UpdatedAt, &tgChannelID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return FileRow{}, "", false, nil
+	}
+	if err != nil {
+		return FileRow{}, "", false, err
+	}
+	return f, tgChannelID, true, nil
+}
+
 // PendingByPath returns the pending row at a canonical path (found false when
 // none exists).
 func (d *DB) PendingByPath(ctx context.Context, channelRowID int64, canonicalPath string) (FileRow, bool, error) {

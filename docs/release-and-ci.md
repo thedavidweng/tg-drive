@@ -196,7 +196,13 @@ command to start once the scene's page loaded — how the Transfers scenes
 run a CLI upload against the same fake Telegram. The GUI's native file
 dialogs are no-ops in server mode, so the build answers them from
 `TD_GUI_PICK_FILES` / `TD_GUI_PICK_DIR` (see `cmd/td-gui/picker.go`);
-`run.sh` points those at staged files. Scenes run
+`run.sh` points those at staged files. The seeded photos are real JPEGs
+drawn deterministically by `ui-preview/photo.go`, so the image-preview
+scene (and the video, which opens and closes the same preview) waits for
+the browser to decode the image the media route served. Text and Markdown
+scenes assert the rendered content; a large-log scene verifies the initial
+2 MiB range and the next range after Load more, and an unsupported-file
+scene checks that Download still opens its sheet. Scenes run
 in order against shared server state, so a scene that starts something
 the next one depends on (or must not see) uses `leave` to restore a clean
 state after its shot. The run writes one 2x PNG per scene, `preview.mp4`,

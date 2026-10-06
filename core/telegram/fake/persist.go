@@ -36,13 +36,17 @@ type persistedState struct {
 //   - TD_FAKE_FAIL_UPLOAD_AFTER_PARTS: fail the first resumable upload once
 //     this many parts are confirmed (state stays persisted for resume); the
 //     knob disables itself after firing once so a retry can succeed.
-//   - TD_FAKE_TRANSFER_DELAY: a Go duration each resumable upload part and
-//     each media download waits before completing, honoring cancellation,
-//     so tests can interrupt a transfer midway.
+//   - TD_FAKE_TRANSFER_DELAY: a Go duration each resumable upload part,
+//     each media download, and each non-empty media range read waits before
+//     completing, honoring cancellation, so tests can interrupt a transfer
+//     midway.
 //   - TD_FAKE_AUTH_PASSWORD: the account has two-step verification; login
 //     asks for this password after the code.
 //   - TD_FAKE_LOGIN_FLOOD_WAIT: login fails with a flood wait of this many
 //     seconds before any code is sent.
+//   - TD_FAKE_MEDIA_FLOOD_WAIT: every media body read (download, non-empty
+//     range read) fails with a flood wait of this many seconds; reads that
+//     only describe the media still succeed.
 //   - TD_FAKE_DENY_CAPABILITIES: a comma-separated list of channel
 //     permissions (upload, delete, edit, invite) the capability check
 //     reports missing; the operations themselves still succeed.
@@ -51,6 +55,11 @@ type persistedState struct {
 //   - TD_FAKE_FAIL_COMMENTS: a comma-separated list of discussion-thread
 //     comment writes (edit, delete) that fail, as when a machine record
 //     cannot be redacted; drive-channel media writes still succeed.
+//   - TD_FAKE_RANGE_LOG: a file each media range read appends JSON lines
+//     to, one {"event":"start",...} when it begins and one
+//     {"event":"done",...,"error":...} when it returns, so a test outside
+//     the process can see which byte ranges were requested and whether a
+//     read ended cancelled.
 func NewPersistent(path string) *Client {
 	c := New()
 	c.statePath = path
@@ -60,6 +69,11 @@ func NewPersistent(path string) *Client {
 	if v := os.Getenv("TD_FAKE_LOGIN_FLOOD_WAIT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.loginFloodWait = n
+		}
+	}
+	if v := os.Getenv("TD_FAKE_MEDIA_FLOOD_WAIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.mediaFloodWait = n
 		}
 	}
 	if v := os.Getenv("TD_FAKE_TRANSFER_DELAY"); v != "" {
@@ -84,6 +98,7 @@ func NewPersistent(path string) *Client {
 		}
 	}
 	c.failDoctor = os.Getenv("TD_FAKE_FAIL_DOCTOR") == "1"
+	c.rangeLogPath = os.Getenv("TD_FAKE_RANGE_LOG")
 	for _, name := range strings.Split(os.Getenv("TD_FAKE_FAIL_COMMENTS"), ",") {
 		switch strings.TrimSpace(name) {
 		case "edit":

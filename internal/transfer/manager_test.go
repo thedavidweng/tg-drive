@@ -377,22 +377,38 @@ func TestManagerRetryResumesAndClaimsOnce(t *testing.T) {
 // cancelled without its upload ever starting, while the Transfer ahead of
 // it completes undisturbed.
 func TestManagerCancelQueuedNeverStarts(t *testing.T) {
-	app, tg := newApp(t)
+	app, _ := newApp(t)
 	app.Cfg.Transfers.Concurrency = 1
 	app.Cfg.Locks.TTLSeconds = 3
-	tg.SetTransferDelay(100 * time.Millisecond)
+	started, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
 
 	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
 	ctx := context.Background()
-	// The first upload holds the one slot for about 3s (30 parts), so the
-	// second Transfer is still queued when the cancel lands.
+	// Hold the first upload after it acquires the slot, until the second
+	// Transfer observes the persisted cancellation on its heartbeat.
 	first, err := m.SubmitUpload(ctx, transfer.Upload{
-		Source: localFile(t, "first.bin", 30*1024),
+		Source: localFile(t, "first.bin", 2*1024),
 		Dest:   "/first.bin",
 		Policy: service.ConflictFail,
+		Options: service.UploadOptions{Observer: service.Observer{
+			OnStage: func(_ service.Item, stage service.Stage) {
+				if stage == service.StageHashing {
+					close(started)
+					<-release
+				}
+			},
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first upload did not acquire the run slot")
 	}
 	queued, err := m.SubmitUpload(ctx, transfer.Upload{
 		Source: localFile(t, "queued.bin", 6*1024),
@@ -417,6 +433,7 @@ func TestManagerCancelQueuedNeverStarts(t *testing.T) {
 	if got.Stage != transfer.StageCancelled || got.FinishedAt == nil || !got.CancelRequested {
 		t.Fatalf("cancelled queued Transfer = %+v, want cancelled with the flag recorded", got)
 	}
+	unblock()
 	if _, err := first.Wait(); err != nil {
 		t.Fatalf("first upload: %v", err)
 	}

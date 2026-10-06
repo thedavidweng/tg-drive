@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,10 @@ type Client struct {
 	// loginFloodWait makes Login fail with a FloodWaitError of this many
 	// seconds before any code is sent.
 	loginFloodWait int
+	// mediaFloodWait makes every media body read (DownloadMedia and
+	// non-empty ReadMediaRange) fail with a FloodWaitError of this many
+	// seconds; metadata-only range reads still succeed.
+	mediaFloodWait int
 
 	nextGroupedID      int64
 	failUpload         bool
@@ -60,7 +65,8 @@ type Client struct {
 	failUploadAfterParts int
 	partSubmissions      int64
 
-	// transferDelay is how long each resumable part and each media download
+	// transferDelay is how long each resumable part, each media download,
+	// and each non-empty media range read
 	// takes; the wait ends early with the context's error on cancellation.
 	transferDelay time.Duration
 
@@ -77,6 +83,13 @@ type Client struct {
 	// "upload", "delete", "edit", "invite".
 	deniedCaps map[string]bool
 	failDoctor bool
+
+	// rangeReads records every ReadMediaRange call, in call order.
+	rangeReads []MediaRangeRead
+	// rangeLogPath, when set, receives a JSON line as each ReadMediaRange
+	// call starts and another as it returns (TD_FAKE_RANGE_LOG).
+	rangeLogPath string
+	rangeLogMu   sync.Mutex
 }
 
 // New creates a fake client.
@@ -501,13 +514,17 @@ func (c *Client) uploadResumable(ctx context.Context, req telegram.UploadRequest
 // transfer models one part or download RPC: it fails once ctx is cancelled,
 // as a real request would, and takes transferDelay.
 func (c *Client) transfer(ctx context.Context) error {
+	return waitTransfer(ctx, c.transferDelay)
+}
+
+func waitTransfer(ctx context.Context, delay time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if c.transferDelay <= 0 {
+	if delay <= 0 {
 		return nil
 	}
-	t := time.NewTimer(c.transferDelay)
+	t := time.NewTimer(delay)
 	defer t.Stop()
 	select {
 	case <-t.C:
@@ -602,6 +619,9 @@ func (c *Client) DeleteMessage(ctx context.Context, channelID int64, messageID i
 func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID int, dst io.Writer) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.mediaFloodWait > 0 {
+		return &telegram.FloodWaitError{Seconds: c.mediaFloodWait}
+	}
 	for _, m := range c.messages[channelID] {
 		if m.ID != messageID {
 			continue
@@ -624,6 +644,118 @@ func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID i
 		return fmt.Errorf("message has no downloadable content")
 	}
 	return &telegram.MessageNotFoundError{}
+}
+
+// MediaRangeRead is one recorded ReadMediaRange call.
+type MediaRangeRead struct {
+	ChannelID      int64
+	MessageID      int
+	Offset, Length int64
+}
+
+// MediaRangeReads returns every ReadMediaRange call so far, including
+// metadata-only (zero-length) and rejected ones, in call order.
+func (c *Client) MediaRangeReads() []MediaRangeRead {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]MediaRangeRead(nil), c.rangeReads...)
+}
+
+// ReadMediaRange serves exact intervals of a message's stored Data. As in the
+// real adapter, documents and videos are seekable with their exact size;
+// native photos and text messages are not. The mutex is released before the
+// simulated transfer delay so concurrent range reads overlap.
+func (c *Client) ReadMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (info telegram.MediaInfo, err error) {
+	read := MediaRangeRead{ChannelID: channelID, MessageID: messageID, Offset: offset, Length: length}
+	c.logRange("start", read, nil)
+	defer func() { c.logRange("done", read, err) }()
+	return c.readMediaRange(ctx, channelID, messageID, offset, length, dst)
+}
+
+// logRange appends one TD_FAKE_RANGE_LOG line, best effort.
+func (c *Client) logRange(event string, r MediaRangeRead, err error) {
+	if c.rangeLogPath == "" {
+		return
+	}
+	line := struct {
+		Event     string `json:"event"`
+		ChannelID int64  `json:"channel_id"`
+		MessageID int    `json:"message_id"`
+		Offset    int64  `json:"offset"`
+		Length    int64  `json:"length"`
+		Error     string `json:"error,omitempty"`
+	}{Event: event, ChannelID: r.ChannelID, MessageID: r.MessageID, Offset: r.Offset, Length: r.Length}
+	if err != nil {
+		line.Error = err.Error()
+	}
+	b, mErr := json.Marshal(line)
+	if mErr != nil {
+		return
+	}
+	c.rangeLogMu.Lock()
+	defer c.rangeLogMu.Unlock()
+	f, oErr := os.OpenFile(c.rangeLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if oErr != nil {
+		return
+	}
+	_, _ = f.Write(append(b, '\n'))
+	_ = f.Close()
+}
+
+func (c *Client) readMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (telegram.MediaInfo, error) {
+	c.mu.Lock()
+	c.rangeReads = append(c.rangeReads, MediaRangeRead{ChannelID: channelID, MessageID: messageID, Offset: offset, Length: length})
+	delay := c.transferDelay
+	floodWait := c.mediaFloodWait
+	var (
+		data        []byte
+		info        telegram.MediaInfo
+		found, body bool
+	)
+	for _, m := range c.messages[channelID] {
+		if m.ID != messageID {
+			continue
+		}
+		found = true
+		data = m.Data
+		info, body = fakeMediaInfo(m)
+		break
+	}
+	c.mu.Unlock()
+	if !found {
+		return telegram.MediaInfo{Size: -1}, &telegram.MessageNotFoundError{}
+	}
+	if !body {
+		return info, fmt.Errorf("message has no downloadable content")
+	}
+	if err := telegram.CheckMediaRange(info, offset, length); err != nil {
+		return info, err
+	}
+	if length == 0 {
+		return info, nil
+	}
+	if floodWait > 0 {
+		return info, &telegram.FloodWaitError{Seconds: floodWait}
+	}
+	if err := waitTransfer(ctx, delay); err != nil {
+		return info, err
+	}
+	_, err := dst.Write(data[offset : offset+length])
+	return info, err
+}
+
+// fakeMediaInfo describes m's representation; ok is false when m has no
+// downloadable body, as DownloadMedia reports.
+func fakeMediaInfo(m telegram.Message) (info telegram.MediaInfo, ok bool) {
+	switch {
+	case m.Kind == telegram.KindPhoto:
+		return telegram.MediaInfo{Size: -1, MIME: "image/jpeg"}, true
+	case len(m.Data) > 0:
+		return telegram.MediaInfo{Size: int64(len(m.Data)), Seekable: true, MIME: m.MIME}, true
+	case m.Kind == telegram.KindText || m.Text != "":
+		return telegram.MediaInfo{Size: -1, MIME: "text/plain; charset=utf-8"}, true
+	}
+	return telegram.MediaInfo{Size: -1}, false
 }
 
 func (c *Client) GetMessage(ctx context.Context, channelID int64, messageID int) (telegram.Message, error) {

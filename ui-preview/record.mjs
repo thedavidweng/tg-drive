@@ -17,6 +17,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { spawn } from "node:child_process"
 import { chromium } from "playwright"
+import assert from "node:assert/strict"
 
 // The window size cmd/td-gui opens with; screenshots are taken at 2x.
 const VIEWPORT = { width: 960, height: 640 }
@@ -91,6 +92,75 @@ const scenes = [
       await sheet.waitFor()
       await sheet.getByRole("list", { name: "Files to upload" }).getByRole("listitem").first().waitFor()
       await page.getByText("Upload limit: 2 GB per file").waitFor()
+    },
+  },
+  // File preview: a seeded photo opened from its folder renders through
+  // the facade's media route and the fake Telegram, and closing it hands
+  // back the same directory listing.
+  {
+    name: "drive-preview-image",
+    title: "Drive — image preview",
+    colorScheme: "light",
+    settle: async (page) => {
+      await openPhotoPreview(page)
+    },
+    leave: closePhotoPreview,
+  },
+  {
+    name: "drive-preview-text",
+    title: "Drive — text preview",
+    colorScheme: "light",
+    settle: async (page) => {
+      await page.getByRole("button", { name: "notes.txt", exact: true }).click()
+      const surface = page.getByRole("dialog", { name: "notes.txt" })
+      await surface.getByLabel("Contents of notes.txt").getByText("chapters outline and open questions").waitFor()
+    },
+  },
+  {
+    name: "drive-preview-markdown",
+    title: "Drive — rendered Markdown",
+    colorScheme: "light",
+    settle: async (page) => {
+      const surface = await openDocumentPreview(page, "roadmap.md")
+      await surface.getByRole("heading", { name: "Preview roadmap" }).waitFor()
+      assert.equal(await surface.locator("strong").textContent(), "remote files")
+    },
+  },
+  {
+    name: "drive-preview-large-text",
+    title: "Drive — bounded text preview and load more",
+    colorScheme: "light",
+    settle: async (page) => {
+      const reads = []
+      page.on("request", (request) => {
+        if (request.url().includes("/td-media/")) reads.push(request.headers().range)
+      })
+      const firstRead = page.waitForResponse((response) => response.request().headers().range === "bytes=0-2097151")
+      const surface = await openDocumentPreview(page, "large.log")
+      await surface.getByRole("status").getByText(/^Partial file:/).waitFor()
+      assert.equal((await firstRead).status(), 206)
+      assert.deepEqual(reads, ["bytes=0-2097151"])
+      assert.ok(!(await surface.getByLabel("Contents of large.log").textContent()).includes("Final log chunk"))
+      const nextRead = page.waitForResponse((response) => response.request().headers().range === "bytes=2097152-4194303")
+      await surface.getByRole("button", { name: "Load more", exact: true }).click()
+      await surface.getByLabel("Contents of large.log").getByText(/Final log chunk/).waitFor()
+      assert.equal((await nextRead).status(), 206)
+      assert.deepEqual(reads, ["bytes=0-2097151", "bytes=2097152-4194303"])
+      assert.equal(await surface.getByRole("button", { name: "Load more", exact: true }).count(), 0)
+    },
+  },
+  {
+    name: "drive-preview-unsupported",
+    title: "Drive — unsupported preview keeps Download",
+    colorScheme: "light",
+    settle: async (page) => {
+      const surface = await openDocumentPreview(page, "archive.zip")
+      await surface.getByText("No preview is available for this file type.").waitFor()
+      await surface.getByRole("button", { name: "Download", exact: true }).first().click()
+      const sheet = page.getByRole("dialog", { name: "Download", exact: true })
+      await sheet.waitFor()
+      await sheet.getByRole("button", { name: "Cancel", exact: true }).click()
+      await sheet.waitFor({ state: "detached" })
     },
   },
   // The channel switcher: the sheet lists the bound drives and the active
@@ -345,8 +415,8 @@ const scenes = [
   // Order matters: the fake serializes Telegram calls, and a running
   // upload holds it for every part — so no page may load while an upload
   // runs. The CLI scenes open their page first, then spawn their upload;
-  // the live-upload scene goes last, so its album overlaps only the video
-  // walkthrough (which never calls Telegram).
+  // the live-upload scene goes last, and its leave waits the album out
+  // before the video walkthrough loads a page and reads a preview.
   {
     name: "transfers-cli-upload",
     title: "Transfers — a CLI upload among finished ones",
@@ -460,6 +530,38 @@ async function openDrive(page, base) {
   await page.waitForSelector("ul", { timeout: 30_000 })
 }
 
+// openPhotoPreview opens /Photos/kyoto.jpg from its folder listing and
+// waits until the browser has decoded the image the media route served:
+// a placeholder or failed read leaves naturalWidth at 0 (or swaps in the
+// fallback details), so the wait fails instead of shooting a broken frame.
+async function openPhotoPreview(page) {
+  await page.getByRole("listitem").filter({ hasText: "Photos" }).getByRole("button", { name: "Photos" }).click()
+  const list = page.getByRole("list", { name: "Files in /Photos" })
+  await list.getByRole("button", { name: "kyoto.jpg", exact: true }).click()
+  const surface = page.getByRole("dialog", { name: "kyoto.jpg" })
+  const image = surface.getByRole("img", { name: "kyoto.jpg" })
+  await image.waitFor({ timeout: 15_000 })
+  await page.waitForFunction(
+    (img) => img.complete && img.naturalWidth > 0,
+    await image.elementHandle(),
+    { timeout: 15_000 },
+  )
+}
+
+async function closePhotoPreview(page) {
+  await page.getByRole("button", { name: "Close preview" }).click()
+  await page.getByRole("dialog", { name: "kyoto.jpg" }).waitFor({ state: "detached" })
+  await page.getByRole("list", { name: "Files in /Photos" }).getByRole("button", { name: "kyoto.jpg", exact: true }).waitFor()
+}
+
+async function openDocumentPreview(page, name) {
+  await page.getByRole("button", { name: "Documents", exact: true }).click()
+  await page.getByRole("list", { name: "Files in /Documents" }).getByRole("button", { name, exact: true }).click()
+  const surface = page.getByRole("dialog", { name, exact: true })
+  await surface.waitFor()
+  return surface
+}
+
 // The auth screens render no <ul>; readiness is the role and name the
 // scene passes (the setup form, the login heading).
 async function openAuth(page, base, role, name) {
@@ -522,8 +624,9 @@ async function shootScene(browser, base, out, scene) {
   return { name: scene.name, title: scene.title, file, width: VIEWPORT.width * 2, height: VIEWPORT.height * 2 }
 }
 
-// The walkthrough video: open the Drive and cycle the theme override, so
-// the recording shows the real app responding, not a static page.
+// The walkthrough video: open the Drive, cycle the theme override, then
+// open a photo's preview and close it back to its folder, so the
+// recording shows the real app responding, not a static page.
 async function shootVideo(browser, base, out) {
   const context = await browser.newContext({
     viewport: VIEWPORT,
@@ -542,6 +645,10 @@ async function shootVideo(browser, base, out) {
     await toggle.click() // light → dark
     await page.waitForTimeout(1200)
     await toggle.click() // dark → system
+    await page.waitForTimeout(600)
+    await openPhotoPreview(page)
+    await page.waitForTimeout(1200)
+    await closePhotoPreview(page)
     await page.waitForTimeout(600)
     webm = await page.video().path()
   } finally {

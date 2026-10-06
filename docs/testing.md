@@ -119,6 +119,31 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   emits; and index sync — a second front end's writes trigger a
   `directory-changed` event through the `PRAGMA data_version` poll, which
   also survives an Auth reopen (setup re-pins the poller's connection).
+  File preview runs the real facade and media handler under
+  `httptest` against the persistent fake: the descriptor of a seekable
+  fixture and its HEAD headers, a byte-identical full GET, 206 ranges at
+  the start, middle, and end with exact bytes and headers, 416 for an
+  unsatisfiable range, a missing or wrong capability refused, a native photo
+  served whole as `image/jpeg` without ranges or a length (a Range header
+  ignored), an adopted text message served whole as its human text, a
+  flood wait answered 429 with `Retry-After` and no file name, path, or
+  capability while the listing stays intact, a URL prepared before a channel switch still
+  serving the original file, a deleted file's URL answering 404, a scan
+  rebinding a row to a newer message invalidating its old URL while a fresh
+  preview serves the complete replacement, a range
+  near the end of an 8 MiB file reading only that range, and a client
+  disconnect cancelling the fake's read; a text file's first 2 MiB range
+  answering exactly that chunk with no Telegram read past it, an HTML
+  file served as `text/plain`, and a ZIP (which no view shows) described
+  and served while its Download still delivers the exact bytes. The fake knob
+  `TD_FAKE_RANGE_LOG=<file>` appends a JSON line as each range read starts
+  and ends (with its error), which is how those tests observe the requested
+  ranges and the cancellation; `TD_FAKE_MEDIA_FLOOD_WAIT=<seconds>` makes
+  every media body read fail with a flood wait. The gotd adapter's
+  largest-photo selection (exact size from `PhotoSize.Size` or the last
+  progressive size, otherwise not seekable) is pinned against a fake
+  `upload.getFile` invoker. The same invoker verifies a short mid-file
+  response resumes with legal aligned requests and returns exact bytes.
   The Channels facade is covered by listing bound channels with the active
   one marked, bind choices with bound channels marked, binding an existing
   channel and creating one (explicit and default title) with the result
@@ -220,7 +245,50 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   the backend's confirmation gates rejecting unconfirmed calls; and the
   Maintenance tab — adopt's preview and confirmation sheet, repair per
   mode (with the orphaned-delete sheet), and doctor checks rendered as
-  pass/warn/fail beside the path-codec rows. `a11y.test.tsx` walks the
+  pass/warn/fail beside the path-codec rows; and file preview
+  (`preview.test.tsx`) — the registry choosing a provider by MIME type,
+  then extension, then the fallback; a file name or the Preview row action
+  opening the preview while a directory name still navigates; the header's
+  name, metadata, Download, and Close; Close and Escape returning focus to
+  the opener and leaving the directory as it was, with Escape ignored
+  while a viewer is fullscreen and owned by a sheet stacked above; a failed
+  preview call or an image that fails to load showing the fallback with
+  Download; and the Preview action and preview controls in Simplified
+  Chinese. The PDF viewer
+  (`preview-pdf.test.tsx`) is chosen for `application/pdf` and `.pdf`,
+  shows the fallback with Download when its PDFium worker cannot load, and
+  names only same-origin URLs in its EmbedPDF configuration, and the
+  preview's Tab trap includes controls a viewer renders in a shadow root
+  (EmbedPDF's toolbar); happy-dom
+  cannot run PDFium, so rendering is checked by hand in a browser.
+  `frontend/assets_test.go` (`gui` tag, run on the production build)
+  asserts the embedded assets carry the PDFium WASM and a script that loads
+  it. The in-memory backend serves previews from data URLs (`putPreviewForTest`) and
+  rejects them on demand (`failPreviewForTest`); the live demo points
+  them at its samples' public hosts. Text, code, and Markdown previews
+  (`preview-text.test.tsx`) cover the registry routing text, code,
+  Markdown, and HTML; HTML shown as highlighted source with no frame and
+  no script run; Markdown rendered with raw HTML kept as text, unsafe link
+  schemes and images dropped, and links never navigating the app; plain
+  text left unhighlighted; a failed read falling back to Download; a 5 MiB
+  file fetching only its first 2 MiB range, stating it is partial, and
+  Load more requesting each next range (a character split across chunks
+  joined intact); a body served whole without ranges read only as far as
+  the shown chunk; a body of unknown served length complete only when the
+  response ends; `.ts` routed to text despite its `video/mp2t` type, and a
+  binary file under a text name falling back to Download; and the
+  allowlist sanitiser itself, which the Markdown renderer's escaping keeps
+  end-to-end payloads from reaching. Office previews
+  (`preview-office.test.tsx`) cover routing, the 100 MiB warning, renderer
+  failures falling back, a workbook's cells, and a Word document rendered
+  through the rebuild into a shadow root, where Escape stays with the view.
+  happy-dom's XML parser drops namespaced attributes, so no fixture
+  document reaches docx-preview's CSS output; the rebuild's CSS rules
+  (refusing `@import`, remote `url()` and other resource functions, also
+  when escaped, and remote image sources) are checked directly, including
+  quotes inside comments, comment delimiters inside strings, and broken
+  strings that could otherwise hide resource loads.
+  `a11y.test.tsx` walks the
   mounted app's interactive controls — exactly the selector set the global
   focus-visible rule styles — asserting every one is keyboard-focusable
   with no positive tabindex, plus the tab strip's arrow-key navigation and
@@ -239,7 +307,9 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   `ui-preview.yml` workflow builds the PR's td-gui in server mode, seeds a
   drive through the CLI against the fake Telegram, and records scripted
   scenes with Playwright — one 2x screenshot per scene plus a walkthrough
-  mp4, published into a marked block in the PR description. The same
+  mp4, published into a marked block in the PR description. Preview scenes
+  cover decoded images, text, rendered Markdown, bounded large-log reads
+  with Load more, and unsupported files retaining Download. The same
   `ui-preview/run.sh` reproduces a preview locally, so every run yields a
   verifiable repeatable artifact. See "UI preview" in
   `docs/release-and-ci.md`.
