@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n"
 
 /** The focusable controls of a modal sheet, in tab order. */
-function focusableIn(root: HTMLElement): HTMLElement[] {
+export function focusableIn(root: HTMLElement): HTMLElement[] {
   return Array.from(
     root.querySelectorAll<HTMLElement>(
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',

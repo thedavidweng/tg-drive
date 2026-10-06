@@ -14,6 +14,7 @@ import (
 type Drive struct {
 	state *appState
 	emit  Emitter
+	media *media
 
 	// current is the directory the frontend is showing (its last successful
 	// List), which index sync re-reads when another process changes the

@@ -181,7 +181,7 @@ func Open() (*Services, func(), error) {
 			state.close()
 		}
 	}
-	drive := &Drive{state: state}
+	drive := &Drive{state: state, media: newMedia(state)}
 	return &Services{
 		Drive:       drive,
 		Auth:        &Auth{state: state, prompts: map[string]chan promptAnswer{}},

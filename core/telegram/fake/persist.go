@@ -52,6 +52,11 @@ type persistedState struct {
 //   - TD_FAKE_FAIL_COMMENTS: a comma-separated list of discussion-thread
 //     comment writes (edit, delete) that fail, as when a machine record
 //     cannot be redacted; drive-channel media writes still succeed.
+//   - TD_FAKE_RANGE_LOG: a file each media range read appends JSON lines
+//     to, one {"event":"start",...} when it begins and one
+//     {"event":"done",...,"error":...} when it returns, so a test outside
+//     the process can see which byte ranges were requested and whether a
+//     read ended cancelled.
 func NewPersistent(path string) *Client {
 	c := New()
 	c.statePath = path
@@ -85,6 +90,7 @@ func NewPersistent(path string) *Client {
 		}
 	}
 	c.failDoctor = os.Getenv("TD_FAKE_FAIL_DOCTOR") == "1"
+	c.rangeLogPath = os.Getenv("TD_FAKE_RANGE_LOG")
 	for _, name := range strings.Split(os.Getenv("TD_FAKE_FAIL_COMMENTS"), ",") {
 		switch strings.TrimSpace(name) {
 		case "edit":

@@ -7,7 +7,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -43,6 +46,25 @@ func windowsTitleBarTheme(background, text uint32) *application.WindowTheme {
 	}
 }
 
+// mediaWriteTimeout bounds one media response in server mode: long enough
+// for a whole film streamed as a single range response.
+const mediaWriteTimeout = 24 * time.Hour
+
+// mediaMiddleware mounts the preview media route (ADR 0046) ahead of the
+// embedded frontend in the same asset handler, so desktop builds open no
+// extra listener.
+func mediaMiddleware(media http.Handler) application.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, gui.MediaRoute) {
+				media.ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func run() error {
 	svc, closeGUI, err := gui.Open()
 	if err != nil {
@@ -68,8 +90,13 @@ func run() error {
 			application.NewService(svc.Maintenance),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.BundledAssetFileServer(frontend.Assets()),
+			Handler:    application.BundledAssetFileServer(frontend.Assets()),
+			Middleware: mediaMiddleware(svc.MediaHandler()),
 		},
+		// Server mode (UI previews, headless tests) serves the media route
+		// over Wails' loopback server, whose default 30s write timeout
+		// would cut a video stream mid-playback.
+		Server: application.ServerOptions{WriteTimeout: mediaWriteTimeout},
 		SingleInstance: singleInstanceOptions(func() {
 			if desk != nil {
 				desk.show()

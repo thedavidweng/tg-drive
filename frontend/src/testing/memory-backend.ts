@@ -23,6 +23,7 @@ import type {
   OmarchyState,
   OmarchyTheme,
   PathCodecReport,
+  PreviewDescriptor,
   RepairOutcome,
   ScanProgress,
   Transfer,
@@ -511,10 +512,63 @@ class ImportFake {
 interface ChannelTree {
   files: Map<string, { size: number; date: string }>
   dirs: Set<string>
+  previews: Map<string, PreviewContent>
 }
 
 function emptyTree(): ChannelTree {
-  return { files: new Map(), dirs: new Set(["/"]) }
+  return { files: new Map(), dirs: new Set(["/"]), previews: new Map() }
+}
+
+/**
+ * What the in-memory drive.preview serves for a file: bytes it turns into a
+ * data URL, or a ready URL (the demo's sample hosts). A file without
+ * content previews with an empty URL, which the surface shows as the
+ * fallback.
+ */
+export interface PreviewContent {
+  /** The indexed MIME type; default: guessed from the extension. */
+  mime?: string
+  data?: string | Uint8Array
+  url?: string
+  /** Default true: the URL answers byte ranges. */
+  ranges?: boolean
+}
+
+// The handful of types the screens' tests and the demo need; the real
+// index stores the MIME type detected at upload.
+const mimeByExtension: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska",
+  webm: "video/webm",
+  mp3: "audio/mpeg",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+  wav: "audio/wav",
+  pdf: "application/pdf",
+  txt: "text/plain; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
+  srt: "application/x-subrip",
+  json: "application/json",
+  zip: "application/zip",
+}
+
+function guessMIME(path: string): string {
+  const i = path.lastIndexOf(".")
+  return i < 0 ? "application/octet-stream" : (mimeByExtension[path.slice(i + 1).toLowerCase()] ?? "application/octet-stream")
+}
+
+function dataURL(mime: string, data: string | Uint8Array): string {
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data
+  let bin = ""
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return `data:${mime.split(";")[0]};base64,${btoa(bin)}`
 }
 
 export class MemoryBackend implements Backend {
@@ -536,6 +590,9 @@ export class MemoryBackend implements Backend {
   readonly downloads: { remotePath: string; destDir: string; opts: DownloadOptions }[] = []
   readonly cancelled: string[] = []
   readonly retried: string[] = []
+  /** Test-visible record of the paths drive.preview was asked for. */
+  readonly previewed: string[] = []
+  private readonly previewErrors = new Map<string, BackendError>()
 
   private readonly authFake: AuthFake
   private readonly importFake: ImportFake
@@ -665,9 +722,14 @@ export class MemoryBackend implements Backend {
       }
       files.delete(from)
       files.set(dest, meta)
+      const { previews } = this.tree()
+      const content = previews.get(from)
+      previews.delete(from)
+      if (content) previews.set(dest, content)
     },
     delete: async (path, opts) => {
       if (!opts.confirm) throw confirmationRequired
+      this.tree().previews.delete(path)
       if (!this.tree().files.delete(path)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
       }
@@ -689,6 +751,30 @@ export class MemoryBackend implements Backend {
         this.scanResolve = null
       }
       return { mode: "full", active: this.tree().files.size, deleted: 0, invalid: 0, missing: 0 }
+    },
+    preview: async (path) => {
+      this.previewed.push(path)
+      const { files, previews } = this.tree()
+      const meta = files.get(path)
+      if (!meta) {
+        throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
+      }
+      const err = this.previewErrors.get(path)
+      if (err) throw err
+      const content = previews.get(path)
+      const mime = content?.mime ?? guessMIME(path)
+      const url = content?.url ?? (content?.data !== undefined ? dataURL(mime, content.data) : "")
+      const ranges = url !== "" && (content?.ranges ?? true)
+      const descriptor: PreviewDescriptor = {
+        name: baseName(path),
+        path,
+        mime,
+        size: meta.size,
+        date: meta.date,
+        capabilities: { ranges, media_size: ranges ? meta.size : -1 },
+        url,
+      }
+      return descriptor
     },
   }
 
@@ -1105,6 +1191,25 @@ export class MemoryBackend implements Backend {
     }
   }
 
+  /**
+   * Test and demo helper: what drive.preview serves for a file. Adds the
+   * file (sized by its data) when it is not in the tree yet.
+   */
+  putPreviewForTest(path: string, content: PreviewContent, channelID?: string): void {
+    const tree = this.trees.get(channelID ?? this.activeID)
+    if (!tree) throw new Error(`no channel ${channelID ?? this.activeID} in the test backend`)
+    if (!tree.files.has(path)) {
+      const size = typeof content.data === "string" ? new TextEncoder().encode(content.data).length : (content.data?.length ?? 0)
+      this.putFileForTest(path, size, "", channelID)
+    }
+    tree.previews.set(path, content)
+  }
+
+  /** Test helper: drive.preview of path rejects with err. */
+  failPreviewForTest(path: string, err: BackendError): void {
+    this.previewErrors.set(path, err)
+  }
+
   /** Test helper: adds a directory without going through the facade surface. */
   mkdirForTest(path: string, channelID?: string): void {
     const tree = this.trees.get(channelID ?? this.activeID)
@@ -1166,6 +1271,7 @@ export function failingBackend(err: BackendError): Backend {
       delete: fail,
       share: fail,
       scan: fail,
+      preview: fail,
     },
     events: {
       onDirectoryChanged: () => () => {},

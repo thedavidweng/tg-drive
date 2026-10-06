@@ -617,6 +617,60 @@ export interface PendingRepairOutcome {
 }
 
 /**
+ * PreviewCapabilities is what the media URL serves for a file.
+ */
+export interface PreviewCapabilities {
+    /**
+     * Ranges reports that the URL answers single byte-range requests (206):
+     * the Telegram representation is seekable with a known size.
+     */
+    "ranges": boolean;
+
+    /**
+     * MediaSize is the exact byte length the URL serves, or -1 when it is
+     * not known in advance (a native photo's recompressed representation,
+     * a text message). It can differ from Size for native photos.
+     */
+    "media_size": number;
+}
+
+/**
+ * PreviewDescriptor is what the frontend needs to show a file: safe display
+ * metadata, what the media route can do for it, and the media URL. It never
+ * carries Telegram channel or message IDs, access hashes, session data, or
+ * local paths.
+ */
+export interface PreviewDescriptor {
+    "name": string;
+    "path": string;
+
+    /**
+     * MIME is the indexed media type ("" when unknown); preview providers
+     * match it first and the file extension second.
+     */
+    "mime": string;
+
+    /**
+     * Size is the indexed size in bytes.
+     */
+    "size": number;
+
+    /**
+     * Date is the RFC3339 time the file last changed.
+     */
+    "date": string;
+    "capabilities": PreviewCapabilities;
+
+    /**
+     * URL is the same-origin media URL, pinned to this file: a later
+     * channel switch, move, or replace never makes it serve another file.
+     * It stops working when the file stops being active, when the process
+     * exits, or after enough newer previews were prepared.
+     */
+    "url": string;
+}
+
+/**
  * RepairItem is one file a captions or hash repair touched.
  */
 export interface RepairItem {
