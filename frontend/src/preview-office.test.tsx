@@ -5,6 +5,7 @@ import { App } from "@/App"
 import type { PreviewDescriptor } from "@/backend"
 import { previewProviders } from "@/preview/providers"
 import { choosePreview } from "@/preview/registry"
+import { sanitizedCopy } from "@/preview/safe-html"
 import { memoryBackend } from "@/testing/memory-backend"
 
 const realFetch = globalThis.fetch
@@ -113,6 +114,97 @@ test("a renderer failure on each Office format falls back to file details and Do
     expect(within(dialog).getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0)
     cleanup()
   }
+})
+
+async function minimalDocx(): Promise<Uint8Array> {
+  const { default: JSZip } = await import("jszip")
+  const rels = "http://schemas.openxmlformats.org/package/2006/relationships"
+  const zip = new JSZip()
+  zip.file(
+    "[Content_Types].xml",
+    '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+  )
+  zip.file(
+    "_rels/.rels",
+    `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="${rels}">` +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>',
+  )
+  zip.file(
+    "word/document.xml",
+    '<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+      "<w:p><w:r><w:t>Quarterly summary</w:t></w:r></w:p><w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>" +
+      "</w:body></w:document>",
+  )
+  return zip.generateAsync({ type: "uint8array" })
+}
+
+test("a Word document renders its text with its own stylesheet, inside a shadow root", async () => {
+  const backend = backendWithDocs()
+  backend.putPreviewForTest("/docs/report.docx", { data: await minimalDocx() })
+  render(<App backend={backend} languages={["en"]} />)
+  const dialog = await openInDocs("report.docx")
+
+  const shadow = await waitFor(
+    () => {
+      const root = Array.from(dialog.querySelectorAll("div")).find((d) => d.shadowRoot)?.shadowRoot
+      if (!root?.textContent?.includes("Second paragraph")) throw new Error("document not rendered yet")
+      return root
+    },
+    { timeout: 5000 },
+  )
+  expect(shadow.textContent).toContain("Quarterly summary")
+  expect(shadow.querySelector("style")).not.toBeNull()
+  expect(document.head.querySelector("style")?.textContent ?? "").not.toContain("docx-wrapper")
+})
+
+// docx-preview copies run colours and other values into CSS verbatim, so a
+// document can smuggle declarations into the stylesheet. happy-dom's XML
+// parser drops namespaced attributes, so no fixture document reaches that
+// path here; the rebuild is checked directly.
+test("the Word rebuild keeps inert CSS and drops anything that could load a resource", () => {
+  const allow = { p: ["style"], img: ["src"] }
+  const rebuilt = (html: string) => {
+    const staging = document.createElement("div")
+    staging.innerHTML = html
+    const host = document.createElement("div")
+    host.append(sanitizedCopy(staging, { allow, css: true }))
+    return host.innerHTML
+  }
+  const sheet = (css: string) => rebuilt(`<style>${css}</style>`)
+  const png = "data:image/png;base64,iVBORw0KGgo="
+
+  for (const css of [
+    "@import url(https://leak.example/a.css);",
+    '@import "https://leak.example/a.css";',
+    "@\\69mport 'https://leak.example/a.css';",
+    "p{background:url(https://leak.example/a.png)}",
+    "p{background:URL( 'https://leak.example/a.png' )}",
+    "p{background:u\\72l(https://leak.example/a.png)}",
+    "p{background:\\75 rl(//leak.example/a.png)}",
+    'p{background:image-set("https://leak.example/a.png" 1x)}',
+    'p{background:-webkit-image-set("https://leak.example/a.png" 1x)}',
+    "@font-face{font-family:x;src:url(https://leak.example/f.woff)}",
+    "p{color:#000;background:url(/relative.png)}",
+  ]) {
+    expect(sheet(css)).toBe("")
+  }
+  for (const css of [
+    "p{color:rgba(0,0,0,.5);width:calc(100% - 2px)}",
+    'p.n:before{content:"(1)\\9";counter-increment:x}',
+    "section.docx:not(:last-child){margin:0}",
+    `p{background:url(${png})}`,
+    `p{background:url("${png}")}`,
+  ]) {
+    expect(sheet(css)).toBe(`<style>${css}</style>`)
+  }
+
+  expect(rebuilt('<p style="background-image:url(https://leak.example/a.png)">t</p>')).toBe("<p>t</p>")
+  expect(rebuilt('<p style="color:red">t</p>')).toBe('<p style="color:red">t</p>')
+  expect(rebuilt('<img src="https://leak.example/a.png">')).toBe("<img>")
+  expect(rebuilt(`<img src="${png}">`)).toBe(`<img src="${png}">`)
 })
 
 test("a workbook shows each worksheet's cells read-only", async () => {
