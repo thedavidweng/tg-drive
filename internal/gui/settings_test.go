@@ -133,12 +133,15 @@ func TestSettingsVersionsReportsTheInstalledCLI(t *testing.T) {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build td: %v\n%s", err, out)
 	}
-	t.Setenv("PATH", bin)
+	// Put the stamped CLI first while retaining Windows' DLL search paths.
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	svc := openGUI(t)
 
 	v := svc.Settings.Versions(context.Background())
 	if v.GUI != version.Version || v.CLI != "9.8.7" {
-		t.Fatalf("Versions = %+v, want gui %q and the installed td's 9.8.7", v, version.Version)
+		probe := exec.Command(filepath.Join(bin, name), "version", "--json")
+		out, err := probe.CombinedOutput()
+		t.Fatalf("Versions = %+v, want gui %q and the installed td's 9.8.7; direct probe: %v\n%s", v, version.Version, err, out)
 	}
 }
 

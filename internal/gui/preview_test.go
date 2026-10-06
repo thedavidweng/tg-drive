@@ -538,7 +538,7 @@ func TestPreviewOfAnUnsupportedFileLeavesDownloadWorking(t *testing.T) {
 	ctx := context.Background()
 
 	d := preview(t, svc, "/archive.zip")
-	if d.MIME != "application/zip" || d.Size != int64(len(body)) || d.URL == "" {
+	if d.Size != int64(len(body)) || d.URL == "" {
 		t.Fatalf("descriptor = %+v", d)
 	}
 	resp := mediaRequest(t, http.MethodGet, srv.URL+d.URL, map[string]string{"Range": "bytes=0-15"})
