@@ -242,6 +242,30 @@ test("a file served whole without ranges is still read only as far as the chunk 
   }
 })
 
+// A text message's served body is not the indexed file, so when the route
+// cannot say how long it is, only the response itself marks the end.
+test("a file of unknown served length is complete only when the response ends", async () => {
+  const MiB = 1 << 20
+  const text = "a".repeat(2 * MiB) + "b".repeat(MiB)
+  const body = new TextEncoder().encode(text)
+  const server = serveRanges("td-test://note.txt", body, { whole: true })
+  try {
+    const backend = memoryBackend({ "/": [] })
+    backend.putFileForTest("/note.txt", MiB, "2026-01-01T00:00:00Z")
+    backend.putPreviewForTest("/note.txt", { url: "td-test://note.txt", ranges: false })
+    const dialog = await openPreview(backend, "note.txt")
+
+    const source = await within(dialog).findByLabelText("Contents of note.txt")
+    expect(source.textContent).toBe("a".repeat(2 * MiB))
+    fireEvent.click(within(dialog).getByRole("button", { name: "Load more" }))
+    await within(dialog).findByText(/^a+b+$/)
+    expect(source.textContent).toBe(text)
+    expect(within(dialog).queryByRole("status")).toBeNull()
+  } finally {
+    server.restore()
+  }
+})
+
 // The Markdown renderer escapes raw HTML before it reaches the sanitiser,
 // so no preview can drive these payloads through it end to end.
 test("the sanitiser keeps only allowlisted elements and attributes", () => {

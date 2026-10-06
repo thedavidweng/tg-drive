@@ -97,6 +97,9 @@ export function useTextChunks(descriptor: PreviewDescriptor): TextChunks {
   const [failed, setFailed] = useState<string | undefined>(undefined)
   const decoder = useRef<TextDecoder | null>(null)
   const abort = useRef<AbortController | null>(null)
+  // The indexed size is not what the URL serves for a text message; only
+  // the route's own length (or the response ending) marks the end.
+  const mediaSize = descriptor.capabilities.media_size
 
   const read = useCallback(
     (offset: number) => {
@@ -106,7 +109,7 @@ export function useTextChunks(descriptor: PreviewDescriptor): TextChunks {
       fetchByteRange(descriptor.url, offset, TEXT_CHUNK_BYTES, ctl.signal).then(
         ({ bytes, eof }) => {
           if (ctl.signal.aborted) return
-          const end = eof || offset + bytes.length >= descriptor.size
+          const end = eof || (mediaSize >= 0 && offset + bytes.length >= mediaSize)
           const piece = decoder.current!.decode(bytes, { stream: !end })
           setText((t) => (offset === 0 ? piece : t + piece))
           setLoaded(offset + bytes.length)
@@ -119,7 +122,7 @@ export function useTextChunks(descriptor: PreviewDescriptor): TextChunks {
         },
       )
     },
-    [descriptor.url, descriptor.size],
+    [descriptor.url, mediaSize],
   )
 
   useEffect(() => {
