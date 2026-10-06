@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react"
 
 import { useI18n } from "@/i18n"
+import { baseMIME } from "@/preview/registry"
 import type { PreviewProvider, PreviewViewProps } from "@/preview/types"
 
 // The player is loaded on first use, keeping it out of the main bundle.
@@ -19,5 +20,9 @@ export const videoPreview: PreviewProvider = {
   id: "video",
   mimeTypes: ["video/*"],
   extensions: ["mp4", "m4v", "webm", "mov", "mkv", "ogv"],
+  // The index takes MIME types from the extension, and the system table
+  // maps .ts and .mts (TypeScript) to MPEG transport streams, which no
+  // supported webview plays; the extension then decides.
+  canPreview: (d) => baseMIME(d.mime) !== "video/mp2t",
   View: VideoPreview,
 }

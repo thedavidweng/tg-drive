@@ -125,8 +125,8 @@ func (m *media) lookup(token string) (*preparedPreview, bool) {
 // (no body bytes) and prepares a media URL pinned to the file row. Preview
 // is an ephemeral read: no Transfer, operation lock, or history.
 func (d *Drive) Preview(ctx context.Context, path string) (*PreviewDescriptor, error) {
-	app := d.state.current()
-	f, err := app.ResolvePreview(d.state.scoped(ctx), path)
+	app, ctx := d.state.use(ctx)
+	f, err := app.ResolvePreview(ctx, path)
 	if err != nil {
 		return nil, toError(err)
 	}
@@ -221,7 +221,7 @@ func (m *media) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		lw := &lazyWriter{w: w, status: http.StatusOK}
+		lw := &deferredStatusWriter{w: w, status: http.StatusOK}
 		if err := app.StreamPreview(r.Context(), f, lw); err != nil && !lw.wrote {
 			mediaError(w, err)
 		}
@@ -248,7 +248,7 @@ func (m *media) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
 		return
 	}
-	lw := &lazyWriter{w: w, status: status}
+	lw := &deferredStatusWriter{w: w, status: status}
 	_, err = app.ReadPreviewRange(r.Context(), f, start, length, lw)
 	if err != nil && !lw.wrote {
 		var re *telegram.MediaRangeError
@@ -306,15 +306,16 @@ func parseRange(spec string, size int64) (start, length int64, ok, satisfiable b
 	return s, end - s + 1, true, true
 }
 
-// lazyWriter commits the response status on the first body byte, so a read
-// that fails before producing any can still answer with an error status.
-type lazyWriter struct {
+// deferredStatusWriter commits the response status on the first body byte,
+// so a read that fails before producing any can still answer with an error
+// status.
+type deferredStatusWriter struct {
 	w      http.ResponseWriter
 	status int
 	wrote  bool
 }
 
-func (l *lazyWriter) Write(p []byte) (int, error) {
+func (l *deferredStatusWriter) Write(p []byte) (int, error) {
 	if !l.wrote {
 		l.wrote = true
 		l.w.WriteHeader(l.status)

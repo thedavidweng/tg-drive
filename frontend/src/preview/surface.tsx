@@ -8,6 +8,7 @@ import { useI18n } from "@/i18n"
 import { FileDetails } from "@/preview/fallback"
 import { previewProviders } from "@/preview/providers"
 import { choosePreview, extensionOf, fallbackPreview } from "@/preview/registry"
+import { useLatest } from "@/preview/use-latest"
 import { deepActiveElement, focusableIn } from "@/sheet"
 
 type Prepared =
@@ -19,6 +20,20 @@ type Prepared =
 function topmostModal(): Element | null {
   const open = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
   return open.length > 0 ? open[open.length - 1] : null
+}
+
+/**
+ * Whether a key began in a view's own interactive content: inside a shadow
+ * root in the view (an embedded viewer's menus and fields, whose Escape
+ * handlers do not call preventDefault) or in a text field the view owns.
+ */
+function viewOwnsKey(e: KeyboardEvent, body: HTMLElement | null): boolean {
+  const path = e.composedPath()
+  if (!body || path.indexOf(body) <= 0) return false
+  const origin = path[0]
+  if (!(origin instanceof Element)) return false
+  if (origin.getRootNode() instanceof ShadowRoot) return true
+  return (origin instanceof HTMLElement && origin.isContentEditable) || origin.matches("input, textarea, select")
 }
 
 /**
@@ -41,15 +56,13 @@ export function PreviewSurface({
   const { t, locale } = useI18n()
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   // The opener, captured at mount before focus moves into the surface.
   const [returnFocus] = useState<HTMLElement | null>(() => document.activeElement as HTMLElement | null)
   const [prepared, setPrepared] = useState<Prepared>({ state: "loading" })
   // undefined: the view is fine; a string (possibly empty): it gave up.
   const [viewError, setViewError] = useState<string | undefined>(undefined)
-  const onCloseRef = useRef(onClose)
-  useEffect(() => {
-    onCloseRef.current = onClose
-  })
+  const onCloseRef = useLatest(onClose)
 
   useEffect(() => {
     let live = true
@@ -70,6 +83,7 @@ export function PreviewSurface({
       // a sheet opened above the preview closes first.
       if (document.fullscreenElement) return
       if (topmostModal() !== dialogRef.current) return
+      if (viewOwnsKey(e, bodyRef.current)) return
       e.stopPropagation()
       onCloseRef.current()
     }
@@ -78,7 +92,7 @@ export function PreviewSurface({
       document.removeEventListener("keydown", onKey)
       returnFocus?.focus()
     }
-  }, [returnFocus])
+  }, [returnFocus, onCloseRef])
 
   const trapTab = (e: ReactKeyboardEvent) => {
     if (e.key !== "Tab" || !dialogRef.current || topmostModal() !== dialogRef.current) return
@@ -163,7 +177,9 @@ export function PreviewSurface({
           <X aria-hidden className="size-4" />
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto">{body}</div>
+      <div ref={bodyRef} className="min-h-0 flex-1 overflow-auto">
+        {body}
+      </div>
     </div>
   )
 }

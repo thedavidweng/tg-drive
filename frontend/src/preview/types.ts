@@ -24,7 +24,8 @@ export interface PreviewViewProps {
  *
  * A view that handles Escape itself (closing its own search box, leaving
  * its own fullscreen) calls preventDefault on that keydown, and the surface
- * then leaves the preview open.
+ * then leaves the preview open. Escape that begins inside a shadow root in
+ * the view, or in a text field it owns, is always left to the view.
  */
 export interface PreviewProvider {
   /** Stable identifier, for tests and diagnostics. */

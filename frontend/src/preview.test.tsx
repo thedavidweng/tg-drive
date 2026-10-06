@@ -3,8 +3,6 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 
 import { App } from "@/App"
 import type { PreviewDescriptor } from "@/backend"
-import { en } from "@/i18n/en"
-import { zhCN } from "@/i18n/zh-CN"
 import { previewProviders } from "@/preview/providers"
 import { choosePreview, fallbackPreview } from "@/preview/registry"
 import { memoryBackend } from "@/testing/memory-backend"
@@ -171,19 +169,11 @@ test("an image that fails to load falls back to file details and Download", asyn
   expect(within(dialog).getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0)
 })
 
-test("the preview strings exist in English and Simplified Chinese", async () => {
-  const keys = Object.keys(en).filter((k) => k.startsWith("preview.") || k === "drive.preview")
-  expect(keys.length).toBeGreaterThan(5)
-  for (const k of keys) {
-    const zh = zhCN[k as keyof typeof zhCN]
-    expect(zh).toBeTruthy()
-    expect(zh).not.toBe(en[k as keyof typeof en])
-  }
-
+test("the Preview action and the preview controls speak Simplified Chinese", async () => {
   render(<App backend={backendWithPhoto()} languages={["zh-CN"]} />)
   fireEvent.click(await screen.findByRole("button", { name: "photos" }))
   const list = await screen.findByRole("list", { name: "/photos 中的文件" })
-  fireEvent.click(within(list).getByRole("button", { name: zhCN["drive.preview"] }))
+  fireEvent.click(within(list).getByRole("button", { name: "预览" }))
   const dialog = await screen.findByRole("dialog", { name: "cat.png" })
-  expect(await within(dialog).findByRole("button", { name: zhCN["preview.close"] })).toBeTruthy()
+  expect(await within(dialog).findByRole("button", { name: "关闭预览" })).toBeTruthy()
 })

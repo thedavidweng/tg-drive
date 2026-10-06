@@ -150,7 +150,10 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   in 2 MiB Range chunks, one more per "load more" (a 200 answer is streamed
   only to the chunk's end), and render nothing executable: HTML is
   highlighted source, Markdown's raw HTML stays text, and renderer output
-  is rebuilt against an element and attribute allowlist. The PDF view
+  is rebuilt against an element and attribute allowlist. Word documents
+  render into a shadow root and keep their CSS only when it cannot load
+  anything (ADR 0046). Escape that starts inside a view's shadow root or
+  text field stays with the view instead of closing the preview. The PDF view
   (`src/preview/pdf.tsx`) lazy-loads
   EmbedPDF and runs PDFium from the WASM bundled in the embedded frontend,
   with EmbedPDF's CDN fonts, stamp library, and webfonts turned off, so a

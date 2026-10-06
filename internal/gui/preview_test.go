@@ -483,3 +483,36 @@ func TestPreviewFloodWaitIsARedactedErrorThatLeavesTheDriveIntact(t *testing.T) 
 		t.Fatalf("List after a rate-limited preview = %+v, want both files", entries)
 	}
 }
+
+// The frontend shows no view for a ZIP; the facade still describes it, and
+// the fallback's Download, run while the preview is open, gets the file.
+func TestPreviewOfAnUnsupportedFileLeavesDownloadWorking(t *testing.T) {
+	body := fixtureBytes(4096)
+	seedDrive(t, map[string]string{"/archive.zip": string(body)})
+	svc := openGUI(t)
+	srv := mediaServer(t, svc)
+	ctx := context.Background()
+
+	d := preview(t, svc, "/archive.zip")
+	if d.MIME != "application/zip" || d.Size != int64(len(body)) || d.URL == "" {
+		t.Fatalf("descriptor = %+v", d)
+	}
+	resp := mediaRequest(t, http.MethodGet, srv.URL+d.URL, map[string]string{"Range": "bytes=0-15"})
+	if resp.StatusCode != http.StatusPartialContent || !bytes.Equal(readBody(t, resp), body[:16]) {
+		t.Fatalf("media GET = %d", resp.StatusCode)
+	}
+
+	dest := t.TempDir()
+	id, err := svc.Transfers.Download(ctx, "/archive.zip", dest, gui.DownloadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStage(t, svc, id, "completed")
+	got, err := os.ReadFile(filepath.Join(dest, "archive.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("downloaded archive.zip differs: %d bytes, want %d", len(got), len(body))
+	}
+}

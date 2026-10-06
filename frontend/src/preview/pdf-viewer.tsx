@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 
 import { useI18n, type Locale } from "@/i18n"
 import type { PreviewViewProps } from "@/preview/types"
+import { useLatest } from "@/preview/use-latest"
 
 // A read-only viewer: everything that edits, saves, or opens another
 // document is off; navigation, zoom, search, rotation, the sidebars,
@@ -108,10 +109,7 @@ export function pdfViewerConfig(src: string, locale: Locale): PDFViewerConfig {
 /** The embedded PDF viewer; any document error replaces it with the fallback. */
 export function PdfViewer({ descriptor, onError }: PreviewViewProps) {
   const { locale } = useI18n()
-  const onErrorRef = useRef(onError)
-  useEffect(() => {
-    onErrorRef.current = onError
-  })
+  const onErrorRef = useLatest(onError)
   const unsubscribe = useRef<(() => void) | null>(null)
   useEffect(() => () => unsubscribe.current?.(), [])
 
@@ -130,7 +128,7 @@ export function PdfViewer({ descriptor, onError }: PreviewViewProps) {
     unsubscribe.current?.()
     unsubscribe.current = store.subscribe((_action, state) => check(state))
     check(store.getState())
-  }, [])
+  }, [onErrorRef])
 
   // Fixed per preview: EmbedPDF reloads the viewer for a new config object.
   const [config] = useState(() => pdfViewerConfig(descriptor.url, locale))

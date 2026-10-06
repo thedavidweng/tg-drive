@@ -1,7 +1,8 @@
-import { Component, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { Component, useEffect, useState, type ComponentType, type ReactNode } from "react"
 
 import { useI18n } from "@/i18n"
 import type { PreviewProvider, PreviewViewProps } from "@/preview/types"
+import { useLatest } from "@/preview/use-latest"
 
 type Viewer = ComponentType<PreviewViewProps>
 
@@ -40,10 +41,7 @@ class ViewerBoundary extends Component<{ onError: () => void; children: ReactNod
 function PdfPreview(props: PreviewViewProps) {
   const { t } = useI18n()
   const [Viewer, setViewer] = useState<Viewer | null>(null)
-  const onErrorRef = useRef(props.onError)
-  useEffect(() => {
-    onErrorRef.current = props.onError
-  })
+  const onErrorRef = useLatest(props.onError)
 
   useEffect(() => {
     let live = true
@@ -54,7 +52,7 @@ function PdfPreview(props: PreviewViewProps) {
     return () => {
       live = false
     }
-  }, [])
+  }, [onErrorRef])
 
   if (!Viewer) return <p className="py-16 text-center text-muted-foreground">{t("preview.loading")}</p>
   return (

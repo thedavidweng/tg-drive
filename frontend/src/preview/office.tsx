@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType } from "react"
+import { useCallback, useEffect, useState, type ComponentType } from "react"
 import { Download, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { formatSize } from "@/format"
 import { useI18n } from "@/i18n"
 import type { PreviewViewProps } from "@/preview/types"
+import { useLatest } from "@/preview/use-latest"
 
 /**
  * Office files are ZIP packages the browser-side renderers parse whole, so
@@ -19,7 +20,7 @@ export interface OfficeRendererProps {
    * The renderer could not show the file; the surface falls back to
    * Download. Stable across renders, so effects may depend on it.
    */
-  onError: (message?: string) => void
+  onError: PreviewViewProps["onError"]
 }
 
 /**
@@ -81,17 +82,14 @@ function WholeFile({
   Renderer,
 }: {
   url: string
-  onError: (message?: string) => void
+  onError: PreviewViewProps["onError"]
   Renderer: ComponentType<OfficeRendererProps>
 }) {
   const { t } = useI18n()
   const [data, setData] = useState<ArrayBuffer | null>(null)
   // The surface passes a fresh onError each render; the fetch must not restart for it.
-  const onErrorRef = useRef(onError)
-  useEffect(() => {
-    onErrorRef.current = onError
-  })
-  const fail = useCallback((message?: string) => onErrorRef.current(message), [])
+  const onErrorRef = useLatest(onError)
+  const fail = useCallback((message?: string) => onErrorRef.current(message), [onErrorRef])
 
   useEffect(() => {
     const abort = new AbortController()

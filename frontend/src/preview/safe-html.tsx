@@ -20,7 +20,83 @@ export function safeHref(href: string): boolean {
   return scheme === undefined || scheme === "http" || scheme === "https" || scheme === "mailto"
 }
 
-function copyChildren(from: Node, to: Node, allow: Allowlist, doc: Document) {
+// CSS functions that only compute a value. Any other function (url,
+// image-set, src, cross-fade, ...) may name a resource to load.
+const inertCSSFunctions = new Set([
+  "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color", "color-mix",
+  "var", "calc", "min", "max", "clamp", "counter", "counters", "attr",
+  "rect", "inset", "polygon", "circle", "ellipse",
+  "matrix", "matrix3d", "translate", "translatex", "translatey", "translate3d",
+  "scale", "scalex", "scaley", "scale3d", "rotate", "rotatex", "rotatey", "rotatez", "rotate3d",
+  "skew", "skewx", "skewy", "perspective",
+  "linear-gradient", "radial-gradient", "conic-gradient",
+  "repeating-linear-gradient", "repeating-radial-gradient", "repeating-conic-gradient",
+  "not", "is", "where", "has", "lang", "dir", "nth-child", "nth-last-child", "nth-of-type", "nth-last-of-type",
+])
+
+const embeddedImage = /^\s*data:image\//i
+
+function decodeCSSEscapes(css: string): string {
+  return css.replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\([^\n\r\f0-9a-f])/gi, (_, hex: string | undefined, ch: string | undefined) => {
+    if (ch !== undefined) return ch
+    const cp = parseInt(hex!, 16)
+    return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "\ufffd"
+  })
+}
+
+/**
+ * Whether CSS can apply without the page reaching for anything: no
+ * @import, and no url() or other resource-naming function except an
+ * embedded data: image. Escapes are decoded first, so "u\72l(" is still
+ * url(. Anything this cannot vouch for is refused rather than repaired.
+ */
+export function inertCSS(css: string): boolean {
+  // Strings stand in only for whether they hold an embedded image, so a
+  // parenthesis in content: "(1)" is not read as a function call.
+  const masked = css
+    .replace(/"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'/g, (s) =>
+      embeddedImage.test(decodeCSSEscapes(s.slice(1, -1))) ? '"data:image/"' : '""',
+    )
+    .replace(/\/\*[\s\S]*?(?:\*\/|$)/g, "")
+  const plain = decodeCSSEscapes(masked)
+  if (/@import/i.test(plain)) return false
+  for (const m of plain.matchAll(/([a-z0-9_-]+)\(/gi)) {
+    const name = m[1].toLowerCase()
+    if (name === "url") {
+      const arg = plain.slice(m.index + m[0].length).replace(/^\s*["']?/, "")
+      if (!embeddedImage.test(arg)) return false
+    } else if (!inertCSSFunctions.has(name)) {
+      return false
+    }
+  }
+  return true
+}
+
+/** What a rebuild keeps. */
+export interface SanitizePolicy {
+  /** Allowed elements, each with the attributes it may keep. */
+  allow: Allowlist
+  /**
+   * Keep <style> elements and style attributes whose CSS is inert (see
+   * inertCSS); off, every style is dropped.
+   */
+  css?: boolean
+}
+
+function keepAttribute(name: string, value: string, policy: SanitizePolicy): boolean {
+  switch (name) {
+    case "href":
+      return safeHref(value)
+    case "src":
+      return embeddedImage.test(value)
+    case "style":
+      return policy.css === true && inertCSS(value)
+    default:
+      return true
+  }
+}
+
+function copyChildren(from: Node, to: Node, policy: SanitizePolicy, doc: Document) {
   for (const child of Array.from(from.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) {
       to.appendChild(doc.createTextNode(child.nodeValue ?? ""))
@@ -29,21 +105,38 @@ function copyChildren(from: Node, to: Node, allow: Allowlist, doc: Document) {
     if (child.nodeType !== Node.ELEMENT_NODE) continue
     const el = child as Element
     const tag = el.localName
-    if (el.namespaceURI !== xhtml || dropWithContent.has(tag)) continue
-    const attrs = Object.hasOwn(allow, tag) ? allow[tag] : undefined
+    if (el.namespaceURI !== xhtml) continue
+    if (tag === "style" && policy.css) {
+      const css = el.textContent ?? ""
+      if (inertCSS(css)) to.appendChild(doc.createElement("style")).textContent = css
+      continue
+    }
+    if (dropWithContent.has(tag)) continue
+    const attrs = Object.hasOwn(policy.allow, tag) ? policy.allow[tag] : undefined
     if (!attrs) {
-      copyChildren(el, to, allow, doc)
+      copyChildren(el, to, policy, doc)
       continue
     }
     const copy = doc.createElement(tag)
     for (const name of attrs) {
       const value = el.getAttribute(name)
-      if (value === null || (name === "href" && !safeHref(value))) continue
+      if (value === null || !keepAttribute(name, value, policy)) continue
       copy.setAttribute(name, value)
     }
-    copyChildren(el, copy, allow, doc)
+    copyChildren(el, copy, policy, doc)
     to.appendChild(copy)
   }
+}
+
+/**
+ * The children of a rendered but detached subtree, rebuilt from scratch
+ * the way sanitizedFragment rebuilds parsed HTML. The source must never
+ * have been connected to a page, or its resources may already have loaded.
+ */
+export function sanitizedCopy(from: Node, policy: SanitizePolicy, doc: Document = document): DocumentFragment {
+  const out = doc.createDocumentFragment()
+  copyChildren(from, out, policy, doc)
+  return out
 }
 
 /**
@@ -55,9 +148,7 @@ function copyChildren(from: Node, to: Node, allow: Allowlist, doc: Document) {
  */
 export function sanitizedFragment(html: string, allow: Allowlist, doc: Document = document): DocumentFragment {
   const parsed = new DOMParser().parseFromString(html, "text/html")
-  const out = doc.createDocumentFragment()
-  copyChildren(parsed.body, out, allow, doc)
-  return out
+  return sanitizedCopy(parsed.body, { allow }, doc)
 }
 
 /** An element whose children are html, sanitised against allow. */
