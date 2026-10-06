@@ -37,6 +37,20 @@ test("the registry routes text, code, Markdown, and HTML to the text previews", 
   expect(pick("index.html", "text/html; charset=utf-8")).toBe("text")
   expect(pick("page.xhtml", "application/xhtml+xml")).toBe("text")
   expect(pick("feed.xml", "text/xml; charset=utf-8")).toBe("text")
+  // The system MIME table calls .ts and .mts MPEG transport streams, which
+  // no supported webview plays; the extension decides.
+  expect(pick("app.ts", "video/mp2t")).toBe("text")
+  expect(pick("index.mts", "video/mp2t")).toBe("text")
+})
+
+test("a binary file under a text name falls back to file details and Download", async () => {
+  const backend = memoryBackend({ "/": [] })
+  // An MPEG transport stream packet: sync byte, then header and NUL padding.
+  backend.putPreviewForTest("/capture.ts", { mime: "video/mp2t", data: new Uint8Array([0x47, 0x40, 0x00, 0x10, 0x00, 0x00, 0xb0, 0x0d]) })
+  const dialog = await openPreview(backend, "capture.ts")
+  await within(dialog).findByText("This file could not be previewed.")
+  expect(within(dialog).queryByLabelText("Contents of capture.ts")).toBeNull()
+  expect(within(dialog).getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0)
 })
 
 test("source code is monospaced, read-only, and syntax highlighted; plain text stays plain", async () => {

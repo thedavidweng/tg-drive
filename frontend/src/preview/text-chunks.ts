@@ -109,6 +109,12 @@ export function useTextChunks(descriptor: PreviewDescriptor): TextChunks {
       fetchByteRange(descriptor.url, offset, TEXT_CHUNK_BYTES, ctl.signal).then(
         ({ bytes, eof }) => {
           if (ctl.signal.aborted) return
+          // A NUL byte means a binary file under a text name (an MPEG
+          // stream called .ts); the fallback's Download serves it better.
+          if (offset === 0 && bytes.includes(0)) {
+            setFailed("")
+            return
+          }
           const end = eof || (mediaSize >= 0 && offset + bytes.length >= mediaSize)
           const piece = decoder.current!.decode(bytes, { stream: !end })
           setText((t) => (offset === 0 ? piece : t + piece))

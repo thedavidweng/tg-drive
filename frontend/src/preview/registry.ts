@@ -12,8 +12,8 @@ export function extensionOf(name: string): string {
   return name.slice(i + 1).toLowerCase()
 }
 
-/** The descriptor's MIME type without parameters; "" when it says nothing useful. */
-function baseMIME(mime: string): string {
+/** A MIME type without parameters, lower-cased; "" when it says nothing useful. */
+export function baseMIME(mime: string): string {
   const base = mime.split(";")[0].trim().toLowerCase()
   return base === "application/octet-stream" ? "" : base
 }

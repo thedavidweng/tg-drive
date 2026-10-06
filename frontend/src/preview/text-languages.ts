@@ -1,4 +1,4 @@
-import { extensionOf } from "@/preview/registry"
+import { baseMIME, extensionOf } from "@/preview/registry"
 
 export const languageByExtension: Record<string, string> = {
   sh: "bash", bash: "bash", zsh: "bash",
@@ -50,6 +50,6 @@ export function languageFor(name: string, mime: string): string | undefined {
   const ext = extensionOf(name)
   return (
     (ext ? languageByExtension[ext] : undefined) ??
-    languageByMIME[mime.split(";")[0].trim().toLowerCase()]
+    languageByMIME[baseMIME(mime)]
   )
 }
