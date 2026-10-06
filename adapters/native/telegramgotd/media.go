@@ -437,23 +437,36 @@ func streamMessageMedia(ctx context.Context, api *tg.Client, msg *tg.Message, ds
 }
 
 func largestPhotoType(photo *tg.Photo) string {
-	bestType := "y"
+	thumb, _ := largestPhotoSize(photo)
+	return thumb
+}
+
+// largestPhotoSize picks the photo size with the most pixels and reports
+// its exact byte length when Telegram states it: PhotoSize.Size, or the
+// last (complete) entry of a progressive size's Sizes. size is -1 when the
+// chosen size states none.
+func largestPhotoSize(photo *tg.Photo) (thumb string, size int64) {
+	thumb, size = "y", -1
 	best := 0
 	for _, s := range photo.Sizes {
 		switch v := s.(type) {
 		case *tg.PhotoSize:
 			if v.W*v.H > best {
-				best = v.W * v.H
-				bestType = v.Type
+				best, thumb, size = v.W*v.H, v.Type, -1
+				if v.Size > 0 {
+					size = int64(v.Size)
+				}
 			}
 		case *tg.PhotoSizeProgressive:
 			if v.W*v.H > best {
-				best = v.W * v.H
-				bestType = v.Type
+				best, thumb, size = v.W*v.H, v.Type, -1
+				if n := len(v.Sizes); n > 0 && v.Sizes[n-1] > 0 {
+					size = int64(v.Sizes[n-1])
+				}
 			}
 		}
 	}
-	return bestType
+	return thumb, size
 }
 
 func firstMessage(msgs tg.MessagesMessagesClass) (*tg.Message, error) {

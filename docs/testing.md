@@ -124,7 +124,10 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   fixture and its HEAD headers, a byte-identical full GET, 206 ranges at
   the start, middle, and end with exact bytes and headers, 416 for an
   unsatisfiable range, a missing or wrong capability refused, a native photo
-  served whole without ranges, a URL prepared before a channel switch still
+  served whole as `image/jpeg` without ranges or a length (a Range header
+  ignored), an adopted text message served whole as its human text, a
+  flood wait answered 429 with `Retry-After` and no file name, path, or
+  capability while the listing stays intact, a URL prepared before a channel switch still
   serving the original file, a deleted file's URL answering 404, a range
   near the end of an 8 MiB file reading only that range, and a client
   disconnect cancelling the fake's read; a text file's first 2 MiB range
@@ -132,7 +135,11 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   file served as `text/plain`. The fake knob
   `TD_FAKE_RANGE_LOG=<file>` appends a JSON line as each range read starts
   and ends (with its error), which is how those tests observe the requested
-  ranges and the cancellation.
+  ranges and the cancellation; `TD_FAKE_MEDIA_FLOOD_WAIT=<seconds>` makes
+  every media body read fail with a flood wait. The gotd adapter's
+  largest-photo selection (exact size from `PhotoSize.Size` or the last
+  progressive size, otherwise not seekable) is pinned against a fake
+  `upload.getFile` invoker.
   The Channels facade is covered by listing bound channels with the active
   one marked, bind choices with bound channels marked, binding an existing
   channel and creating one (explicit and default title) with the result

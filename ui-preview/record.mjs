@@ -93,6 +93,18 @@ const scenes = [
       await page.getByText("Upload limit: 2 GB per file").waitFor()
     },
   },
+  // File preview: a seeded photo opened from its folder renders through
+  // the facade's media route and the fake Telegram, and closing it hands
+  // back the same directory listing.
+  {
+    name: "drive-preview-image",
+    title: "Drive — image preview",
+    colorScheme: "light",
+    settle: async (page) => {
+      await openPhotoPreview(page)
+    },
+    leave: closePhotoPreview,
+  },
   // The channel switcher: the sheet lists the bound drives and the active
   // channel's status, and the bind sheet offers the account's unbound
   // channel next to the create form. The third scene completes a switch
@@ -345,8 +357,8 @@ const scenes = [
   // Order matters: the fake serializes Telegram calls, and a running
   // upload holds it for every part — so no page may load while an upload
   // runs. The CLI scenes open their page first, then spawn their upload;
-  // the live-upload scene goes last, so its album overlaps only the video
-  // walkthrough (which never calls Telegram).
+  // the live-upload scene goes last, and its leave waits the album out
+  // before the video walkthrough loads a page and reads a preview.
   {
     name: "transfers-cli-upload",
     title: "Transfers — a CLI upload among finished ones",
@@ -460,6 +472,30 @@ async function openDrive(page, base) {
   await page.waitForSelector("ul", { timeout: 30_000 })
 }
 
+// openPhotoPreview opens /Photos/kyoto.jpg from its folder listing and
+// waits until the browser has decoded the image the media route served:
+// a placeholder or failed read leaves naturalWidth at 0 (or swaps in the
+// fallback details), so the wait fails instead of shooting a broken frame.
+async function openPhotoPreview(page) {
+  await page.getByRole("listitem").filter({ hasText: "Photos" }).getByRole("button", { name: "Photos" }).click()
+  const list = page.getByRole("list", { name: "Files in /Photos" })
+  await list.getByRole("button", { name: "kyoto.jpg", exact: true }).click()
+  const surface = page.getByRole("dialog", { name: "kyoto.jpg" })
+  const image = surface.getByRole("img", { name: "kyoto.jpg" })
+  await image.waitFor({ timeout: 15_000 })
+  await page.waitForFunction(
+    (img) => img.complete && img.naturalWidth > 0,
+    await image.elementHandle(),
+    { timeout: 15_000 },
+  )
+}
+
+async function closePhotoPreview(page) {
+  await page.getByRole("button", { name: "Close preview" }).click()
+  await page.getByRole("dialog", { name: "kyoto.jpg" }).waitFor({ state: "detached" })
+  await page.getByRole("list", { name: "Files in /Photos" }).getByRole("button", { name: "kyoto.jpg", exact: true }).waitFor()
+}
+
 // The auth screens render no <ul>; readiness is the role and name the
 // scene passes (the setup form, the login heading).
 async function openAuth(page, base, role, name) {
@@ -522,8 +558,9 @@ async function shootScene(browser, base, out, scene) {
   return { name: scene.name, title: scene.title, file, width: VIEWPORT.width * 2, height: VIEWPORT.height * 2 }
 }
 
-// The walkthrough video: open the Drive and cycle the theme override, so
-// the recording shows the real app responding, not a static page.
+// The walkthrough video: open the Drive, cycle the theme override, then
+// open a photo's preview and close it back to its folder, so the
+// recording shows the real app responding, not a static page.
 async function shootVideo(browser, base, out) {
   const context = await browser.newContext({
     viewport: VIEWPORT,
@@ -542,6 +579,10 @@ async function shootVideo(browser, base, out) {
     await toggle.click() // light → dark
     await page.waitForTimeout(1200)
     await toggle.click() // dark → system
+    await page.waitForTimeout(600)
+    await openPhotoPreview(page)
+    await page.waitForTimeout(1200)
+    await closePhotoPreview(page)
     await page.waitForTimeout(600)
     webm = await page.video().path()
   } finally {

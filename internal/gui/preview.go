@@ -137,7 +137,7 @@ func (d *Drive) Preview(ctx context.Context, path string) (*PreviewDescriptor, e
 	url := d.media.prepare(&preparedPreview{
 		fileID:      f.ID,
 		info:        info,
-		contentType: service.PreviewContentType(f),
+		contentType: service.PreviewContentType(f, info),
 		name:        f.Name,
 	})
 	return &PreviewDescriptor{
