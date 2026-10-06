@@ -58,6 +58,8 @@ export type {
     PathCodecReport,
     PathRepairOutcome,
     PendingRepairOutcome,
+    PreviewCapabilities,
+    PreviewDescriptor,
     RepairItem,
     RepairOptions,
     RepairOutcome,

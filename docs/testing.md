@@ -119,6 +119,18 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   emits; and index sync — a second front end's writes trigger a
   `directory-changed` event through the `PRAGMA data_version` poll, which
   also survives an Auth reopen (setup re-pins the poller's connection).
+  File preview runs the real facade and media handler under
+  `httptest` against the persistent fake: the descriptor of a seekable
+  fixture and its HEAD headers, a byte-identical full GET, 206 ranges at
+  the start, middle, and end with exact bytes and headers, 416 for an
+  unsatisfiable range, a missing or wrong capability refused, a native photo
+  served whole without ranges, a URL prepared before a channel switch still
+  serving the original file, a deleted file's URL answering 404, a range
+  near the end of an 8 MiB file reading only that range, and a client
+  disconnect cancelling the fake's read. The fake knob
+  `TD_FAKE_RANGE_LOG=<file>` appends a JSON line as each range read starts
+  and ends (with its error), which is how those tests observe the requested
+  ranges and the cancellation.
   The Channels facade is covered by listing bound channels with the active
   one marked, bind choices with bound channels marked, binding an existing
   channel and creating one (explicit and default title) with the result
@@ -220,7 +232,18 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   the backend's confirmation gates rejecting unconfirmed calls; and the
   Maintenance tab — adopt's preview and confirmation sheet, repair per
   mode (with the orphaned-delete sheet), and doctor checks rendered as
-  pass/warn/fail beside the path-codec rows. `a11y.test.tsx` walks the
+  pass/warn/fail beside the path-codec rows; and file preview
+  (`preview.test.tsx`) — the registry choosing a provider by MIME type,
+  then extension, then the fallback; a file name or the Preview row action
+  opening the preview while a directory name still navigates; the header's
+  name, metadata, Download, and Close; Close and Escape returning focus to
+  the opener and leaving the directory as it was, with Escape ignored
+  while a viewer is fullscreen and owned by a sheet stacked above; a failed
+  preview call or an image that fails to load showing the fallback with
+  Download; and the English and Simplified Chinese strings. The in-memory
+  backend serves previews from data URLs (`putPreviewForTest`) and
+  rejects them on demand (`failPreviewForTest`); the live demo points
+  them at its samples' public hosts. `a11y.test.tsx` walks the
   mounted app's interactive controls — exactly the selector set the global
   focus-visible rule styles — asserting every one is keyboard-focusable
   with no positive tabindex, plus the tab strip's arrow-key navigation and

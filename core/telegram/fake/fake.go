@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -81,6 +82,10 @@ type Client struct {
 
 	// rangeReads records every ReadMediaRange call, in call order.
 	rangeReads []MediaRangeRead
+	// rangeLogPath, when set, receives a JSON line as each ReadMediaRange
+	// call starts and another as it returns (TD_FAKE_RANGE_LOG).
+	rangeLogPath string
+	rangeLogMu   sync.Mutex
 }
 
 // New creates a fake client.
@@ -653,7 +658,44 @@ func (c *Client) MediaRangeReads() []MediaRangeRead {
 // real adapter, documents and videos are seekable with their exact size;
 // native photos and text messages are not. The mutex is released before the
 // simulated transfer delay so concurrent range reads overlap.
-func (c *Client) ReadMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (telegram.MediaInfo, error) {
+func (c *Client) ReadMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (info telegram.MediaInfo, err error) {
+	read := MediaRangeRead{ChannelID: channelID, MessageID: messageID, Offset: offset, Length: length}
+	c.logRange("start", read, nil)
+	defer func() { c.logRange("done", read, err) }()
+	return c.readMediaRange(ctx, channelID, messageID, offset, length, dst)
+}
+
+// logRange appends one TD_FAKE_RANGE_LOG line, best effort.
+func (c *Client) logRange(event string, r MediaRangeRead, err error) {
+	if c.rangeLogPath == "" {
+		return
+	}
+	line := struct {
+		Event     string `json:"event"`
+		ChannelID int64  `json:"channel_id"`
+		MessageID int    `json:"message_id"`
+		Offset    int64  `json:"offset"`
+		Length    int64  `json:"length"`
+		Error     string `json:"error,omitempty"`
+	}{Event: event, ChannelID: r.ChannelID, MessageID: r.MessageID, Offset: r.Offset, Length: r.Length}
+	if err != nil {
+		line.Error = err.Error()
+	}
+	b, mErr := json.Marshal(line)
+	if mErr != nil {
+		return
+	}
+	c.rangeLogMu.Lock()
+	defer c.rangeLogMu.Unlock()
+	f, oErr := os.OpenFile(c.rangeLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if oErr != nil {
+		return
+	}
+	_, _ = f.Write(append(b, '\n'))
+	_ = f.Close()
+}
+
+func (c *Client) readMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (telegram.MediaInfo, error) {
 	c.mu.Lock()
 	c.rangeReads = append(c.rangeReads, MediaRangeRead{ChannelID: channelID, MessageID: messageID, Offset: offset, Length: length})
 	delay := c.transferDelay

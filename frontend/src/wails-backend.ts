@@ -37,6 +37,11 @@ export const wailsBackend: Backend = {
     delete: async (path, opts) => (await call(Drive.Delete(path, opts))) ?? { mode: "", path },
     share: async (path) => (await call(Drive.Share(path))) ?? { url: "", path, channel: "" },
     scan: async () => (await call(Drive.Scan())) ?? { mode: "", active: 0, deleted: 0, invalid: 0, missing: 0 },
+    preview: async (path) => {
+      const descriptor = await call(Drive.Preview(path))
+      if (!descriptor) throw { code: "ERR_UNKNOWN", category: "internal", message: "empty preview" } satisfies BackendError
+      return descriptor
+    },
   },
   events: {
     onDirectoryChanged: (cb) => Events.On("directory-changed", (ev) => cb(ev.data)),

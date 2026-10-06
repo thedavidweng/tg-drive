@@ -12,7 +12,11 @@ const backend = new MemoryBackend({
   channels: [{ id: "1001", title: "Open Media", discussion: "Open Media Discussion" }],
   transfers: { picks: { dir: "~/Downloads" } },
 })
-for (const s of samples) backend.putFileForTest(s.path, s.size, s.date)
+// Opening a sample previews it straight from its public host.
+for (const s of samples) {
+  backend.putFileForTest(s.path, s.size, s.date)
+  backend.putPreviewForTest(s.path, { url: s.source })
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

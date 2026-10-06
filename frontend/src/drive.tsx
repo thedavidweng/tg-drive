@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import {
   ChevronRight,
   Download,
+  Eye,
   File,
   Folder,
   FolderOpen,
@@ -20,6 +21,7 @@ import type { Backend, BackendError, Entry, ScanOutcome, ShareLink, TreeNode } f
 import { Button } from "@/components/ui/button"
 import { formatDate, formatSize } from "@/format"
 import { useI18n, type Translate } from "@/i18n"
+import { PreviewSurface } from "@/preview/surface"
 import { Sheet, SheetButtons, SheetError } from "@/sheet"
 import { DownloadSheet, UploadSheet } from "@/transfer-options"
 
@@ -64,6 +66,7 @@ export function DriveScreen({ backend, uploadsDisabled = false }: { backend: Bac
   const [sheet, setSheet] = useState<SheetState>(null)
   const [scan, setScan] = useState<ScanState>({ state: "idle" })
   const [transferNote, setTransferNote] = useState<TransferNote>({ state: "idle" })
+  const [previewing, setPreviewing] = useState<Entry | null>(null)
 
   const reload = () => setReloadNonce((n) => n + 1)
 
@@ -249,11 +252,22 @@ export function DriveScreen({ backend, uploadsDisabled = false }: { backend: Bac
           onNavigate={setPath}
           onAction={(kind, entry) => setSheet({ kind, entry } as SheetState)}
           onDownload={downloadEntry}
+          onPreview={setPreviewing}
         />
       ) : (
         <TreeCard backend={backend} path={path} reloadNonce={reloadNonce} />
       )}
 
+      {/* Before the sheets: a Download sheet opened from the preview stacks above it. */}
+      {previewing && (
+        <PreviewSurface
+          key={previewing.path}
+          backend={backend}
+          entry={previewing}
+          onDownload={() => downloadEntry(previewing)}
+          onClose={() => setPreviewing(null)}
+        />
+      )}
       {sheet?.kind === "newFolder" && (
         <NewFolderSheet
           backend={backend}
@@ -363,12 +377,14 @@ function ListingCard({
   onNavigate,
   onAction,
   onDownload,
+  onPreview,
 }: {
   listing: Listing
   path: string
   onNavigate: (path: string) => void
   onAction: (kind: "move" | "share" | "delete", entry: Entry) => void
   onDownload: (entry: Entry) => void
+  onPreview: (entry: Entry) => void
 }) {
   const { t, locale } = useI18n()
   if (listing.state === "loading") {
@@ -397,17 +413,13 @@ function ListingCard({
           ) : (
             <File aria-hidden className="size-[18px] shrink-0 text-muted-foreground" />
           )}
-          {e.type === "dir" ? (
-            <button
-              type="button"
-              onClick={() => onNavigate(e.path)}
-              className="min-w-0 flex-1 truncate rounded-control text-left font-medium tracking-[-.005em] hover:text-primary"
-            >
-              {e.name}
-            </button>
-          ) : (
-            <span className="min-w-0 flex-1 truncate font-medium tracking-[-.005em]">{e.name}</span>
-          )}
+          <button
+            type="button"
+            onClick={() => (e.type === "dir" ? onNavigate(e.path) : onPreview(e))}
+            className="min-w-0 flex-1 truncate rounded-control text-left font-medium tracking-[-.005em] hover:text-primary"
+          >
+            {e.name}
+          </button>
           <span className="w-16 shrink-0 text-right text-[11.5px] text-muted-foreground">
             {e.type === "dir" ? t("drive.folder") : fileType(e.name, t)}
           </span>
@@ -418,7 +430,8 @@ function ListingCard({
             {formatDate(e.date, locale)}
           </span>
           {e.type === "file" && (
-            <span className="flex w-[110px] shrink-0 items-center gap-0.5">
+            <span className="flex w-[138px] shrink-0 items-center gap-0.5">
+              <RowAction label={t("drive.preview")} onClick={() => onPreview(e)} icon={Eye} />
               <RowAction label={t("drive.download")} onClick={() => onDownload(e)} icon={Download} />
               <RowAction label={t("drive.rename")} onClick={() => onAction("move", e)} icon={Pencil} />
               <RowAction label={t("drive.share")} onClick={() => onAction("share", e)} icon={Share2} />
@@ -426,7 +439,7 @@ function ListingCard({
             </span>
           )}
           {e.type === "dir" && (
-            <span className="flex w-[110px] shrink-0 items-center gap-0.5">
+            <span className="flex w-[138px] shrink-0 items-center gap-0.5">
               <RowAction label={t("drive.download")} onClick={() => onDownload(e)} icon={Download} />
             </span>
           )}
