@@ -133,6 +133,13 @@ func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID i
 	return c.inner.DownloadMedia(ctx, channelID, messageID, dst)
 }
 
+func (c *Client) ReadMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (telegram.MediaInfo, error) {
+	if err := c.lock.Acquire(ctx); err != nil {
+		return telegram.MediaInfo{Size: -1}, err
+	}
+	return c.inner.ReadMediaRange(ctx, channelID, messageID, offset, length, dst)
+}
+
 func (c *Client) Doctor(ctx context.Context, channelID int64) (*telegram.Capabilities, error) {
 	if err := c.lock.Acquire(ctx); err != nil {
 		return nil, err

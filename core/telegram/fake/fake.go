@@ -60,7 +60,8 @@ type Client struct {
 	failUploadAfterParts int
 	partSubmissions      int64
 
-	// transferDelay is how long each resumable part and each media download
+	// transferDelay is how long each resumable part, each media download,
+	// and each non-empty media range read
 	// takes; the wait ends early with the context's error on cancellation.
 	transferDelay time.Duration
 
@@ -77,6 +78,9 @@ type Client struct {
 	// "upload", "delete", "edit", "invite".
 	deniedCaps map[string]bool
 	failDoctor bool
+
+	// rangeReads records every ReadMediaRange call, in call order.
+	rangeReads []MediaRangeRead
 }
 
 // New creates a fake client.
@@ -501,13 +505,17 @@ func (c *Client) uploadResumable(ctx context.Context, req telegram.UploadRequest
 // transfer models one part or download RPC: it fails once ctx is cancelled,
 // as a real request would, and takes transferDelay.
 func (c *Client) transfer(ctx context.Context) error {
+	return waitTransfer(ctx, c.transferDelay)
+}
+
+func waitTransfer(ctx context.Context, delay time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if c.transferDelay <= 0 {
+	if delay <= 0 {
 		return nil
 	}
-	t := time.NewTimer(c.transferDelay)
+	t := time.NewTimer(delay)
 	defer t.Stop()
 	select {
 	case <-t.C:
@@ -624,6 +632,77 @@ func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID i
 		return fmt.Errorf("message has no downloadable content")
 	}
 	return &telegram.MessageNotFoundError{}
+}
+
+// MediaRangeRead is one recorded ReadMediaRange call.
+type MediaRangeRead struct {
+	ChannelID      int64
+	MessageID      int
+	Offset, Length int64
+}
+
+// MediaRangeReads returns every ReadMediaRange call so far, including
+// metadata-only (zero-length) and rejected ones, in call order.
+func (c *Client) MediaRangeReads() []MediaRangeRead {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]MediaRangeRead(nil), c.rangeReads...)
+}
+
+// ReadMediaRange serves exact intervals of a message's stored Data. As in the
+// real adapter, documents and videos are seekable with their exact size;
+// native photos and text messages are not. The mutex is released before the
+// simulated transfer delay so concurrent range reads overlap.
+func (c *Client) ReadMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (telegram.MediaInfo, error) {
+	c.mu.Lock()
+	c.rangeReads = append(c.rangeReads, MediaRangeRead{ChannelID: channelID, MessageID: messageID, Offset: offset, Length: length})
+	delay := c.transferDelay
+	var (
+		data        []byte
+		info        telegram.MediaInfo
+		found, body bool
+	)
+	for _, m := range c.messages[channelID] {
+		if m.ID != messageID {
+			continue
+		}
+		found = true
+		data = m.Data
+		info, body = fakeMediaInfo(m)
+		break
+	}
+	c.mu.Unlock()
+	if !found {
+		return telegram.MediaInfo{Size: -1}, &telegram.MessageNotFoundError{}
+	}
+	if !body {
+		return info, fmt.Errorf("message has no downloadable content")
+	}
+	if err := telegram.CheckMediaRange(info, offset, length); err != nil {
+		return info, err
+	}
+	if length == 0 {
+		return info, nil
+	}
+	if err := waitTransfer(ctx, delay); err != nil {
+		return info, err
+	}
+	_, err := dst.Write(data[offset : offset+length])
+	return info, err
+}
+
+// fakeMediaInfo describes m's representation; ok is false when m has no
+// downloadable body, as DownloadMedia reports.
+func fakeMediaInfo(m telegram.Message) (info telegram.MediaInfo, ok bool) {
+	switch {
+	case m.Kind == telegram.KindPhoto:
+		return telegram.MediaInfo{Size: -1, MIME: "image/jpeg"}, true
+	case len(m.Data) > 0:
+		return telegram.MediaInfo{Size: int64(len(m.Data)), Seekable: true, MIME: m.MIME}, true
+	case m.Kind == telegram.KindText || m.Text != "":
+		return telegram.MediaInfo{Size: -1, MIME: "text/plain; charset=utf-8"}, true
+	}
+	return telegram.MediaInfo{Size: -1}, false
 }
 
 func (c *Client) GetMessage(ctx context.Context, channelID int64, messageID int) (telegram.Message, error) {
