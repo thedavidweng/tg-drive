@@ -3,6 +3,7 @@ import Artplayer from "artplayer"
 
 import { useI18n } from "@/i18n"
 import type { PreviewViewProps } from "@/preview/types"
+import { useLatest } from "@/preview/use-latest"
 
 // The player's own "version" context-menu entry links out to artplayer.org.
 Artplayer.CONTEXTMENU = false
@@ -14,10 +15,7 @@ const MEDIA_ERR_NETWORK = 2
 export default function VideoPreview({ descriptor, onError }: PreviewViewProps) {
   const { locale, t } = useI18n()
   const hostRef = useRef<HTMLDivElement>(null)
-  const onErrorRef = useRef(onError)
-  useEffect(() => {
-    onErrorRef.current = onError
-  })
+  const onErrorRef = useLatest(onError)
 
   useEffect(() => {
     const host = hostRef.current
@@ -58,7 +56,7 @@ export default function VideoPreview({ descriptor, onError }: PreviewViewProps) 
       video.removeEventListener("error", onVideoError)
       art.destroy(true)
     }
-  }, [descriptor.url, locale, t])
+  }, [descriptor.url, locale, t, onErrorRef])
 
   return (
     <div className="flex h-full min-h-0 items-center justify-center bg-black">

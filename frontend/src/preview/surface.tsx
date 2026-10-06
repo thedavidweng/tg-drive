@@ -8,6 +8,7 @@ import { useI18n } from "@/i18n"
 import { FileDetails } from "@/preview/fallback"
 import { previewProviders } from "@/preview/providers"
 import { choosePreview, extensionOf, fallbackPreview } from "@/preview/registry"
+import { useLatest } from "@/preview/use-latest"
 import { deepActiveElement, focusableIn } from "@/sheet"
 
 type Prepared =
@@ -61,10 +62,7 @@ export function PreviewSurface({
   const [prepared, setPrepared] = useState<Prepared>({ state: "loading" })
   // undefined: the view is fine; a string (possibly empty): it gave up.
   const [viewError, setViewError] = useState<string | undefined>(undefined)
-  const onCloseRef = useRef(onClose)
-  useEffect(() => {
-    onCloseRef.current = onClose
-  })
+  const onCloseRef = useLatest(onClose)
 
   useEffect(() => {
     let live = true
@@ -94,7 +92,7 @@ export function PreviewSurface({
       document.removeEventListener("keydown", onKey)
       returnFocus?.focus()
     }
-  }, [returnFocus])
+  }, [returnFocus, onCloseRef])
 
   const trapTab = (e: ReactKeyboardEvent) => {
     if (e.key !== "Tab" || !dialogRef.current || topmostModal() !== dialogRef.current) return
