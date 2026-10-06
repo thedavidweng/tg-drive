@@ -62,8 +62,9 @@ func readMessageRange(ctx context.Context, api *tg.Client, msg *tg.Message, offs
 // mediaRangeSource reports the representation readMessageRange serves and,
 // when it is seekable, the file location to read it from. Documents
 // (including video documents) keep their uploaded bytes and exact size.
-// Native photos are recompressed by Telegram and text messages have no file,
-// so both are reported as not seekable.
+// Native photos serve Telegram's largest recompressed size, seekable only
+// when Telegram states that size's exact length. Text messages have no file
+// and are not seekable.
 func mediaRangeSource(msg *tg.Message) (tgtelegram.MediaInfo, tg.InputFileLocationClass, error) {
 	unknown := tgtelegram.MediaInfo{Size: -1}
 	switch media := msg.Media.(type) {
@@ -75,10 +76,16 @@ func mediaRangeSource(msg *tg.Message) (tgtelegram.MediaInfo, tg.InputFileLocati
 		info := tgtelegram.MediaInfo{Size: doc.Size, Seekable: true, MIME: doc.MimeType}
 		return info, doc.AsInputDocumentFileLocation(""), nil
 	case *tg.MessageMediaPhoto:
-		if _, ok := media.Photo.(*tg.Photo); !ok {
+		photo, ok := media.Photo.(*tg.Photo)
+		if !ok {
 			return unknown, nil, errors.New("message has no photo")
 		}
-		return tgtelegram.MediaInfo{Size: -1, MIME: "image/jpeg"}, nil, nil
+		thumb, size := largestPhotoSize(photo)
+		if size < 0 {
+			return tgtelegram.MediaInfo{Size: -1, MIME: "image/jpeg"}, nil, nil
+		}
+		info := tgtelegram.MediaInfo{Size: size, Seekable: true, MIME: "image/jpeg"}
+		return info, photo.AsInputPhotoFileLocation(thumb), nil
 	case nil:
 		if msg.Message == "" {
 			return unknown, nil, errors.New("message has no downloadable content")

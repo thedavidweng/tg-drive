@@ -44,6 +44,9 @@ type persistedState struct {
 //     asks for this password after the code.
 //   - TD_FAKE_LOGIN_FLOOD_WAIT: login fails with a flood wait of this many
 //     seconds before any code is sent.
+//   - TD_FAKE_MEDIA_FLOOD_WAIT: every media body read (download, non-empty
+//     range read) fails with a flood wait of this many seconds; reads that
+//     only describe the media still succeed.
 //   - TD_FAKE_DENY_CAPABILITIES: a comma-separated list of channel
 //     permissions (upload, delete, edit, invite) the capability check
 //     reports missing; the operations themselves still succeed.
@@ -66,6 +69,11 @@ func NewPersistent(path string) *Client {
 	if v := os.Getenv("TD_FAKE_LOGIN_FLOOD_WAIT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.loginFloodWait = n
+		}
+	}
+	if v := os.Getenv("TD_FAKE_MEDIA_FLOOD_WAIT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.mediaFloodWait = n
 		}
 	}
 	if v := os.Getenv("TD_FAKE_TRANSFER_DELAY"); v != "" {

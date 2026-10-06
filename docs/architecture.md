@@ -135,8 +135,11 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   re-resolves the row by id through `service.PreviewFileByID` (active rows
   only, in whatever channel the row belongs to) and answers HEAD/GET with at
   most one byte range from `service.ReadPreviewRange`; representations that
-  are not seekable (native photos, text messages) stream whole through
-  `service.StreamPreview`. Preview takes no operation lock and creates no
+  are not seekable stream whole through `service.StreamPreview`. A native
+  photo serves Telegram's largest size as `image/jpeg`, seekable only when
+  Telegram states that size's exact length; a text message serves its
+  human text part as plain text. The Content-Type is the representation's
+  type when Telegram reports one, else the indexed MIME type. Preview takes no operation lock and creates no
   Transfer. In the frontend, `src/preview/surface.tsx` is the one preview
   surface: a full-window modal over the Drive listing, so closing it leaves
   the directory and scroll position as they were. It picks a view from the
