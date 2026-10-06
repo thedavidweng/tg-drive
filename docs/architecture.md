@@ -143,7 +143,10 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   ordered registry (`src/preview/registry.ts`, providers listed in
   `src/preview/providers.ts`, one module each): MIME types first, then
   extensions, then the fallback (file details and Download), which is also
-  what any failure shows.
+  what any failure shows. The PDF view (`src/preview/pdf.tsx`) lazy-loads
+  EmbedPDF and runs PDFium from the WASM bundled in the embedded frontend,
+  with EmbedPDF's CDN fonts, stamp library, and webfonts turned off, so a
+  PDF preview fetches nothing but the app's own assets and its media URL.
 - Index sync (ADR 0033): `Services.StartSync` polls `PRAGMA data_version`
   on a pinned connection (the pragma advances only for *other* connections'
   commits) and, on change, re-reads the directory the frontend last listed

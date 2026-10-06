@@ -240,8 +240,16 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   the opener and leaving the directory as it was, with Escape ignored
   while a viewer is fullscreen and owned by a sheet stacked above; a failed
   preview call or an image that fails to load showing the fallback with
-  Download; and the English and Simplified Chinese strings. The in-memory
-  backend serves previews from data URLs (`putPreviewForTest`) and
+  Download; and the English and Simplified Chinese strings. The PDF viewer
+  (`preview-pdf.test.tsx`) is chosen for `application/pdf` and `.pdf`,
+  shows the fallback with Download when its PDFium worker cannot load, and
+  names only same-origin URLs in its EmbedPDF configuration, and the
+  preview's Tab trap includes controls a viewer renders in a shadow root
+  (EmbedPDF's toolbar); happy-dom
+  cannot run PDFium, so rendering is checked by hand in a browser.
+  `frontend/assets_test.go` (`gui` tag, run on the production build)
+  asserts the embedded assets carry the PDFium WASM and a script that loads
+  it. The in-memory backend serves previews from data URLs (`putPreviewForTest`) and
   rejects them on demand (`failPreviewForTest`); the live demo points
   them at its samples' public hosts. `a11y.test.tsx` walks the
   mounted app's interactive controls — exactly the selector set the global

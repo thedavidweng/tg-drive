@@ -1,4 +1,5 @@
 import { imagePreview } from "@/preview/image"
+import { pdfPreview } from "@/preview/pdf"
 import type { PreviewProvider } from "@/preview/types"
 
 /**
@@ -8,4 +9,5 @@ import type { PreviewProvider } from "@/preview/types"
  */
 export const previewProviders: readonly PreviewProvider[] = [
   imagePreview,
+  pdfPreview,
 ]

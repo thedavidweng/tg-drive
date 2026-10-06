@@ -12,6 +12,8 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@embedpdf/pdfium": "2.15.1",
+    "@embedpdf/react-pdf-viewer": "2.15.1",
     "@tailwindcss/vite": "4.3.3",
     "@wailsio/runtime": "3.0.0-beta.27",
     "class-variance-authority": "0.7.1",
