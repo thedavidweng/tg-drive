@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://thedavidweng.github.io/tg-drive/"><b>Website</b></a>
+  <a href="https://tg-drive.blahaj.uk/"><b>Website</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/thedavidweng/tg-drive/releases/latest"><b>Download</b></a>
   &nbsp;·&nbsp;

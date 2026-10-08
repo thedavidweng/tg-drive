@@ -229,7 +229,7 @@ required branch-protection checks.
 
 ## Project site
 
-The website at <https://thedavidweng.github.io/tg-drive/> is plain static
+The website at <https://tg-drive.blahaj.uk/> is plain static
 files in `site/` (HTML, CSS, a little JS). Its images come
 from `assets/icon.png` and `assets/screenshot.png`, the same files the
 README shows. `.github/workflows/site.yml` runs on pushes to `main` that

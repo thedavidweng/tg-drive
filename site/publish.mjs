@@ -30,6 +30,7 @@ async function build(out) {
   for (const f of files) await fs.copyFile(path.join(here, f), path.join(out, f))
   for (const [name, src] of Object.entries(images)) await fs.copyFile(path.join(root, src), path.join(out, "img", name))
   await fs.cp(demo, path.join(out, "demo"), { recursive: true })
+  await fs.writeFile(path.join(out, "CNAME"), "tg-drive.blahaj.uk\n")
 }
 
 function git(args, cwd) {
