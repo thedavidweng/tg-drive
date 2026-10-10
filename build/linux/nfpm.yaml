@@ -11,7 +11,7 @@ maintainer: thedavidweng <noreply@github.com>
 vendor: thedavidweng
 homepage: https://github.com/thedavidweng/tg-drive
 description: Desktop GUI for td, the Telegram-backed virtual file tree
-license: Apache-2.0
+license: AGPL-3.0-only
 contents:
   - src: dist/td-gui
     dst: /usr/bin/td-gui
