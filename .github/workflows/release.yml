@@ -11,24 +11,30 @@ on:
         required: false
         type: string
 
-permissions:
-  contents: write
-  id-token: write
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
+    permissions:
+      contents: write
+      id-token: write
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
           # Dispatched runs come in on main; check out the tag explicitly.
           ref: ${{ inputs.tag_name || github.ref }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Install syft
@@ -51,6 +57,8 @@ jobs:
   # these jobs upload to it. The CLI artifacts are untouched: they come
   # from GoReleaser above, which never builds with the gui tag.
   gui-linux:
+    permissions:
+      contents: write
     name: gui-linux (${{ matrix.runner }})
     needs: release
     strategy:
@@ -66,22 +74,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.tag_name || github.ref }}
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.14
           install_args: go bun
+          cache: false
       - name: Install GTK 4 and WebKitGTK 6.0
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
       - name: Resolve version
         id: version
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
         run: |
-          tag="${{ inputs.tag_name || github.ref_name }}"
+          tag="$TAG"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       - name: Package td-gui (deb + AppImage)
-        run: make gui-package-linux GUI_VERSION=${{ steps.version.outputs.version }}
+        env:
+          GUI_VERSION: ${{ steps.version.outputs.version }}
+        run: make gui-package-linux GUI_VERSION="$GUI_VERSION"
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -89,6 +103,8 @@ jobs:
         run: gh release upload "$TAG" dist/gui/* --clobber
 
   gui-darwin:
+    permissions:
+      contents: write
     needs: release
     runs-on: macos-latest
     timeout-minutes: 45
@@ -98,18 +114,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.tag_name || github.ref }}
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.14
           install_args: go bun
+          cache: false
       - name: Resolve version
         id: version
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
         run: |
-          tag="${{ inputs.tag_name || github.ref_name }}"
+          tag="$TAG"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       - name: Package td-gui (universal dmg)
-        run: make gui-package-darwin GUI_VERSION=${{ steps.version.outputs.version }}
+        env:
+          GUI_VERSION: ${{ steps.version.outputs.version }}
+        run: make gui-package-darwin GUI_VERSION="$GUI_VERSION"
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -117,6 +139,8 @@ jobs:
         run: gh release upload "$TAG" dist/gui/* --clobber
 
   gui-windows:
+    permissions:
+      contents: write
     needs: release
     runs-on: windows-latest
     timeout-minutes: 45
@@ -126,20 +150,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ inputs.tag_name || github.ref }}
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: 2026.9.14
           install_args: go bun
+          cache: false
       - name: Install make and NSIS
         run: choco install make nsis --no-progress -y
       - name: Resolve version
         id: version
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
         run: |
-          tag="${{ inputs.tag_name || github.ref_name }}"
+          tag="$TAG"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
       - name: Package td-gui (NSIS installer)
-        run: make gui-package-windows GUI_VERSION=${{ steps.version.outputs.version }}
+        env:
+          GUI_VERSION: ${{ steps.version.outputs.version }}
+        run: make gui-package-windows GUI_VERSION="$GUI_VERSION"
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
