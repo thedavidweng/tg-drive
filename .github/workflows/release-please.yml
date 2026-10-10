@@ -4,10 +4,7 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -15,6 +12,10 @@ concurrency:
 
 jobs:
   release-please:
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
