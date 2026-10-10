@@ -1,0 +1,856 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #18181b;
+  --muted: #71717a;
+  --faint: #a1a1aa;
+  --line: #ececef;
+  --card: #ffffff;
+  --card-hover: #fafafa;
+  --code-bg: #f4f4f5;
+  --ink: #18181b;
+  --ink-hover: #27272a;
+  --ink-fg: #fafafa;
+  --secondary: #f4f4f5;
+  --secondary-hover: #e9e9ec;
+  --sky: #229ed9;
+  --glow-a: rgba(34, 158, 217, 0.28);
+  --glow-b: rgba(99, 102, 241, 0.16);
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Noto Sans CJK SC",
+    system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111113;
+    --fg: #f4f4f5;
+    --muted: #a1a1aa;
+    --faint: #63636b;
+    --line: #232327;
+    --card: #141416;
+    --card-hover: #18181b;
+    --code-bg: #1c1c1f;
+    --ink: #fafafa;
+    --ink-hover: #e4e4e7;
+    --ink-fg: #18181b;
+    --secondary: #1c1c1f;
+    --secondary-hover: #26262a;
+    --glow-a: rgba(34, 158, 217, 0.2);
+    --glow-b: rgba(99, 102, 241, 0.18);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.6 var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg {
+  display: block;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+
+p code,
+li code {
+  padding: 0.1em 0.38em;
+  border-radius: 5px;
+  background: var(--code-bg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--sky);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Header */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 60px;
+  margin: 0 -20px;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 200ms var(--ease);
+}
+
+.header.is-stuck {
+  border-bottom-color: var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand img {
+  border-radius: 6px;
+}
+
+.brand-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand-by {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nav-link,
+.icon-link {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  transition:
+    color 150ms var(--ease),
+    background-color 150ms var(--ease);
+}
+
+.icon-link {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+}
+
+.icon-link svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav-link:hover,
+  .icon-link:hover {
+    color: var(--fg);
+    background: var(--secondary);
+  }
+}
+
+/* Hero */
+
+.hero {
+  padding: 88px 0 56px;
+}
+
+.section {
+  scroll-margin-top: 40px;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 6.4vw, 4.25rem);
+  line-height: 1.04;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  max-width: 50rem;
+}
+
+.lede {
+  max-width: 40rem;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.lede code {
+  color: var(--fg);
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.install {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.install-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.install-tabs button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  font: 500 12.5px/1 var(--font);
+  cursor: pointer;
+  transition:
+    color 150ms var(--ease),
+    background-color 150ms var(--ease);
+}
+
+.install-tabs button[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--secondary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .install-tabs button:hover {
+    color: var(--fg);
+  }
+}
+
+.install-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  max-width: 100%;
+  padding: 0 14px 0 18px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--ink-fg);
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease),
+    scale 160ms var(--ease-out);
+}
+
+.install-cmd code {
+  overflow: hidden;
+  font-size: 13.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.prompt {
+  font-family: var(--mono);
+  opacity: 0.45;
+}
+
+.copy-icon {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+}
+
+.copy-icon svg {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition:
+    opacity 200ms var(--ease),
+    filter 200ms var(--ease),
+    scale 200ms var(--ease-out);
+}
+
+.copy-icon .i-check {
+  opacity: 0;
+  filter: blur(2px);
+  scale: 0.7;
+}
+
+.install-cmd.copied .i-copy {
+  opacity: 0;
+  filter: blur(2px);
+  scale: 0.7;
+}
+
+.install-cmd.copied .i-check {
+  opacity: 1;
+  filter: blur(0);
+  scale: 1;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 150ms var(--ease),
+    scale 160ms var(--ease-out);
+}
+
+.button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.button-primary {
+  background: var(--ink);
+  color: var(--ink-fg);
+}
+
+.button-secondary {
+  background: var(--secondary);
+  color: var(--fg);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .install-cmd:hover,
+  .button-primary:hover {
+    background: var(--ink-hover);
+  }
+  .button-secondary:hover {
+    background: var(--secondary-hover);
+  }
+}
+
+.install-cmd:active,
+.button:active {
+  scale: 0.97;
+}
+
+/* Screenshot */
+
+.showcase {
+  position: relative;
+  margin: 8px -20px 0;
+  padding: 0 0 24px;
+}
+
+.glow {
+  position: absolute;
+  inset: 6% 10% 14%;
+  z-index: -1;
+  background:
+    radial-gradient(50% 55% at 30% 45%, var(--glow-a), transparent 70%),
+    radial-gradient(45% 50% at 72% 55%, var(--glow-b), transparent 70%);
+  filter: blur(40px);
+}
+
+/* The box keeps the screenshot's 2142x1502 proportions whether it holds
+   the demo or the fallback screenshot, so neither shifts the layout. */
+.shot {
+  position: relative;
+  max-width: 1080px;
+  aspect-ratio: 2142 / 1502;
+  margin: 0 auto;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The demo window takes the screenshot capture's window box (at 112,76,
+   sized 1918x1278), leaving the same room around it for the shadow. */
+.demo-window {
+  position: absolute;
+  left: 5.229%;
+  top: 5.06%;
+  width: 89.543%;
+  height: 85.087%;
+  overflow: hidden;
+  border-radius: 11px;
+  background: #f3f3f6;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.18),
+    0 22px 60px -10px rgb(0 0 0 / 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+  .demo-window {
+    background: #1a1a1e;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.9),
+      0 22px 60px -10px rgb(0 0 0 / 0.6);
+  }
+}
+
+/* The app lays out at the window's full size (959x639, the capture at 1x)
+   and site.js scales it to fit, so narrower screens see the same layout
+   smaller instead of a squeezed one. */
+.demo-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 959px;
+  height: 639px;
+  transform: scale(var(--demo-scale, 1));
+  transform-origin: 0 0;
+}
+
+.demo-window iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  opacity: 0;
+  transition: opacity 500ms var(--ease-out);
+}
+
+.demo-window.live iframe {
+  opacity: 1;
+}
+
+.demo-window::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgb(127 127 140 / 0.35);
+  pointer-events: none;
+}
+
+.demo-lights {
+  position: absolute;
+  top: 18.5px;
+  left: 19px;
+  display: flex;
+  gap: 9px;
+  pointer-events: none;
+}
+
+.demo-lights span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f35b51;
+}
+
+.demo-lights span:nth-child(2) {
+  background: #fdbd00;
+}
+
+.demo-lights span:nth-child(3) {
+  background: #24bf00;
+}
+
+.demo-note {
+  margin: 4px auto 0;
+  max-width: 1080px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Sections */
+
+.section {
+  padding: 96px 0 0;
+}
+
+.section-head {
+  max-width: 42rem;
+  margin-bottom: 40px;
+}
+
+h2 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3.2vw, 2.25rem);
+  line-height: 1.15;
+  font-weight: 620;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.section-head p,
+.closing p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+  text-wrap: pretty;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.card {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  transition: background-color 200ms var(--ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card:hover {
+    background: var(--card-hover);
+  }
+}
+
+.card-icon {
+  width: 22px;
+  height: 22px;
+  margin-bottom: 18px;
+  fill: none;
+  stroke: var(--sky);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.card p,
+.steps p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1.05fr;
+  gap: 56px;
+  align-items: center;
+}
+
+.steps {
+  display: grid;
+  gap: 26px;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps li {
+  display: flex;
+  gap: 16px;
+}
+
+.step-n {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.terminal {
+  overflow: hidden;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  background: #18181b;
+  color: #e4e4e7;
+  box-shadow:
+    0 24px 60px -24px rgba(24, 24, 27, 0.35),
+    0 2px 6px rgba(24, 24, 27, 0.08);
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid #27272a;
+}
+
+.terminal-bar i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #3f3f46;
+}
+
+.terminal-bar span {
+  margin-left: auto;
+  margin-right: auto;
+  padding-right: 50px;
+  color: #71717a;
+  font-size: 12px;
+}
+
+.terminal pre {
+  margin: 0;
+  padding: 20px 22px 24px;
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+.terminal code {
+  font-size: inherit;
+}
+
+.terminal .c {
+  color: #71717a;
+}
+
+.terminal .p {
+  color: #7dd3fc;
+  user-select: none;
+}
+
+.terminal .o {
+  color: #a1a1aa;
+}
+
+.closing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 112px;
+  padding: 56px 0;
+  border-block: 1px solid var(--line);
+}
+
+.closing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 36px 0 48px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.footer a {
+  transition: color 150ms var(--ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .footer a:hover {
+    color: var(--fg);
+  }
+}
+
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .split {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+}
+
+@media (max-width: 600px) {
+  .nav-link,
+  .brand-by {
+    display: none;
+  }
+  .hero {
+    padding-top: 56px;
+  }
+  h1 br {
+    display: none;
+  }
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .cta,
+  .install,
+  .install-cmd,
+  .cta .button {
+    width: 100%;
+  }
+}
+
+/* Motion. The page opens once per visit, so the entrance can take its
+   time; everything after that is short feedback. */
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+}
+
+@keyframes shot-in {
+  from {
+    opacity: 0;
+    transform: translateY(36px) scale(0.97);
+  }
+}
+
+@keyframes glow-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+.enter {
+  animation: enter 800ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 70ms + 60ms);
+}
+
+.shot {
+  animation: shot-in 1100ms var(--ease-out) 320ms both;
+}
+
+.glow {
+  animation: glow-in 1600ms var(--ease-out) 420ms both;
+}
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 700ms var(--ease-out),
+    transform 700ms var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 60ms);
+}
+
+.js .reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Cards keep their hover transition once revealed. */
+.js .card.reveal.in {
+  transition:
+    opacity 700ms var(--ease-out) calc(var(--i, 0) * 60ms),
+    transform 700ms var(--ease-out) calc(var(--i, 0) * 60ms),
+    background-color 200ms var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  @keyframes enter {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes shot-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes glow-in {
+    from {
+      opacity: 0;
+    }
+  }
+  .enter,
+  .shot,
+  .glow {
+    animation-duration: 400ms;
+  }
+  .js .reveal {
+    transform: none;
+    transition: opacity 400ms var(--ease);
+  }
+  .install-cmd:active,
+  .button:active {
+    scale: none;
+  }
+}
