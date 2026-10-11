@@ -1,5 +1,13 @@
 # Testing
 
+## Test-selection policy (move here from root AGENTS.md)
+
+- Prefer verifiable, reproducible binary-level E2E workflows for complex features.
+- Write relevant tests before implementation rather than deferring them; use focused isolated tests for paths E2E cannot reach, after enumerating possible failures. Do not add trivial getter, constant-mirror or brittle string-match tests.
+- Treat coverage as diagnostic, not a reason to add artificial tests.
+
+The existing offline fake Telegram / binary E2E suite and mandatory local gates below remain authoritative.
+
 ## Local gates
 
 ```sh
