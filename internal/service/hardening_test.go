@@ -655,61 +655,37 @@ func TestIncrementalScanPicksUpNewMessage(t *testing.T) {
 func TestHeartbeatKeepsLockDuringLongOp(t *testing.T) {
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)
-	ctx := context.Background()
-	_ = tg
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	app.Cfg.Locks.TTLSeconds = 12
 	key := "path:1:/slow.txt"
+	started := make(chan struct{})
+	release := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
 		done <- app.withLocks(ctx, []string{key}, func(ctx context.Context) error {
+			close(started)
 			select {
-			case <-time.After(13 * time.Second): // past the first expiry
+			case <-release:
+				return nil
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-			return nil
 		})
 	}()
-	// Wait until the lock row appears (avoid racing the operation for the
-	// initial acquisition), then keep trying to steal it well past the
-	// original expiry: renewal must keep it alive.
-	var held bool
-	deadline := time.Now().Add(24 * time.Second)
-	for !held && time.Now().Before(deadline) {
-		var expires string
-		if err := app.DB.Raw().QueryRow(`select expires_at from operation_locks where key=?`, key).Scan(&expires); err == nil {
-			if exp, perr := time.Parse(time.RFC3339, expires); perr == nil && exp.After(time.Now()) {
-				held = true
-			}
-		}
-		if !held {
-			time.Sleep(20 * time.Millisecond)
-		}
-	}
-	if !held {
-		t.Fatal("lock never became held")
-	}
+	<-started
+	// Keep the operation alive until every steal attempt finishes, including
+	// those past the original expiry; completion must not race an attempt.
+	deadline := time.Now().Add(13 * time.Second)
 	for time.Now().Before(deadline) {
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("long op aborted: %v", err)
-			}
-			done = nil
-		default:
-		}
-		if done == nil {
-			break
-		}
 		if err := app.DB.AcquireLock(ctx, key, "thief", time.Minute); err == nil {
 			t.Fatal("lock stolen while operation still running")
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	if done != nil {
-		if err := <-done; err != nil {
-			t.Fatalf("long op aborted: %v", err)
-		}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("long op aborted: %v", err)
 	}
 	// Released after completion: another owner can take it.
 	if err := app.DB.AcquireLock(ctx, key, "thief", time.Minute); err != nil {
