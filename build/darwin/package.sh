@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Package td-gui for macOS: a universal (arm64 + amd64) .app bundle wrapped
-# in a DMG. Runs only on macOS (lipo, codesign and hdiutil — the latter via
-# `wails3 tool package -format dmg`). The bundle is ad-hoc signed
-# (`codesign --sign -`): arm64 binaries need a signature to run at all, and
-# ad-hoc is what an unsigned release can do. Users still get Gatekeeper on
-# first launch; the README documents how to open the app anyway.
+# in a DMG. Release builds sign and notarize the app before creating the DMG,
+# then sign and notarize the DMG before writing its checksum.
 #
 # Usage: VERSION=1.2.3 build/darwin/package.sh   (version without leading v)
 set -euo pipefail
@@ -39,12 +36,20 @@ sed "s/@VERSION@/$VERSION/g" build/darwin/Info.plist >"$APP/Contents/Info.plist"
 "$WAILS3" generate icons -input assets/icon.png \
 	-macfilename "$WORK/icon.icns" -windowsfilename "$WORK/icon.ico"
 cp "$WORK/icon.icns" "$APP/Contents/Resources/icon.icns"
-codesign --force --deep --sign - "$APP"
+if [[ "${RELEASE_BUILD:-false}" == true ]]; then
+	bash build/darwin/sign-and-notarize.sh "$APP" false
+else
+	codesign --force --sign - "$APP"
+fi
 
 # DMG (hdiutil under the hood; expects <out>/<name>.app).
 "$WAILS3" tool package -nocolour -format dmg -name td-gui \
 	-volume-icon "$WORK/icon.icns" -out "$WORK"
 mv "$WORK/td-gui.dmg" "$OUT/td-gui_${VERSION}_darwin_universal.dmg"
+
+if [[ "${RELEASE_BUILD:-false}" == true ]]; then
+	bash build/darwin/sign-and-notarize.sh "$OUT/td-gui_${VERSION}_darwin_universal.dmg" false
+fi
 
 cd "$OUT"
 # macOS has no sha256sum; shasum ships with the OS.
