@@ -66,7 +66,7 @@ WAILS3=$(DIST_DIR)/bin/wails3
 gui-tools:
 	@mkdir -p $(DIST_DIR)/bin
 	@test -f $(DIST_DIR)/bin/.wails3-$(WAILS3_VERSION) || { \
-		GOBIN=$(CURDIR)/$(DIST_DIR)/bin go install github.com/wailsapp/wails/v3/cmd/wails3@$(WAILS3_VERSION) && \
+		GOBIN=$(CURDIR)/$(DIST_DIR)/bin go install -tags gtk3 github.com/wailsapp/wails/v3/cmd/wails3@$(WAILS3_VERSION) && \
 		touch $(DIST_DIR)/bin/.wails3-$(WAILS3_VERSION); }
 
 gui-bindings: gui-tools
