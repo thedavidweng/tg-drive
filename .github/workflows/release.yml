@@ -74,9 +74,8 @@ jobs:
         with:
           distribution: goreleaser
           version: '~> v2'
-          # Parallel cross-builds OOM a 16 GiB runner (GOMEMLIMIT in
-          # .goreleaser.yaml caps each build; this caps how many run).
-          args: release --clean --parallelism 2 --timeout 75m
+          # The 7 GiB macOS runner cannot fit two memory-heavy cross-builds.
+          args: release --clean --parallelism 1 --timeout 75m
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Remove signing credentials
