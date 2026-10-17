@@ -29,19 +29,17 @@ if [ ! -s "$zsync" ]; then
 	echo "AppImage zsync sidecar is missing or empty: $zsync" >&2
 	exit 1
 fi
-grep -aFq "gh-releases-zsync|thedavidweng|tg-drive|latest|td-gui_*_linux_${appimage_arch}.AppImage.zsync" "$image"
+if ! update_info="$(env -u APPIMAGE_EXTRACT_AND_RUN "$image" --appimage-updateinformation 2>&1)"; then
+	printf '%s\n' "$update_info" >&2
+	echo 'AppImage runtime did not return update information' >&2
+	exit 1
+fi
+printf '%s\n' "$update_info" | grep -Fq "gh-releases-zsync|thedavidweng|tg-drive|latest|td-gui_*_linux_${appimage_arch}.AppImage.zsync"
 
-offset="$(APPIMAGE_EXTRACT_AND_RUN=1 "$image" --appimage-offset)"
+offset="$(env -u APPIMAGE_EXTRACT_AND_RUN "$image" --appimage-offset)"
 work="$(mktemp -d)"
 app_pid=''
-cleanup() {
-	if [ -n "$app_pid" ]; then
-		sudo -n kill -- "-$app_pid" 2>/dev/null || true
-		wait "$app_pid" 2>/dev/null || true
-	fi
-	rm -rf "$work"
-}
-trap cleanup EXIT
+trap 'if [ -n "$app_pid" ]; then sudo -n kill -- "-$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; fi; rm -rf "$work"' EXIT
 
 cd "$work"
 unsquashfs -offset "$offset" -d squashfs-root "$image" >/dev/null
@@ -73,10 +71,10 @@ if 'Exec=td-gui' not in desktop or 'Icon=td-gui' not in desktop:
     raise SystemExit('desktop metadata does not identify td-gui')
 PY
 
-mkdir -p "$work/config"
+mkdir -p "$work/home/config" "$work/home/cache" "$work/home/data"
 setsid sudo -n unshare --net -- runuser -u "$(id -un)" -- \
-	env DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-}" HOME="$HOME" \
-	XDG_CONFIG_HOME="$work/config" LIBGL_ALWAYS_SOFTWARE=1 \
+	env DISPLAY="$DISPLAY" XAUTHORITY="${XAUTHORITY:-}" HOME="$work/home" \
+	XDG_CONFIG_HOME="$work/home/config" XDG_CACHE_HOME="$work/home/cache" XDG_DATA_HOME="$work/home/data" LIBGL_ALWAYS_SOFTWARE=1 \
 	"$work/squashfs-root/AppRun" >app.log 2>&1 &
 app_pid=$!
 for _ in $(seq 1 30); do
