@@ -32,6 +32,8 @@ builds:
 
 universal_binaries:
   - replace: true
+    hooks:
+      post: bash build/darwin/sign-and-notarize.sh "{{ .Path }}" "{{ .IsSnapshot }}"
 
 archives:
   - formats:

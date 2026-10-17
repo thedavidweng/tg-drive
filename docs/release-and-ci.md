@@ -22,8 +22,18 @@ For the td-gui artifacts (all driven by the pinned `wails3` CLI, see
 
 ## Repository secrets
 
-None are required. The pipeline runs end to end on the built-in
-`GITHUB_TOKEN`:
+macOS releases require these repository secrets:
+
+- `APPLE_CERTIFICATE_P12_BASE64`: Developer ID Application certificate and private key, encoded as base64.
+- `APPLE_CERTIFICATE_PASSWORD`: password for the P12.
+- `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and `APPLE_API_KEY_BASE64`: App Store Connect API credentials for notarization.
+
+Both macOS jobs import the P12 into a temporary keychain with a 90-minute
+unlock period. They remove the keychain and API key on success or failure.
+No Apple ID login is used. The required signing identity is
+`Developer ID Application: MOE AI LLC (NCFNX3LJ83)`.
+
+Publishing uses the built-in `GITHUB_TOKEN`:
 
 - release-please creates the release PR and, after the merge, the tag and
   the GitHub Release.
@@ -52,8 +62,11 @@ needed for private repos.
   releases, then dispatches packaging.
 - `.github/workflows/release.yml` runs on `v*` tags or when dispatched with
   a tag name:
-  - `release`: GoReleaser builds and publishes the CLI artifacts (CGO-free;
-    unchanged by the GUI jobs).
+  - `release` (macos-latest, 90m): GoReleaser cross-builds the CGO-free CLI,
+    then signs and notarizes the universal macOS binary before creating
+    archives, checksums, cosign signatures and SBOMs. The post-universal hook
+    waits for Apple acceptance and checks the binary ticket online; raw
+    binaries cannot hold a stapled ticket. Snapshots skip Apple signing.
   - `gui-linux` (ubuntu-latest and ubuntu-24.04-arm), `gui-darwin`
     (macos-latest), `gui-windows` (windows-latest): build td-gui natively
     and upload the packages to the same release. All three `need` the
@@ -146,12 +159,20 @@ GTK plugin for the AppImage, hdiutil for the DMG, plus icon (.ico/.icns),
 `build/`, not the Wails Taskfile layout (which assumes `main.go` beside
 `frontend/`).
 
-The macOS bundle is ad-hoc signed (`codesign --sign -` — arm64 Mach-O
-requires a signature to run) and everything is otherwise unsigned: Windows
-SmartScreen and macOS Gatekeeper warnings on first launch are expected, and
-the README documents how to open the app anyway. The NSIS installer is
-per-user (no UAC prompt) and installs the WebView2 runtime when the system
-lacks it.
+macOS release builds set `RELEASE_BUILD=true`. The package script signs
+and notarizes the App, staples its ticket and checks Gatekeeper before
+creating the DMG. It then signs, notarizes, staples and assesses the DMG
+before writing the checksum. Missing credentials or failed verification
+stop publication. Local and pull-request dry runs remain ad-hoc signed.
+Windows artifacts are unsigned; SmartScreen warnings remain expected. The
+NSIS installer is per-user (no UAC prompt) and installs the WebView2 runtime
+when the system lacks it.
+
+`python3 build/darwin/test-signing.py` exercises the signing gate with mocked
+Apple tools, including rejected submissions and invalid signatures. It
+runs in CI; only an actual release can verify Apple acceptance. Until that
+release passes, retain the README instructions for older unsigned assets
+and the Homebrew quarantine workaround.
 
 The CI `gui` job runs the matching target on every pull request as a dry run
 and uploads `dist/gui/` as a workflow artifact, so packaging breakage shows
@@ -295,7 +316,7 @@ checksums.txt.sig
 *.spdx.json
 ```
 
-The td-gui artifacts (unsigned; each with a `.sha256` sidecar), for tag
+The td-gui artifacts (each with a `.sha256` sidecar), for tag
 `v1.2.3`:
 
 ```text
