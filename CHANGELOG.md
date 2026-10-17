@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/thedavidweng/tg-drive/compare/v1.0.1...v1.0.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **release:** serialize memory-heavy cross-builds ([#150](https://github.com/thedavidweng/tg-drive/issues/150)) ([70eef86](https://github.com/thedavidweng/tg-drive/commit/70eef86231d2bc4df871f356e11524c063bbbf75))
+
 ## [1.0.1](https://github.com/thedavidweng/tg-drive/compare/v1.0.0...v1.0.1) (2026-10-17)
 
 
