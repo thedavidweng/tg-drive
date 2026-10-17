@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/thedavidweng/tg-drive/compare/v1.0.0...v1.0.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **release:** expose signing keychain to codesign ([#149](https://github.com/thedavidweng/tg-drive/issues/149)) ([39ba1a9](https://github.com/thedavidweng/tg-drive/commit/39ba1a9d30cc1e7876e5912d0eb0b89ff3362ea7))
+* **release:** sign and notarize macOS artifacts ([#139](https://github.com/thedavidweng/tg-drive/issues/139)) ([0f8bae2](https://github.com/thedavidweng/tg-drive/commit/0f8bae22cfc49ea33d3b0505f9c192b1d1f72913))
+
 ## [1.0.0](https://github.com/thedavidweng/tg-drive/compare/v0.2.1...v1.0.0) (2026-10-15)
 
 
