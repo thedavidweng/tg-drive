@@ -29,8 +29,9 @@ outside the application and service layers.
   because `go:embed` cannot reach parent directories.
 - The frontend calls Go only through Wails-generated TypeScript bindings
   and typed events. It does not use an HTTP API.
-- Linux uses Wails' default GTK4 and WebKitGTK 6.0 stack.
-- Dependencies track the latest releases, including Wails v3 betas.
+- Linux uses Wails' GTK3/WebKitGTK 4.1 backend on the Ubuntu 22.04 baseline;
+  the release and artifact acceptance details are in ADR 0047.
+- Dependencies track the pinned Wails v3 beta.
 
 Considered options:
 

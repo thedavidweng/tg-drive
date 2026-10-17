@@ -53,18 +53,16 @@ jobs:
           files: coverage.out
         continue-on-error: true
 
-  # The desktop GUI (ADR 0031) links the platform webview through cgo, so it
-  # is checked natively on each OS, apart from the CGO-free gates above. The
-  # packaging steps double as the pull-request dry run for the release
-  # workflow's GUI jobs: they exercise the same scripts with a placeholder
-  # version and publish the result as a workflow artifact, never to a
-  # release.
+# The desktop GUI links Wails' platform webview through cgo, so it is checked
+# natively on each OS, apart from the CGO-free gates above. Linux is pinned to
+# Ubuntu 22.04: Wails' gtk3 tag selects WebKitGTK 4.1 and keeps glibc at 2.35.
+# The packaging steps double as the release workflow's dry run and smoke test.
   gui:
     name: gui (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -81,11 +79,11 @@ jobs:
         with:
           version: 2026.9.14
           install_args: go bun
-      - name: Install GTK 4 and WebKitGTK 6.0
+      - name: Install GTK3 and WebKitGTK 4.1
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y desktop-file-utils libgtk-3-dev libwebkit2gtk-4.1-dev zsync xvfb xdotool imagemagick squashfs-tools libfuse2
       - name: Install make and NSIS
         if: runner.os == 'Windows'
         run: choco install make nsis --no-progress -y
@@ -100,11 +98,16 @@ jobs:
             macOS)   make gui-package-darwin ;;
             Windows) make gui-package-windows ;;
           esac
-      - name: Upload GUI packages
+      - name: Verify Linux AppImage metadata and offline GUI startup
+        if: runner.os == 'Linux'
+        run: xvfb-run -a bash scripts/smoke-gui-appimage.sh dist/gui/*.AppImage
+      - name: Upload GUI packages and smoke screenshot
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: td-gui-package-${{ matrix.os }}
-          path: dist/gui/
+          path: |
+            dist/gui/
+            ${{ runner.temp }}/td-gui-appimage-smoke.png
 
   snapshot:
     runs-on: ubuntu-latest

@@ -99,8 +99,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Native arm64, like the CLI's linux_arm64 artifacts.
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        # Native runners keep the AppImage at the Ubuntu 22.04 glibc baseline.
+        # GitHub publishes both x64 and arm64 Jammy labels for public repos.
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     defaults:
@@ -116,10 +117,10 @@ jobs:
           version: 2026.9.14
           install_args: go bun
           cache: false
-      - name: Install GTK 4 and WebKitGTK 6.0
+      - name: Install GTK3, WebKitGTK 4.1, and AppImage smoke dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y desktop-file-utils libgtk-3-dev libwebkit2gtk-4.1-dev zsync xvfb xdotool imagemagick squashfs-tools libfuse2
       - name: Resolve version
         id: version
         env:
@@ -127,10 +128,12 @@ jobs:
         run: |
           tag="$TAG"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-      - name: Package td-gui (deb + AppImage)
+      - name: Package td-gui (deb + AppImage + zsync)
         env:
           GUI_VERSION: ${{ steps.version.outputs.version }}
         run: make gui-package-linux GUI_VERSION="$GUI_VERSION"
+      - name: Verify AppImage metadata and offline GUI startup
+        run: xvfb-run -a bash scripts/smoke-gui-appimage.sh dist/gui/*.AppImage
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
