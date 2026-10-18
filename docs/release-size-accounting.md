@@ -1,11 +1,60 @@
 # Release size accounting
 
-Measured from the published v1.0.1 release on 2026-10-18. Release source:
+Measured from published v1.0.1 and v1.0.2 assets on 2026-10-18. The full
+platform baseline below is v1.0.1; the macOS follow-up uses actual signed
+v1.0.2 downloads. The v1.0.1 release source is
 `09bae9da081b8b32bd634721a75e44504334fc25`; successful packaging run:
 [39054312774](https://github.com/thedavidweng/tg-drive/actions/runs/39054312774).
 All 16 CLI checksum entries and all six GUI SHA-256 sidecars matched the
 downloaded bytes. SHA-256 agreement verifies content against the published
 manifests; it is separate from verifying the cosign identity.
+
+## Published v1.0.2 macOS follow-up
+
+Release source: `f76f77d40fa1c8b4d67a569a4625b4d059d46e71`; successful
+packaging run:
+[39127115752](https://github.com/thedavidweng/tg-drive/actions/runs/39127115752).
+All three CLI downloads match `checksums.txt`; the GUI DMG matches its
+published SHA-256 sidecar. Values are bytes, measured using the same
+regular-file payload accounting as the baseline.
+
+| Artifact | Download | Main executable | Unpacked payload |
+| --- | ---: | ---: | ---: |
+| `td_darwin_arm64.tar.gz` | 15,124,415 | 51,336,096 | 51,411,609 |
+| `td_darwin_x86_64.tar.gz` | 16,746,742 | 54,101,344 | 54,176,857 |
+| `td_darwin_universal.tar.gz` | 31,841,929 | 105,468,832 | 105,544,345 |
+| `td-gui_1.0.2_darwin_universal.dmg` | 40,487,517 | 127,221,040 | 127,753,507 |
+
+The signed ARM64 CLI download is 52.5% smaller than the v1.0.2 Universal
+download; x86-64 is 47.4% smaller. These are published complete archives,
+including the accompanying documentation, rather than locally compressed
+`lipo` slices. The Universal CLI download decreased by only 3,907 bytes from
+v1.0.1; retaining thin downloads accounts for the meaningful architecture
+savings. The GUI executable and App payload sizes are unchanged.
+
+Each CLI executable passes `codesign --verify --strict`, and all three
+`td version --json` invocations report v1.0.2 and the release source above.
+The x86-64 invocation ran through this ARM host's translation support; it is
+not a native Intel acceptance result. The GUI App passes signature
+verification for both architectures, and both the App and DMG pass
+`stapler validate`. The copied GUI process remained alive for five seconds
+using isolated configuration and index paths.
+
+The host reports `spctl --status: assessments disabled`.
+`spctl --assess` on the CLI executables reports
+`source=Notarized Developer ID` together with `override=security disabled`.
+This is signature/notarization and local-startup evidence, not clean-machine
+Gatekeeper enforcement or interactive install/update/uninstall acceptance.
+Bare CLI executables have no stapled ticket; Apple's
+[notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+explains that standalone binaries cannot currently carry a stapled ticket.
+
+Windows signing and native installation remain unaccepted. Direct inspection
+of the published v1.0.2 installer and both CLI ZIP executables found PE
+security-directory offset and size `0/0`; green Windows CI does not supply
+an Authenticode certificate, trust chain, or timestamp. Linux native package
+acceptance, package-manager install/update paths, secured macOS enforcement,
+and native Intel/Windows installation remain tracked in #124 and #106.
 
 ## Published downloads and payloads
 
@@ -48,7 +97,7 @@ Linux CLI packages contain the same executable bytes for a given architecture.
 Linux GUI deb/AppImage executable sizes differ because linuxdeploy adjusts ELF
 runtime search paths during bundling. The Windows installer stub is an x86 PE;
 its application is an x86-64 PE. Windows CLI ZIPs are separate x86-64/ARM64.
-The macOS CLI and GUI are both Universal x86-64/ARM64.
+The v1.0.1 macOS CLI and GUI are both Universal x86-64/ARM64.
 
 Extracting each architecture with `lipo -thin` gives the following comparison.
 The gzip column is a locally created archive containing only that executable,
@@ -80,8 +129,9 @@ CLI release builds now use `-trimpath`, matching local builds. `CGO_ENABLED=0`,
 version linker variables, `GOMEMLIMIT=3GiB`, the serialized release build,
 cosign checksum signing, and archive SBOM generation remain in place. The
 archive/SBOM/checksum rules apply to all seven CLI archives, including the two
-new macOS archives. New release signing and package-manager installation
-must be verified against newly published assets before #124 can close.
+new macOS archives. The v1.0.2 measurements and signature checks above verify
+the published macOS downloads. Package-manager and remaining native
+installation acceptance must be completed before #124 can close.
 
 ## CLI dependency attribution and startup
 
