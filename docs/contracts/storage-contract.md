@@ -274,6 +274,11 @@ by row order. This reuses the existing schema and needs no migration. Forum
 topic identity is intentionally not represented here until Telegram capability
 checks and manifest routing are specified together.
 
+The CLI `--root` supplies this selector after making relative paths absolute.
+An explicit nonempty `WithChannel` selects its channel even when the incoming
+context carries a root, so binding recovery scans the channel just bound.
+An operation that already owns locks retains its resolved channel.
+
 ## Transfers
 
 `transfers` records every Transfer (ADR 0033), one row per Transfer, written

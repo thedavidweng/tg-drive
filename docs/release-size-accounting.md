@@ -1,8 +1,8 @@
 # Release size accounting
 
 Measured from published v1.0.1 and v1.0.2 assets on 2026-10-18. The full
-platform baseline below is v1.0.1; the macOS follow-up uses actual signed
-v1.0.2 downloads. The v1.0.1 release source is
+platform baseline below is v1.0.1; the v1.0.2 follow-up uses published
+macOS, Linux and Windows artifacts. The v1.0.1 release source is
 `09bae9da081b8b32bd634721a75e44504334fc25`; successful packaging run:
 [39054312774](https://github.com/thedavidweng/tg-drive/actions/runs/39054312774).
 All 16 CLI checksum entries and all six GUI SHA-256 sidecars matched the
@@ -57,7 +57,70 @@ an Authenticode certificate, trust chain, or timestamp. Linux native package
 acceptance, package-manager install/update paths, secured macOS enforcement,
 and native Intel/Windows installation remain tracked in #124 and #106.
 
-## Published downloads and payloads
+## Published v1.0.2 Linux and Windows follow-up
+
+All 38 published asset byte counts and SHA-256 digests match the GitHub
+release metadata. All 20 checksum-manifest entries and all eight GUI checksum
+sidecars match; all seven archive SPDX-2.3 documents have valid internal
+relationship references. These checks establish distribution-file consistency;
+cosign certificate-identity verification is separate. The API reports
+`immutable=false` for release ID `416435419`; no published tag or asset was
+replaced during acceptance.
+
+The same regular-file accounting used above gives the following bytes.
+Both Linux architectures and every CLI deb/rpm/apk format remain present.
+APK payloads include the control record; AppImages include bundled runtime
+libraries. Measurements inspect the published files without running them.
+
+| Artifact | Download | Main executable | Unpacked payload |
+| --- | ---: | ---: | ---: |
+| `td_linux_arm64.tar.gz` | 14,659,419 | 49,873,058 | 49,948,571 |
+| `td_linux_x86_64.tar.gz` | 15,986,850 | 52,187,298 | 52,262,811 |
+| `td_windows_arm64.zip` | 14,646,936 | 50,224,128 | 50,299,641 |
+| `td_windows_x86_64.zip` | 16,297,878 | 53,327,872 | 53,403,385 |
+| `td-gui_1.0.2_linux_amd64.deb` | 21,065,714 | 65,074,032 | 65,276,372 |
+| `td-gui_1.0.2_linux_arm64.deb` | 19,670,836 | 62,494,456 | 62,696,796 |
+| `td_1.0.2_linux_amd64.deb` | 15,971,592 | 52,187,298 | 52,187,298 |
+| `td_1.0.2_linux_arm64.deb` | 14,635,858 | 49,873,058 | 49,873,058 |
+| `td_1.0.2_linux_amd64.apk` | 16,708,950 | 52,187,298 | 52,187,598 |
+| `td_1.0.2_linux_arm64.apk` | 15,266,733 | 49,873,058 | 49,873,359 |
+| `td_1.0.2_linux_amd64.rpm` | 15,965,652 | 52,187,298 | 52,187,298 |
+| `td_1.0.2_linux_arm64.rpm` | 14,640,529 | 49,873,058 | 49,873,058 |
+| `td-gui_1.0.2_linux_aarch64.AppImage` | 93,927,944 | 62,625,528 | 313,671,768 |
+| `td-gui_1.0.2_linux_x86_64.AppImage` | 97,106,424 | 65,082,224 | 318,790,430 |
+
+Compared with v1.0.1, Linux CLI executable bytes decrease by 98,304 on
+x86-64 and 65,536 on ARM64; Windows CLI decreases by 96,768 and 96,256.
+Linux GUI deb executables change by +28,736 / -8,160 bytes on x86-64 / ARM64.
+The x86-64 AppImage payload grows by 11,597,192 bytes while ARM64 shrinks by
+6,857,662 bytes; these bundled payload changes cannot be attributed to the
+small GUI executable changes alone. No runtime library was removed and no
+compression/parity benefit is inferred from these totals.
+
+## Published v1.0.2 standalone installation
+
+The unmodified release-source `install.sh`, Git blob
+`02467bbc15adc63bdad3a65c56af0a7e3583af6d`, passed fresh installation,
+`td version --json`, v1.0.1 -> v1.0.2 overwrite upgrade, and uninstall with
+binary removal on macOS ARM64 and native Ubuntu 24.04.4 LTS x86-64.
+Homebrew was absent from each test PATH; install/config/cache/data paths were
+isolated in temporary directories. The prior v1.0.1 binary and installed
+v1.0.2 binary were checked against their published archive contents.
+
+| Platform / downloaded executable | Installed v1.0.2 SHA-256 |
+| --- | --- |
+| macOS Universal (ARM64 host) | `3f9b0b36954210427b4437c4b5a2e6dbe77a4431cae31a7cd9b1a30a00e9e858` |
+| Linux x86-64 | `11cc4868df6c47f2766de653db471581bdf59563d405738d06ee2c13f90770be` |
+
+Both report v1.0.2 and release source
+`f76f77d40fa1c8b4d67a569a4625b4d059d46e71`. On native Linux,
+`td completion bash`, `td completion zsh`, and `td completion fish` each
+exit 0 with nonempty output. Tests removed the temporary files. This does
+not establish Linux GUI/ARM64/package-manager acceptance, native Windows or
+Intel Mac acceptance, secured-host Gatekeeper enforcement, interactive GUI
+behavior, or authenticated Telegram acceptance.
+
+## Published v1.0.1 downloads and payloads
 
 All values are bytes, not MiB. Unpacked bytes sum regular-file logical sizes,
 excluding symlink targets and filesystem block allocation. Archive rows include
@@ -223,7 +286,7 @@ application/installer signatures and native installation/verification.
 
 ## Reproduction
 
-Download v1.0.1 with `gh release download v1.0.1 -R thedavidweng/tg-drive`,
+Download each tag with `gh release download <tag> -R thedavidweng/tg-drive`,
 verify `checksums.txt` and the GUI `.sha256` files, then inspect archive members
 with `tar`/`7zz`. Extract deb ar members before extracting `data.tar.*`; macOS
 `tar` can also read the rpm payload. `7zz` reads the AppImage SquashFS and NSIS
@@ -237,3 +300,12 @@ retains Go function ranges in `.gopclntab`. Use
 `make gui-frontend-build` and sum `frontend/dist` files for the frontend.
 Use `codesign --verify --deep --strict`, `xcrun stapler validate`, and the online
 `codesign --check-notarization -R "=notarized"` requirement for macOS evidence.
+
+For standalone install reproduction, obtain `install.sh` from the release
+source above and check its Git blob. Set `TD_INSTALL_DIR` and XDG paths to
+an isolated temporary directory, keep Homebrew out of PATH, run `sh install.sh`
+and the installed `td version --json`, and compare the binary hash with the
+checksum-verified archive executable. Run `sh install.sh uninstall` and assert
+binary removal. Repeat with the verified v1.0.1 executable seeded in the install
+directory before running the installer. The installer resolves the latest
+release, so the reported tag/source/hash must be recorded for every run.

@@ -19,8 +19,8 @@ selector. It resolves the exact `channels.root_local_path` row before an
 operation starts, then carries the same channel context through the operation
 and its path locks. An unknown root returns `ERR_CHANNEL_NOT_FOUND`; duplicate
 rows return `ERR_USAGE` instead of selecting by row order. `WithChannel` remains
-the CLI/GUI selector for Telegram ID or title, and takes effect when no
-logical-root selector is present.
+the CLI/GUI selector for Telegram ID or title. ADR 0054 extends this selector to
+override an inherited root when selecting a newly bound channel explicitly.
 
 This slice deliberately reuses the existing binding identity. It adds no
 forum-topic columns or unused routing fields. Forum topics require a separate

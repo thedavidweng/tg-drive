@@ -34,8 +34,12 @@ type localRootSelectorKey struct{}
 
 // WithChannel returns ctx selecting a bound drive channel, by title or
 // Telegram ID, for the calls made with it. It overrides App.Channel for
-// those calls only; an empty selector keeps App.Channel.
+// those calls only, including an inherited logical-root selector. An empty
+// selector keeps the existing selection.
 func WithChannel(ctx context.Context, selector string) context.Context {
+	if selector != "" {
+		ctx = context.WithValue(ctx, localRootSelectorKey{}, "")
+	}
 	return context.WithValue(ctx, channelSelectorKey{}, selector)
 }
 

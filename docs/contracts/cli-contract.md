@@ -12,6 +12,7 @@ Binary: `td`
 --quiet
 --verbose
 --channel <name-or-id>
+--root <local-root>
 --wait
 --no-wait
 ```
@@ -19,8 +20,16 @@ Binary: `td`
 `--channel` selects a bound drive. An exact Telegram ID takes precedence over
 a title with the same text. A title shared by multiple bound drives is rejected
 with `ERR_USAGE` (exit 2); select an explicit Telegram ID from `td status`.
-An unmatched selector returns `ERR_CHANNEL_NOT_FOUND`. Without `--channel`, the
-first bound drive remains the default.
+An unmatched selector returns `ERR_CHANNEL_NOT_FOUND`.
+
+`--root` selects a drive by its persisted local-root binding, independent of
+Telegram titles. Relative paths are made absolute against the current directory;
+symlinks are not resolved. It overrides `TD_CHANNEL`; combining it with an
+explicit nonempty `--channel` returns `ERR_FLAG_CONFLICT` (exit 2). An unknown
+root returns `ERR_CHANNEL_NOT_FOUND` (exit 4), including for `status`; multiple
+bindings at the same root return `ERR_USAGE` (exit 2) before writes. `init` still
+binds and scans its own positional local root. With neither selector nor
+`TD_CHANNEL`, the first bound drive remains the default.
 
 ## Commands
 
