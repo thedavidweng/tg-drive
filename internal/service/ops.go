@@ -236,9 +236,9 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 	ch, err := a.channel(ctx)
 	if err != nil {
 		// Before init there is nothing to count, but auth and paths are
-		// still worth reporting; an explicit --channel that matches nothing
+		// still worth reporting; an explicit selector that matches nothing
 		// stays an error.
-		if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrChannelNotFound && a.channelSelector(ctx) == "" {
+		if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrChannelNotFound && a.channelSelector(ctx) == "" && a.localRootSelector(ctx) == "" {
 			out := &StatusResult{
 				Initialized: false,
 				Channels:    channels,
