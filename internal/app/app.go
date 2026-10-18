@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -106,6 +107,7 @@ Get started:
 	cmd.PersistentFlags().BoolVar(&opts.quiet, "quiet", false, "suppress non-essential output")
 	cmd.PersistentFlags().BoolVar(&opts.verbose, "verbose", false, "write diagnostics (paths, Telegram RPC timing, retries) to stderr")
 	cmd.PersistentFlags().StringVar(&opts.channel, "channel", "", "channel title or ID")
+	cmd.PersistentFlags().StringVar(&opts.localRoot, "root", "", "select a drive by its bound local root")
 	cmd.PersistentFlags().BoolVar(&opts.wait, "wait", false, "wait through safe Telegram flood waits")
 	cmd.PersistentFlags().BoolVar(&opts.noWait, "no-wait", false, "fail immediately on Telegram flood waits")
 	cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
@@ -124,7 +126,17 @@ Get started:
 			// command handlers and would otherwise exit silently.
 			return opts.Renderer().Error(apperr.New(apperr.ErrFlagConflict, "--wait and --no-wait are mutually exclusive"))
 		}
-		if opts.channel == "" {
+		if opts.localRoot != "" {
+			if opts.channel != "" {
+				return opts.Renderer().Error(apperr.New(apperr.ErrFlagConflict, "--root and --channel are mutually exclusive"))
+			}
+			root, err := filepath.Abs(opts.localRoot)
+			if err != nil {
+				return opts.Renderer().Error(apperr.Wrap(apperr.ErrUsage, "resolve local root", err))
+			}
+			c.SetContext(service.WithLocalRoot(c.Context(), root))
+			opts.ctx = c.Context()
+		} else if opts.channel == "" {
 			opts.channel = os.Getenv("TD_CHANNEL")
 		}
 		return nil
@@ -175,6 +187,7 @@ type runtimeOpts struct {
 	dbPath      string
 	sessionPath string
 	channel     string
+	localRoot   string
 	wait        bool
 	noWait      bool
 	command     string

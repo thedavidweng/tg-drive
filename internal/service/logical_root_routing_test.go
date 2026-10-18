@@ -57,3 +57,24 @@ func TestLogicalRootRoutingRejectsUnknownRootBeforeWriting(t *testing.T) {
 		t.Fatalf("unknown logical root wrote %d nodes", count)
 	}
 }
+
+func TestLogicalRootInitScansItsNewChannel(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	var firstRoot string
+	if err := app.DB.Raw().QueryRow(`select root_local_path from channels order by id limit 1`).Scan(&firstRoot); err != nil {
+		t.Fatal(err)
+	}
+	second, err := app.InitRoot(WithLocalRoot(context.Background(), firstRoot), t.TempDir(), "", "Second", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scans int
+	if err := app.DB.Raw().QueryRow(`select count(*) from scan_state s join channels c on c.id=s.channel_id
+		where c.tg_channel_id=? and s.last_full_scan_at is not null`, fmt.Sprint(second.ChannelID)).Scan(&scans); err != nil {
+		t.Fatal(err)
+	}
+	if scans != 1 {
+		t.Fatalf("new channel full scans = %d, want 1", scans)
+	}
+}
