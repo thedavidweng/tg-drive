@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
@@ -240,12 +242,30 @@ func (c *Client) CreateChannel(ctx context.Context, title string) (*telegram.Cha
 func (c *Client) ResolveChannel(ctx context.Context, titleOrID string) (*telegram.Channel, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, ch := range c.channels {
-		if ch.Title == titleOrID || fmt.Sprintf("%d", ch.ID) == titleOrID {
+	titleOrID = strings.TrimSpace(titleOrID)
+	if id, err := strconv.ParseInt(strings.TrimPrefix(titleOrID, "-100"), 10, 64); err == nil {
+		if ch, ok := c.channels[id]; ok {
 			return ch, nil
 		}
+		titleOrID = strconv.FormatInt(id, 10)
 	}
-	return nil, fmt.Errorf("channel not found")
+	driveTitle := titleOrID
+	if !strings.Contains(strings.ToLower(driveTitle), "[td]") {
+		driveTitle += " [TD]"
+	}
+	var found *telegram.Channel
+	for _, ch := range c.channels {
+		if strings.EqualFold(strings.TrimSpace(ch.Title), titleOrID) || ch.Title == driveTitle {
+			if found != nil {
+				return nil, apperr.New(apperr.ErrUsage, "channel title is ambiguous; use the Telegram ID from td channels list")
+			}
+			found = ch
+		}
+	}
+	if found != nil {
+		return found, nil
+	}
+	return nil, apperr.New(apperr.ErrChannelNotFound, "channel not found")
 }
 
 func (c *Client) ListChannels(ctx context.Context, opts telegram.ListChannelsOptions) ([]telegram.Channel, error) {

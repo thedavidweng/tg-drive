@@ -34,7 +34,6 @@ type Client struct {
 
 	mu            sync.Mutex
 	channelHash   map[int64]int64  // channel ID -> access hash
-	channelTitle  map[string]int64 // normalized title -> channel ID
 	channelTitles map[int64]string // channel ID -> title
 
 	inviteMu    sync.Mutex
@@ -70,7 +69,6 @@ func New(apiID int64, apiHash, sessionPath string, waitFlood bool, maxWait time.
 		waitFlood:     waitFlood,
 		maxWait:       maxWait,
 		channelHash:   make(map[int64]int64),
-		channelTitle:  make(map[string]int64),
 		channelTitles: make(map[int64]string),
 		inviteCache:   make(map[int64]cachedInvite),
 		discussion:    make(map[int64]discussionPeer),
@@ -200,7 +198,6 @@ func (c *Client) rememberChannel(id, accessHash int64) {
 func (c *Client) rememberChannelTitle(id int64, title string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.channelTitle[normalizeChannelTitle(title)] = id
 	c.channelTitles[id] = title
 }
 
@@ -220,21 +217,12 @@ func (c *Client) RegisterChannelAccessHash(channelID, accessHash int64) {
 	c.setChannelAccessHash(channelID, accessHash)
 }
 
-// RegisterChannelInfo seeds peer cache from DB including the title so that
-// subsequent title-based resolution does not have to walk the dialog list.
+// RegisterChannelInfo seeds peer identity and display-title caches from DB.
+// Title selection still walks dialogs to establish uniqueness.
 func (c *Client) RegisterChannelInfo(channelID, accessHash int64, title string) {
 	c.setChannelAccessHash(channelID, accessHash)
 	c.rememberChannelTitle(channelID, title)
 }
-
-func (c *Client) channelByTitle(title string) (int64, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	id, ok := c.channelTitle[normalizeChannelTitle(title)]
-	return id, ok
-}
-
-func normalizeChannelTitle(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 func mapRPCError(err error) error {
 	if err == nil {
