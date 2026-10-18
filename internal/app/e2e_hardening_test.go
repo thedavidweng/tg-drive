@@ -269,7 +269,10 @@ func TestE2EFriendlyFileErrors(t *testing.T) {
 		}
 	}
 
-	for _, args := range [][]string{{"mv", "--confirm", "/dir", "/other"}, {"rm", "--confirm", "/dir"}} {
+	if _, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, nil, "", "mv", "--confirm", "/dir", "/other"); err != nil {
+		t.Fatalf("directory mv: %v %s", err, stderr)
+	}
+	for _, args := range [][]string{{"rm", "--confirm", "/other"}} {
 		_, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, nil, "", args...)
 		if err == nil {
 			t.Fatalf("%v should fail", args)
