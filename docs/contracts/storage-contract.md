@@ -443,6 +443,14 @@ When a file leaves `active`, clear `files.node_id` in the same transaction. Then
 
 Directories created explicitly by a front end (the GUI's new-folder action) are stored as `derived=1, ephemeral=1` nodes: ephemeral nodes are local-only — Telegram cannot store an empty directory — so directory GC keeps them and a full scan's node rebuild removes them unless a file was uploaded into them.
 
+An explicit directory delete removes empty directory nodes in its selected
+channel and subtree, including ephemeral nodes, after the batch has no
+remaining files. A partial failure retains those local nodes until retry.
+The cleanup is transactional and preserves nodes with active descendants.
+Deleting `/` applies this cleanup to every empty directory in that channel.
+Result counters count files only; removing an empty local directory adds no
+deleted file count or Telegram metadata.
+
 ## Machine record carrier
 
 Machine records (`td-manifest:v1` per ungrouped file, `td-album:v1` per

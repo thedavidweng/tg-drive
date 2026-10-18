@@ -860,6 +860,23 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 					return err
 				}
 			}
+			if out.Remaining == 0 {
+				if err := a.DB.WithTx(ctx, func(tx *sql.Tx) error {
+					_, err := tx.ExecContext(ctx, `
+						delete from nodes where channel_id=? and type='dir'
+						and (?='/' or canonical_path=? or substr(canonical_path,1,length(?)+1)=?||'/')
+						and not exists (
+							select 1 from files where files.channel_id=nodes.channel_id and files.status='active'
+							and substr(files.canonical_path,1,length(nodes.canonical_path)+1)=nodes.canonical_path||'/'
+						)`, ch.rowID, p, p, p, p)
+					if err != nil {
+						return apperr.Wrap(apperr.ErrDB, "remove directory nodes", err)
+					}
+					return nil
+				}); err != nil {
+					return err
+				}
+			}
 			return firstErr
 		})
 		if lockErr != nil {
