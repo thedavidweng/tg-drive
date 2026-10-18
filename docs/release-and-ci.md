@@ -144,6 +144,20 @@ required check.
 
 ### GUI packaging
 
+`.github/workflows/release-acceptance.yml` verifies published Windows assets
+on a disposable x86-64 Windows runner without rebuilding them. Its default
+acceptance is v1.0.1 GUI install, v1.0.2 overwrite upgrade, five-second
+installed GUI startup at each version, and uninstall including shortcuts and
+registry state. It also runs the published x86-64 CLI and bash/zsh/fish
+completion generation. Downloads must match their release checksum manifests.
+Manual dispatch accepts the target and source versions without their `v`
+prefixes. The workflow uploads a JSON receipt even if a probe fails.
+
+The receipt records native Authenticode observations for the installer,
+installed application and CLI. Installation success does not establish
+Windows signing, timestamp or trust-chain acceptance. This workflow does not
+test ARM64 execution, interactive login or authenticated Telegram operations.
+
 `make gui-package-<linux|darwin|windows>` builds td-gui and wraps it in the
 platform package, writing versioned artifacts and `.sha256` sidecars to
 `dist/gui/`. Linux also writes the adjacent
