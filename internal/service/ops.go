@@ -644,43 +644,59 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 	operationID := uuid.NewString()
 	moved, failed, remainingCount := 0, 0, len(sources)
 	started := false
-	err = a.operate(ctx, ch, locks, func(ctx context.Context) error {
+	err = a.operate(ctx, ch, locks, func(ctx context.Context) (operationErr error) {
 		if err := a.DB.StartDirectoryMove(ctx, operationID, ch.rowID, src, requestedDestination, to, len(sources), time.Now().UTC().Format(time.RFC3339)); err != nil {
 			return err
 		}
 		started = true
-		persist := func(status, lastPath, detail string) error {
-			return a.DB.UpdateDirectoryMove(ctx, operationID, status, lastPath, detail,
+		lastPath := ""
+		defer func() {
+			status, detail := "completed", ""
+			if operationErr != nil {
+				status, detail = "failed", operationErr.Error()
+			}
+			// Final bookkeeping must survive cancellation; remote writes keep
+			// using the operation context and never use this cleanup context.
+			progressCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := a.DB.UpdateDirectoryMove(progressCtx, operationID, status, lastPath, detail,
+				moved, failed, remainingCount, time.Now().UTC().Format(time.RFC3339)); err != nil {
+				operationErr = err
+			}
+		}()
+		persist := func(lastPath string) error {
+			return a.DB.UpdateDirectoryMove(ctx, operationID, "running", lastPath, "",
 				moved, failed, remainingCount, time.Now().UTC().Format(time.RFC3339))
 		}
-		fail := func(source string, err error) error {
+		fail := func(err error) error {
 			failed++
-			if progressErr := persist("failed", source, err.Error()); progressErr != nil {
-				return progressErr
-			}
 			return err
 		}
 		for i, source := range sources {
-			if err := persist("running", source, ""); err != nil {
+			if err := ctx.Err(); err != nil {
+				return telegram.MapError(err)
+			}
+			lastPath = source
+			if err := persist(source); err != nil {
 				return err
 			}
 			row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, source)
 			if err != nil {
-				return fail(source, apperr.Wrap(apperr.ErrDB, "lookup directory move source", err))
+				return fail(apperr.Wrap(apperr.ErrDB, "lookup directory move source", err))
 			}
 			if !found {
-				return fail(source, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q disappeared during directory move", source)))
+				return fail(apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q disappeared during directory move", source)))
 			}
 			if err := a.fileRecord(ch.rowID, ch.tgID, row).Rename(ctx, destinations[i]); err != nil {
-				return fail(source, err)
+				return fail(err)
 			}
 			moved++
 			remainingCount--
-			if err := persist("running", source, ""); err != nil {
+			if err := persist(source); err != nil {
 				return err
 			}
 		}
-		return persist("completed", sources[len(sources)-1], "")
+		return nil
 	})
 	if ae, ok := apperr.As(err); ok && started {
 		details := map[string]any{}
@@ -770,7 +786,7 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 		paths := append([]string{p}, children...)
 		operationID := uuid.NewString()
 		var out *DeleteResult
-		lockErr := a.operate(ctx, ch, paths, func(ctx context.Context) error {
+		lockErr := a.operate(ctx, ch, paths, func(ctx context.Context) (operationErr error) {
 			mode := a.Cfg.Delete.Mode
 			if opts.Tombstone {
 				mode = "tombstone"
@@ -779,28 +795,43 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 			if err := a.DB.StartDirectoryDelete(ctx, operationID, ch.rowID, p, mode, len(children), time.Now().UTC().Format(time.RFC3339)); err != nil {
 				return err
 			}
-			persist := func(status, lastPath, detail string) error {
-				return a.DB.UpdateDirectoryDelete(ctx, operationID, status, lastPath, detail,
+			var lastPath string
+			defer func() {
+				status, detail := "completed", ""
+				if operationErr != nil {
+					status, detail = "failed", operationErr.Error()
+				}
+				progressCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				if err := a.DB.UpdateDirectoryDelete(progressCtx, operationID, status, lastPath, detail,
+					out.Deleted, out.Failed, out.Remaining, time.Now().UTC().Format(time.RFC3339)); err != nil {
+					operationErr = err
+				}
+			}()
+			persist := func(lastPath, detail string) error {
+				return a.DB.UpdateDirectoryDelete(ctx, operationID, "running", lastPath, detail,
 					out.Deleted, out.Failed, out.Remaining, time.Now().UTC().Format(time.RFC3339))
 			}
 			var firstErr error
-			var lastPath string
 			for _, child := range children {
+				if err := ctx.Err(); err != nil {
+					return telegram.MapError(err)
+				}
 				lastPath = child
+				if err := persist(child, ""); err != nil {
+					return err
+				}
 				row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, child)
 				if err != nil {
 					firstErr = apperr.Wrap(apperr.ErrDB, "lookup directory delete source", err)
 					out.Failed++
-					if progressErr := persist("failed", child, firstErr.Error()); progressErr != nil {
-						return progressErr
-					}
 					break
 				}
 				if !found {
 					// A retry or repair may have retired this row after the
 					// initial enumeration; it is already complete.
 					out.Remaining--
-					if err := persist("running", child, ""); err != nil {
+					if err := persist(child, ""); err != nil {
 						return err
 					}
 					continue
@@ -816,31 +847,18 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 						if firstErr == nil {
 							firstErr = err
 						}
-						if progressErr := persist("running", child, err.Error()); progressErr != nil {
+						if progressErr := persist(child, err.Error()); progressErr != nil {
 							return progressErr
 						}
 						continue
 					}
 					out.Failed++
-					if progressErr := persist("failed", child, err.Error()); progressErr != nil {
-						return progressErr
-					}
 					firstErr = err
 					break
 				}
-				if err := persist("running", child, ""); err != nil {
+				if err := persist(child, ""); err != nil {
 					return err
 				}
-			}
-			if firstErr == nil {
-				out.Failed = 0
-				if err := persist("completed", lastPath, ""); err != nil {
-					return err
-				}
-				return nil
-			}
-			if err := persist("failed", lastPath, firstErr.Error()); err != nil {
-				return err
 			}
 			return firstErr
 		})

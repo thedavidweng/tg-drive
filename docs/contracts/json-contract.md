@@ -132,6 +132,13 @@ the already deleted rows are durable and the command is safe to retry. The
 latest counters and failed path remain available in the local index after the
 command exits.
 
+When a directory mutation's Telegram call returns cancellation, the command
+reports `ERR_CANCELLED` with its operation ID and partial counters.
+A media mutation rejected with a Telegram flood wait
+reports `ERR_TELEGRAM_RATE_LIMITED`, retaining `retry_after_seconds` and
+`retry_at` alongside those counters. The command stops rather than retrying the
+rejected remote call automatically.
+
 `mode` is `delete` or `tombstone`; album members are always deleted, so they
 report `delete`. `stale_manifest` is present only when the file's machine
 record was left stale on Telegram: a per-file `td-manifest:v1` record that
