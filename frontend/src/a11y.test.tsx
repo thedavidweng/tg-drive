@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 import { App } from "@/App"
 import { memoryBackend } from "@/testing/memory-backend"
@@ -95,7 +95,8 @@ test("a sheet without a field focuses its first control, not the page behind it"
   render(<App backend={memoryBackend(seed)} languages={["en"]} />)
   await screen.findByRole("list", { name: "Files in /" })
 
-  fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+  const fileRow = screen.getByRole("button", { name: "notes.txt" }).closest("li")!
+  fireEvent.click(within(fileRow).getByRole("button", { name: "Delete" }))
   const dialog = await screen.findByRole("dialog", { name: "Delete file" })
   const active = document.activeElement
   expect(active instanceof HTMLElement && dialog.contains(active)).toBe(true)

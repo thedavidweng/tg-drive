@@ -123,6 +123,106 @@ test("moving a file into a folder goes through the same sheet", async () => {
   expect(row("notes.txt", "/photos")).toBeTruthy()
 })
 
+test("moving a folder confirms its recursive scope and preserves nested contents", async () => {
+  const backend = treeBackend()
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(within(row("photos")).getByRole("button", { name: "Rename" }))
+  let dialog = screen.getByRole("dialog", { name: "Rename or move" })
+  expect(dialog.textContent).toContain("all indexed files and subfolders")
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+  expect(await backend.drive.list("/photos/2024")).toHaveLength(1)
+
+  fireEvent.click(within(row("photos")).getByRole("button", { name: "Rename" }))
+  dialog = screen.getByRole("dialog", { name: "Rename or move" })
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "New path" }), { target: { value: "/new/parent/archive" } })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }))
+  await screen.findByRole("button", { name: "new" })
+  expect(screen.queryByRole("button", { name: "photos" })).toBeNull()
+  expect((await backend.drive.list("/new"))[0].name).toBe("parent")
+  expect((await backend.drive.list("/new/parent"))[0].name).toBe("archive")
+  expect((await backend.drive.list("/new/parent/archive/2024"))[0].name).toBe("beach.jpg")
+  expect(row("notes.txt")).toBeTruthy()
+})
+
+test("deleting a folder confirms recursive irreversible deletion and respects cancel", async () => {
+  const backend = treeBackend()
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+
+  fireEvent.click(within(row("photos")).getByRole("button", { name: "Delete" }))
+  let dialog = screen.getByRole("dialog", { name: "Delete folder" })
+  expect(dialog.textContent).toContain("all indexed files and subfolders")
+  expect(dialog.textContent).toContain("cannot be undone")
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+  expect(await backend.drive.list("/photos/2024")).toHaveLength(1)
+
+  fireEvent.click(within(row("photos")).getByRole("button", { name: "Delete" }))
+  dialog = screen.getByRole("dialog", { name: "Delete folder" })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }))
+  await waitForElementToBeRemoved(() => screen.queryByRole("button", { name: "photos" }))
+  await expect(backend.drive.list("/photos/2024")).rejects.toMatchObject({ code: "ERR_REMOTE_NOT_FOUND" })
+  expect(row("notes.txt")).toBeTruthy()
+})
+
+test("a partial directory move refreshes the listing and retains retry details", async () => {
+  const backend = treeBackend()
+  let calls = 0
+  backend.drive.move = async (from, to, opts) => {
+    expect({ from, to, opts }).toEqual({ from: "/photos", to: "/archive", opts: { confirm: true } })
+    calls++
+    backend.mkdirForTest("/archive")
+    throw {
+      code: "ERR_TELEGRAM_RATE_LIMITED", category: "telegram", message: "Retry after 37 seconds",
+      details: { operation_id: "partial-move", moved: 1, failed: 1, remaining: 1 },
+    }
+  }
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+  fireEvent.click(within(row("photos")).getByRole("button", { name: "Rename" }))
+  const dialog = screen.getByRole("dialog", { name: "Rename or move" })
+  fireEvent.change(within(dialog).getByRole("textbox", { name: "New path" }), { target: { value: "/archive" } })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }))
+  await within(dialog).findByText("Retry after 37 seconds")
+  expect(dialog.textContent).toContain("1 moved, 1 failed, 1 remaining")
+  expect(dialog.textContent).toContain("partial-move")
+  await screen.findByRole("button", { name: "archive" })
+  expect(calls).toBe(1)
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+  expect(calls).toBe(1)
+})
+
+test("a partial directory deletion shows its progress and retries only on confirmation", async () => {
+  const backend = treeBackend()
+  const remove = backend.drive.delete
+  let calls = 0
+  backend.drive.delete = async (path, opts) => {
+    calls++
+    if (calls === 1) {
+      await remove("/photos/cat.jpg", opts)
+      throw {
+        code: "ERR_CHANNEL_PERMISSION", category: "telegram", message: "Delete permission lost",
+        details: { operation_id: "partial-delete", deleted: 1, failed: 1, remaining: 1 },
+      }
+    }
+    return remove(path, opts)
+  }
+  render(<App backend={backend} languages={["en"]} />)
+  await screen.findByRole("list", { name: "Files in /" })
+  fireEvent.click(within(row("photos")).getByRole("button", { name: "Delete" }))
+  const dialog = screen.getByRole("dialog", { name: "Delete folder" })
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }))
+  await within(dialog).findByText("Delete permission lost")
+  expect(dialog.textContent).toContain("1 deleted, 1 failed, 1 remaining")
+  expect(dialog.textContent).toContain("partial-delete")
+  expect(calls).toBe(1)
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }))
+  await waitForElementToBeRemoved(() => screen.queryByRole("button", { name: "photos" }))
+  expect(calls).toBe(2)
+  expect(row("notes.txt")).toBeTruthy()
+})
+
 test("sharing a file shows its invite link", async () => {
   render(<App backend={memoryBackend(seed)} languages={["en"]} />)
   await screen.findByRole("list", { name: "Files in /" })

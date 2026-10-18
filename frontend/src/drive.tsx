@@ -283,6 +283,7 @@ export function DriveScreen({ backend, uploadsDisabled = false }: { backend: Bac
         <MoveSheet
           backend={backend}
           entry={sheet.entry}
+          onChanged={reload}
           onDone={() => {
             setSheet(null)
             reload()
@@ -294,6 +295,7 @@ export function DriveScreen({ backend, uploadsDisabled = false }: { backend: Bac
         <DeleteSheet
           backend={backend}
           entry={sheet.entry}
+          onChanged={reload}
           onDone={() => {
             setSheet(null)
             reload()
@@ -441,6 +443,8 @@ function ListingCard({
           {e.type === "dir" && (
             <span className="flex w-[138px] shrink-0 items-center gap-0.5">
               <RowAction label={t("drive.download")} onClick={() => onDownload(e)} icon={Download} />
+              <RowAction label={t("drive.rename")} onClick={() => onAction("move", e)} icon={Pencil} />
+              <RowAction label={t("drive.delete")} onClick={() => onAction("delete", e)} icon={Trash2} />
             </span>
           )}
         </li>
@@ -618,11 +622,13 @@ function NewFolderSheet({
 function MoveSheet({
   backend,
   entry,
+  onChanged,
   onDone,
   onClose,
 }: {
   backend: Backend
   entry: Entry
+  onChanged: () => void
   onDone: () => void
   onClose: () => void
 }) {
@@ -641,11 +647,15 @@ function MoveSheet({
     } catch (err) {
       setError(err as BackendError)
       setBusy(false)
+      onChanged()
     }
   }
 
   return (
     <Sheet title={t("sheet.move.title")} onClose={onClose}>
+      {entry.type === "dir" && (
+        <p className="mb-3 text-[12.5px] text-fg-2">{t("sheet.move.folderBody", { name: entry.name })}</p>
+      )}
       <label className="block text-[12px] text-muted-foreground">
         {t("sheet.move.path")}
         <input
@@ -656,6 +666,16 @@ function MoveSheet({
         />
       </label>
       <SheetError error={error} />
+      {entry.type === "dir" && typeof error?.details?.operation_id === "string" && (
+        <p role="status" className="mt-2 text-[12px] text-muted-foreground">
+          {t("sheet.move.progress", {
+            moved: String(error.details.moved),
+            failed: String(error.details.failed),
+            remaining: String(error.details.remaining),
+            id: String(error.details.operation_id),
+          })}
+        </p>
+      )}
       <SheetButtons confirmLabel={t("sheet.confirm")} busy={busy} onConfirm={move} onClose={onClose} />
     </Sheet>
   )
@@ -664,11 +684,13 @@ function MoveSheet({
 function DeleteSheet({
   backend,
   entry,
+  onChanged,
   onDone,
   onClose,
 }: {
   backend: Backend
   entry: Entry
+  onChanged: () => void
   onDone: () => void
   onClose: () => void
 }) {
@@ -686,13 +708,26 @@ function DeleteSheet({
     } catch (err) {
       setError(err as BackendError)
       setBusy(false)
+      onChanged()
     }
   }
 
   return (
-    <Sheet title={t("sheet.delete.title")} onClose={onClose}>
-      <p className="text-[12.5px] text-fg-2">{t("sheet.delete.body", { name: entry.name })}</p>
+    <Sheet title={t(entry.type === "dir" ? "sheet.delete.folderTitle" : "sheet.delete.title")} onClose={onClose}>
+      <p className="text-[12.5px] text-fg-2">
+        {t(entry.type === "dir" ? "sheet.delete.folderBody" : "sheet.delete.body", { name: entry.name })}
+      </p>
       <SheetError error={error} />
+      {entry.type === "dir" && typeof error?.details?.operation_id === "string" && (
+        <p role="status" className="mt-2 text-[12px] text-muted-foreground">
+          {t("sheet.delete.progress", {
+            deleted: String(error.details.deleted),
+            failed: String(error.details.failed),
+            remaining: String(error.details.remaining),
+            id: String(error.details.operation_id),
+          })}
+        </p>
+      )}
       <SheetButtons
         confirmLabel={t("drive.delete")}
         destructive

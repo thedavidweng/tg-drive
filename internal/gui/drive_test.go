@@ -253,6 +253,49 @@ func TestDriveDeleteRemovesAFile(t *testing.T) {
 	}
 }
 
+func TestDriveDirectoryMutationsRequireConfirmation(t *testing.T) {
+	for _, action := range []string{"move", "delete"} {
+		t.Run(action, func(t *testing.T) {
+			seedDrive(t, map[string]string{
+				"/photos/cat.jpg":        "cat",
+				"/photos/2024/beach.jpg": "beach",
+				"/keep.txt":              "keep",
+			})
+			svc := openGUI(t)
+			ctx := context.Background()
+			run := func(confirm bool) error {
+				if action == "move" {
+					return svc.Drive.Move(ctx, "/photos", "/archive", gui.MoveOptions{Confirm: confirm})
+				}
+				_, err := svc.Drive.Delete(ctx, "/photos", gui.DeleteOptions{Confirm: confirm})
+				return err
+			}
+			var guiErr *gui.Error
+			if err := run(false); !errors.As(err, &guiErr) || guiErr.Code != "ERR_CONFIRMATION_REQUIRED" {
+				t.Fatalf("unconfirmed %s = %v", action, err)
+			}
+			if entries, err := svc.Drive.List(ctx, "/photos/2024"); err != nil || len(entries) != 1 {
+				t.Fatalf("unconfirmed mutation changed subtree: %+v, %v", entries, err)
+			}
+			if err := run(true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.Drive.List(ctx, "/photos"); err == nil {
+				t.Fatal("source directory still exists")
+			}
+			if action == "move" {
+				if entries, err := svc.Drive.List(ctx, "/archive/2024"); err != nil || len(entries) != 1 || entries[0].Name != "beach.jpg" {
+					t.Fatalf("moved subtree = %+v, %v", entries, err)
+				}
+			}
+			entries, err := svc.Drive.List(ctx, "/")
+			if err != nil || !slices.ContainsFunc(entries, func(e gui.Entry) bool { return e.Path == "/keep.txt" }) {
+				t.Fatalf("unrelated content changed: %+v, %v", entries, err)
+			}
+		})
+	}
+}
+
 func TestDriveShareReturnsTheChannelInviteLink(t *testing.T) {
 	seedDrive(t, map[string]string{"/notes.txt": "hello"})
 	svc := openGUI(t)

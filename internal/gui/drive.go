@@ -94,8 +94,8 @@ type MoveOptions struct {
 	Confirm bool `json:"confirm"`
 }
 
-// Move renames a remote file or moves it into another directory of the
-// bound channel. Directories cannot move (file-level moves only).
+// Move renames or moves a file or directory within the bound channel.
+// Directory moves retain durable per-file progress on partial failure.
 func (d *Drive) Move(ctx context.Context, from, to string, opts MoveOptions) error {
 	return toError(d.state.current().MoveFile(d.state.scoped(ctx), from, to, service.MoveOptions{Confirm: opts.Confirm}))
 }
@@ -114,8 +114,8 @@ type DeleteOutcome struct {
 	Path string `json:"path"`
 }
 
-// Delete removes a remote file from Telegram and the index. Directories
-// cannot be deleted (file-level deletes only).
+// Delete removes a file or directory from Telegram and the index.
+// Directory deletion retains durable per-file progress on partial failure.
 func (d *Drive) Delete(ctx context.Context, path string, opts DeleteOptions) (*DeleteOutcome, error) {
 	res, err := d.state.current().DeleteFile(d.state.scoped(ctx), path, service.DeleteOptions{Confirm: opts.Confirm})
 	if err != nil {

@@ -54,10 +54,11 @@ path passes through it. Consequences:
 
 - Empty directories live only in the local cache and disappear after a full
   scan.
-- Directory move/delete is unsupported — there is no directory object to
-  move; it would mean rewriting every descendant's caption.
-- Renames and moves are file-level caption edits, which is also why they
-  require `--confirm`: they mutate real Telegram messages.
+- Directory move/delete processes the indexed descendant files individually
+  and then updates the local directory nodes. A partial failure retains
+  progress so an explicit retry can process the remaining files.
+- Renames and moves edit file metadata, including when a directory is the
+  selected source. They require `--confirm`: they mutate real Telegram messages.
 
 ## Why writes are gated
 

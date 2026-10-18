@@ -28,8 +28,7 @@ Captured from a real run (local path shortened):
 
 ## Rename a file
 
-**Scenario:** `beach.jpg` should be called `trip.jpg`. Renames are file-level;
-directories cannot be moved or renamed.
+**Scenario:** `beach.jpg` should be called `trip.jpg`.
 
 Preview:
 
@@ -65,6 +64,24 @@ error: moving a remote file requires --confirm
 ```
 
 (exit code 10, error code `ERR_CONFIRMATION_REQUIRED`)
+
+### Move or delete a directory
+
+`td mv /photos /archive --confirm` moves every indexed file below `/photos`
+and its local empty subdirectories. `td rm /photos --confirm` removes the
+indexed files and local subtree. Moving into an existing directory retains
+the source basename.
+
+The desktop Drive listing exposes the same operations through each folder's
+Rename and Delete buttons. The confirmation sheet describes the recursive
+scope before any write. Deletion cannot be undone.
+
+Files are processed individually. A failure can leave a partially changed
+tree; the CLI error details and desktop sheet report completed, failed, and
+remaining counts plus the operation ID. The desktop refreshes the listing
+after failure and keeps the sheet open. Retry explicitly with the same source
+and destination, or confirm again in the sheet, to process the remaining
+files. There is no automatic retry.
 
 **Next step:** delete something you no longer need.
 

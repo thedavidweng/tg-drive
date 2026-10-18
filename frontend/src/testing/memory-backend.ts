@@ -714,28 +714,58 @@ export class MemoryBackend implements Backend {
     },
     move: async (from, to, opts) => {
       if (!opts.confirm) throw confirmationRequired
-      const { files, dirs } = this.tree()
-      const meta = files.get(from)
-      if (!meta) {
+      const { files, dirs, previews } = this.tree()
+      if (!files.has(from) && !dirs.has(from)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${from}" not found`)
       }
+      if (to === from) return
       const dest = dirs.has(to) ? (to === "/" ? "" : to) + "/" + baseName(from) : to
-      if (files.has(dest) || dirs.has(dest)) {
-        throw backendError("ERR_PATH_EXISTS", `file exists at destination: ${dest}`)
+      if (dest === from) return
+      if (dirs.has(from) && dest.startsWith(from + "/")) {
+        throw backendError("ERR_PATH_CONFLICT", "cannot move a directory into itself")
       }
-      files.delete(from)
-      files.set(dest, meta)
-      const { previews } = this.tree()
-      const content = previews.get(from)
-      previews.delete(from)
-      if (content) previews.set(dest, content)
+      const inside = (path: string) => path === from || path.startsWith(from + "/")
+      const movedFiles = [...files].filter(([path]) => inside(path))
+      const movedDirs = [...dirs].filter(inside)
+      const destination = (path: string) => dest + path.slice(from.length)
+      for (const path of [...movedFiles.map(([path]) => path), ...movedDirs]) {
+        const target = destination(path)
+        if (files.has(target) || (files.has(path) && dirs.has(target))) {
+          throw backendError("ERR_PATH_EXISTS", `file exists at destination: ${target}`)
+        }
+        for (let parent = parentOf(target); parent !== "/"; parent = parentOf(parent)) {
+          if (files.has(parent)) {
+            throw backendError("ERR_PATH_ANCESTOR_IS_FILE", `ancestor path is a file: ${parent}`)
+          }
+        }
+      }
+      for (let parent = parentOf(dest); parent !== "/"; parent = parentOf(parent)) {
+        dirs.add(parent)
+      }
+      for (const [path, meta] of movedFiles) {
+        files.delete(path)
+        files.set(destination(path), meta)
+        const content = previews.get(path)
+        previews.delete(path)
+        if (content) previews.set(destination(path), content)
+      }
+      for (const path of movedDirs) {
+        dirs.delete(path)
+        dirs.add(destination(path))
+      }
     },
     delete: async (path, opts) => {
       if (!opts.confirm) throw confirmationRequired
-      this.tree().previews.delete(path)
-      if (!this.tree().files.delete(path)) {
+      const { files, dirs, previews } = this.tree()
+      if (!files.has(path) && !dirs.has(path)) {
         throw backendError("ERR_REMOTE_NOT_FOUND", `remote path "${path}" not found`)
       }
+      const inside = (candidate: string) => candidate === path || candidate.startsWith(path + "/")
+      for (const file of [...files.keys()].filter(inside)) {
+        files.delete(file)
+        previews.delete(file)
+      }
+      for (const dir of [...dirs].filter(inside)) dirs.delete(dir)
       return { mode: "delete", path }
     },
     share: async (path) => {
