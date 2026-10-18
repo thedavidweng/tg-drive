@@ -47,6 +47,9 @@ td scan [remote-root]
   # --events streams NDJSON scan.stage / scan.item events, then the final
   # scan line (see the JSON contract)
 td ls [remote-path]
+td dedupe [remote-path]
+  # read-only content-hash audit; reports duplicate groups and files without
+  # hashes, and never deletes or rewrites Telegram messages
 td tree [remote-path]
   [--depth <n>]
 td completion [bash|zsh|fish|powershell]
