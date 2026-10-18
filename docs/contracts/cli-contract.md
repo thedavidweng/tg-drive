@@ -154,7 +154,9 @@ td mv <remote-from> <remote-to>
   # preserve source-relative paths; when the destination is an existing
   # directory, the source directory name is appended. All destinations are
   # validated before Telegram mutation. A remote failure may leave a partial
-  # move; retry the original source to move remaining indexed files.
+  # move; error details include operation_id, from, resolved to, moved,
+  # failed, and remaining. Retry the original source and requested destination
+  # to move remaining indexed files without changing the resolved destination.
 td rm <remote-path>
   [--tombstone] [--allow-stale-manifest]
   [--confirm] [--dry-run]

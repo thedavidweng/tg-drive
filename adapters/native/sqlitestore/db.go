@@ -256,6 +256,7 @@ var migrations = []migration{
 	// Older version-3 databases skipped both Transfer migrations.
 	{version: 4, run: repairTransferSchema},
 	{version: 5, stmts: []string{directoryDeleteProgressSQL}},
+	{version: 6, stmts: []string{directoryMoveProgressSQL}},
 }
 
 // repairTransferSchema converges both pre-Transfer and current v3 databases

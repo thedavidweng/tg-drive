@@ -601,10 +601,19 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 	if strings.HasPrefix(to+"/", src+"/") {
 		return apperr.New(apperr.ErrPathConflict, "cannot move a directory into itself: "+to)
 	}
-	for _, ap := range active {
-		if ap.IsDir && ap.Canonical == to {
-			to = strings.TrimSuffix(to, "/") + "/" + fsmodel.BaseName(src)
-			break
+	requestedDestination := to
+	retryDestination, retrying, err := a.DB.DirectoryMoveRetryDestination(ctx, ch.rowID, src, requestedDestination)
+	if err != nil {
+		return err
+	}
+	if retrying {
+		to = retryDestination
+	} else {
+		for _, ap := range active {
+			if ap.IsDir && ap.Canonical == to {
+				to = strings.TrimSuffix(to, "/") + "/" + fsmodel.BaseName(src)
+				break
+			}
 		}
 	}
 	var sources []string
@@ -632,21 +641,61 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 		destinations = append(destinations, dst)
 	}
 	locks := append(append([]string{}, sources...), destinations...)
-	return a.operate(ctx, ch, locks, func(ctx context.Context) error {
+	operationID := uuid.NewString()
+	moved, failed, remainingCount := 0, 0, len(sources)
+	started := false
+	err = a.operate(ctx, ch, locks, func(ctx context.Context) error {
+		if err := a.DB.StartDirectoryMove(ctx, operationID, ch.rowID, src, requestedDestination, to, len(sources), time.Now().UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
+		started = true
+		persist := func(status, lastPath, detail string) error {
+			return a.DB.UpdateDirectoryMove(ctx, operationID, status, lastPath, detail,
+				moved, failed, remainingCount, time.Now().UTC().Format(time.RFC3339))
+		}
+		fail := func(source string, err error) error {
+			failed++
+			if progressErr := persist("failed", source, err.Error()); progressErr != nil {
+				return progressErr
+			}
+			return err
+		}
 		for i, source := range sources {
+			if err := persist("running", source, ""); err != nil {
+				return err
+			}
 			row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, source)
 			if err != nil {
-				return apperr.Wrap(apperr.ErrDB, "lookup directory move source", err)
+				return fail(source, apperr.Wrap(apperr.ErrDB, "lookup directory move source", err))
 			}
 			if !found {
-				return apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q disappeared during directory move", source))
+				return fail(source, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q disappeared during directory move", source)))
 			}
 			if err := a.fileRecord(ch.rowID, ch.tgID, row).Rename(ctx, destinations[i]); err != nil {
+				return fail(source, err)
+			}
+			moved++
+			remainingCount--
+			if err := persist("running", source, ""); err != nil {
 				return err
 			}
 		}
-		return a.DB.RunDirectoryGC(ctx, ch.rowID)
+		return persist("completed", sources[len(sources)-1], "")
 	})
+	if ae, ok := apperr.As(err); ok && started {
+		details := map[string]any{}
+		for key, value := range ae.Details {
+			details[key] = value
+		}
+		details["operation_id"] = operationID
+		details["from"] = src
+		details["to"] = to
+		details["moved"] = moved
+		details["failed"] = failed
+		details["remaining"] = remainingCount
+		return ae.WithDetails(details)
+	}
+	return err
 }
 
 // DeleteOptions controls td rm behavior.

@@ -78,8 +78,8 @@ func TestMigrationRepairsPreTransferVersionCollision(t *testing.T) {
 				if err := reopened.Raw().QueryRow(`select max(version) from schema_version`).Scan(&version); err != nil {
 					t.Fatal(err)
 				}
-				if version != 5 {
-					t.Fatalf("schema version = %d, want 5", version)
+				if version != 6 {
+					t.Fatalf("schema version = %d, want 6", version)
 				}
 				var tables int
 				if err := reopened.Raw().QueryRow(`select count(*) from sqlite_master where type='table' and name='transfers'`).Scan(&tables); err != nil {

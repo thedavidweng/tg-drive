@@ -38,6 +38,8 @@ Version 5 adds `directory_delete_operations`, which records durable counters
 and the last attempted path for each directory delete. Opening a database at
 version 4 preserves all existing bindings, files, and transfer state while
 adding this progress table.
+Version 6 adds `directory_move_operations`, preserving existing bindings,
+indexed files, transfers and directory-delete history.
 All migration steps and their version records run in a transaction.
 
 ## Schema
@@ -236,6 +238,26 @@ create table directory_delete_operations (
 
 create index idx_directory_delete_operations_channel
   on directory_delete_operations(channel_id, updated_at);
+
+create table directory_move_operations (
+  id text primary key,
+  channel_id integer not null references channels(id),
+  source_path text not null,
+  requested_destination text not null,
+  destination_path text not null,
+  total integer not null,
+  moved integer not null default 0,
+  failed integer not null default 0,
+  remaining integer not null,
+  status text not null check(status in ('running', 'completed', 'failed')),
+  last_path text not null default '',
+  error text not null default '',
+  created_at text not null,
+  updated_at text not null
+);
+
+create index idx_directory_move_operations_channel
+  on directory_move_operations(channel_id, updated_at);
 ```
 
 ## Logical-root routing
@@ -341,6 +363,26 @@ file. `status` is `running`, `completed`, or `failed`. `deleted`, `failed`,
 and `remaining` are durable indexed-file counters, while `last_path` and
 `error` identify the most recent attempt. A retry creates a new operation row
 and never overwrites the previous partial result.
+
+## Directory move progress
+
+`directory_move_operations` records a UUID, channel, source, requested and
+resolved destination, total/moved/failed/remaining counters, status, last
+attempted source path and error. Its row is created under the path locks
+before remote writes; checkpoints precede each attempt and follow each
+successful rename. Status is `running`, `completed`, or `failed`.
+
+A failed directory move includes `operation_id` and counters in its error
+details. Retrying the same source and requested destination in the same
+channel uses the latest unfinished operation's resolved destination. This
+prevents a directory created by the partial move from changing destination
+interpretation on retry. Destinations are still validated before mutation.
+Each retry creates a separate history row. A completed operation does not
+affect the interpretation of a new move.
+
+Process interruption can leave a running checkpoint. The history is local;
+it does not make Telegram and SQLite atomic or replace repair after a crash
+between remote and index writes.
 
 ## Operation locks
 
