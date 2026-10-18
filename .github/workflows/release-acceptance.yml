@@ -1,0 +1,47 @@
+name: Published Windows acceptance
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/release-acceptance.yml
+      - scripts/acceptance-windows.ps1
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published version to install (without v)
+        required: true
+        default: '1.0.2'
+      upgrade_from:
+        description: Published version to upgrade from (without v)
+        required: true
+        default: '1.0.1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  windows-install:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify published install, upgrade, startup and uninstall
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACCEPT_VERSION: ${{ inputs.version || '1.0.2' }}
+          ACCEPT_UPGRADE_FROM: ${{ inputs.upgrade_from || '1.0.1' }}
+        run: ./scripts/acceptance-windows.ps1 -Version $env:ACCEPT_VERSION -UpgradeFrom $env:ACCEPT_UPGRADE_FROM
+      - name: Upload native receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: published-windows-acceptance
+          path: ${{ runner.temp }}/td-published-windows/receipt.json
+          if-no-files-found: error
