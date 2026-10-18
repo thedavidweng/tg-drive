@@ -16,6 +16,12 @@ Binary: `td`
 --no-wait
 ```
 
+`--channel` selects a bound drive. An exact Telegram ID takes precedence over
+a title with the same text. A title shared by multiple bound drives is rejected
+with `ERR_USAGE` (exit 2); select an explicit Telegram ID from `td status`.
+An unmatched selector returns `ERR_CHANNEL_NOT_FOUND`. Without `--channel`, the
+first bound drive remains the default.
+
 ## Commands
 
 ```text
