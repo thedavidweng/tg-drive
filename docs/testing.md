@@ -32,6 +32,15 @@ ls, get, mv, rm, scan, share — can be exercised this way.
 Integration tests under `internal/service` use the same fake for upload,
 scan, move, delete, repair, and crash-recovery paths.
 
+`directory_permission_test.go` revokes fake Telegram write permission before
+the first or second directory move/delete. The denied RPC retains
+`ERR_CHANNEL_PERMISSION`, failed history and the untouched remote messages,
+including manifests. After reopening SQLite, another denied explicit retry
+must leave remote history unchanged; restoring permission allows a new
+attempt to finish only the remaining files. Full scan reconstruction and
+downloaded bytes verify the result. This is offline permission-loss acceptance,
+not a live Telegram capability probe or authenticated-account acceptance.
+
 `directory_crash_test.go` kills a separate service test process before the
 second file's remote move/delete call, after the first file and its checkpoint
 are durable. Reopened SQLite and persistent fake Telegram retain the running
