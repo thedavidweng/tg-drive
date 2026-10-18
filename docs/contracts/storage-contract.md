@@ -34,6 +34,10 @@ Version 2 adds the `transfers` table to databases already at version 1.
 Version 3 adds `items_failed` to it.
 Version 4 converges pre-Transfer databases with colliding version numbers
 and current databases, creating the table and missing column only when absent.
+Version 5 adds `directory_delete_operations`, which records durable counters
+and the last attempted path for each directory delete. Opening a database at
+version 4 preserves all existing bindings, files, and transfer state while
+adding this progress table.
 All migration steps and their version records run in a transaction.
 
 ## Schema
@@ -213,6 +217,25 @@ create table transfers (
 
 create index idx_transfers_stage on transfers(stage);
 create index idx_transfers_created on transfers(created_at);
+
+create table directory_delete_operations (
+  id text primary key,
+  channel_id integer not null references channels(id),
+  path text not null,
+  mode text not null,
+  total integer not null,
+  deleted integer not null default 0,
+  failed integer not null default 0,
+  remaining integer not null,
+  status text not null check(status in ('running', 'completed', 'failed')),
+  last_path text not null default '',
+  error text not null default '',
+  created_at text not null,
+  updated_at text not null
+);
+
+create index idx_directory_delete_operations_channel
+  on directory_delete_operations(channel_id, updated_at);
 ```
 
 ## Logical-root routing
@@ -308,6 +331,16 @@ them.
   lists Transfers starts one), it deletes the rows in a terminal stage
   whose `finished_at` is more than 30 days old. Active Transfers and newer
   history are kept.
+
+## Directory delete progress
+
+`directory_delete_operations` records each directory `td rm` as a separate
+local operation. The command returns its UUID as `operation_id`; the row is
+created before the first Telegram mutation and updated after each indexed
+file. `status` is `running`, `completed`, or `failed`. `deleted`, `failed`,
+and `remaining` are durable indexed-file counters, while `last_path` and
+`error` identify the most recent attempt. A retry creates a new operation row
+and never overwrites the previous partial result.
 
 ## Operation locks
 

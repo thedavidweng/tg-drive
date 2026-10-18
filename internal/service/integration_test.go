@@ -691,6 +691,16 @@ func TestDirectoryDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if res.OperationID == "" {
+		t.Fatal("directory delete did not return an operation id")
+	}
+	progress, err := app.DB.DirectoryDeleteProgress(ctx, res.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != "completed" || progress.Total != 2 || progress.Deleted != 2 || progress.Remaining != 0 {
+		t.Fatalf("progress = %+v, want completed 2/2/0", progress)
+	}
 	if res.Deleted != 2 || res.Remaining != 0 {
 		t.Fatalf("result = %+v, want two deleted files and no remaining files", res)
 	}
@@ -718,10 +728,24 @@ func TestDirectoryDeleteResumesAfterTelegramFailure(t *testing.T) {
 	if res == nil || res.Deleted != 1 || res.Failed != 1 || res.Remaining != 1 {
 		t.Fatalf("partial result = %+v, want 1 deleted and 1 remaining after the failed item", res)
 	}
+	progress, err := app.DB.DirectoryDeleteProgress(ctx, res.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != "failed" || progress.Deleted != 1 || progress.Failed != 1 || progress.Remaining != 1 || progress.LastPath == "" || progress.Error == "" {
+		t.Fatalf("failed progress = %+v, want durable partial failure", progress)
+	}
 	tg.SetFailDeleteAfterFirst(false)
 	res, err = app.DeleteFile(ctx, "/retry", DeleteOptions{Confirm: true})
 	if err != nil {
 		t.Fatal(err)
+	}
+	progress, err = app.DB.DirectoryDeleteProgress(ctx, res.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != "completed" || progress.Total != 2 || progress.Deleted != 2 || progress.Remaining != 0 {
+		t.Fatalf("retry progress = %+v, want completed 2/2/0", progress)
 	}
 	if res.Deleted != 2 || res.Remaining != 0 {
 		t.Fatalf("retry result = %+v, want two remaining files deleted", res)

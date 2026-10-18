@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/core/fsmodel"
@@ -674,6 +675,7 @@ func (o DeleteOptions) Validate() error {
 type DeleteResult struct {
 	Mode          string `json:"mode"`
 	Path          string `json:"path"`
+	OperationID   string `json:"operation_id,omitempty"`
 	StaleManifest bool   `json:"stale_manifest,omitempty"`
 	Deleted       int    `json:"deleted,omitempty"`
 	Failed        int    `json:"failed,omitempty"`
@@ -717,23 +719,40 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	if directory {
 		sort.Strings(children)
 		paths := append([]string{p}, children...)
+		operationID := uuid.NewString()
 		var out *DeleteResult
 		lockErr := a.operate(ctx, ch, paths, func(ctx context.Context) error {
 			mode := a.Cfg.Delete.Mode
 			if opts.Tombstone {
 				mode = "tombstone"
 			}
-			out = &DeleteResult{Path: p, Mode: mode, Remaining: len(children)}
+			out = &DeleteResult{OperationID: operationID, Path: p, Mode: mode, Remaining: len(children)}
+			if err := a.DB.StartDirectoryDelete(ctx, operationID, ch.rowID, p, mode, len(children), time.Now().UTC().Format(time.RFC3339)); err != nil {
+				return err
+			}
+			persist := func(status, lastPath, detail string) error {
+				return a.DB.UpdateDirectoryDelete(ctx, operationID, status, lastPath, detail,
+					out.Deleted, out.Failed, out.Remaining, time.Now().UTC().Format(time.RFC3339))
+			}
 			var firstErr error
 			for i, child := range children {
 				row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, child)
 				if err != nil {
-					return apperr.Wrap(apperr.ErrDB, "lookup directory delete source", err)
+					firstErr = apperr.Wrap(apperr.ErrDB, "lookup directory delete source", err)
+					out.Failed = len(children) - i
+					out.Remaining = out.Failed
+					if progressErr := persist("failed", child, firstErr.Error()); progressErr != nil {
+						return progressErr
+					}
+					break
 				}
 				if !found {
 					// A retry or repair may have retired this row after the
 					// initial enumeration; it is already complete.
 					out.Remaining--
+					if err := persist("running", child, ""); err != nil {
+						return err
+					}
 					continue
 				}
 				res, err := a.deleteFileLocked(ctx, ch.rowID, ch.tgID, row, opts)
@@ -747,18 +766,34 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 						if firstErr == nil {
 							firstErr = err
 						}
+						if progressErr := persist("running", child, err.Error()); progressErr != nil {
+							return progressErr
+						}
 						continue
 					}
 					out.Failed = len(children) - i - 1
+					out.Remaining = out.Failed
+					if progressErr := persist("failed", child, err.Error()); progressErr != nil {
+						return progressErr
+					}
 					firstErr = err
 					break
+				}
+				if err := persist("running", child, ""); err != nil {
+					return err
 				}
 			}
 			if firstErr == nil {
 				out.Failed = 0
+				if err := persist("completed", "", ""); err != nil {
+					return err
+				}
 				return nil
 			}
 			out.Remaining = out.Failed
+			if err := persist("failed", out.Path, firstErr.Error()); err != nil {
+				return err
+			}
 			return firstErr
 		})
 		if lockErr != nil {
@@ -797,6 +832,7 @@ func withDeleteProgress(err error, result *DeleteResult) error {
 			details[key] = value
 		}
 		details["path"] = result.Path
+		details["operation_id"] = result.OperationID
 		details["deleted"] = result.Deleted
 		details["failed"] = result.Failed
 		details["remaining"] = result.Remaining

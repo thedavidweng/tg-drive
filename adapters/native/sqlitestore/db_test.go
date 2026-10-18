@@ -40,8 +40,8 @@ func TestMigrationRepairsPreTransferVersionCollision(t *testing.T) {
 		prepare string
 	}{
 		{"version 2 without transfers", `drop table transfers; delete from schema_version where version>=3`},
-		{"version 3 without transfers", `drop table transfers; delete from schema_version where version=4`},
-		{"version 3 without failed-item column", `alter table transfers drop column items_failed; delete from schema_version where version=4`},
+		{"version 3 without transfers", `drop table transfers; delete from schema_version where version>=4`},
+		{"version 3 without failed-item column", `alter table transfers drop column items_failed; delete from schema_version where version>=4`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "legacy.db")
@@ -78,8 +78,8 @@ func TestMigrationRepairsPreTransferVersionCollision(t *testing.T) {
 				if err := reopened.Raw().QueryRow(`select max(version) from schema_version`).Scan(&version); err != nil {
 					t.Fatal(err)
 				}
-				if version != 4 {
-					t.Fatalf("schema version = %d, want 4", version)
+				if version != 5 {
+					t.Fatalf("schema version = %d, want 5", version)
 				}
 				var tables int
 				if err := reopened.Raw().QueryRow(`select count(*) from sqlite_master where type='table' and name='transfers'`).Scan(&tables); err != nil {
