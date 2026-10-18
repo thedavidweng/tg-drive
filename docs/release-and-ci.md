@@ -16,7 +16,8 @@ For the td-gui artifacts (all driven by the pinned `wails3` CLI, see
 - nfpm through `wails3 tool package` for the Linux .deb
 - linuxdeploy with the GTK plugin through `wails3 generate appimage` for the
   AppImage (downloads linuxdeploy and AppRun from their upstream
-  "continuous" releases at package time)
+  "continuous" releases at package time); `zsyncmake` emits the adjacent
+  `.AppImage.zsync` sidecar
 - hdiutil through `wails3 tool package -format dmg` for the macOS .dmg
 - NSIS (`makensis`) for the Windows installer
 
@@ -54,9 +55,10 @@ needed for private repos.
   - `test` (25m): tidy, fmt, vet, lint, unit tests, race, `make build`, coverage
   - `gui` (45m, matrix of ubuntu/macos/windows): `make check-gui`,
     `make gui-build`, and a packaging dry run — `make gui-package-<os>` with
-    the placeholder version 0.0.0, uploaded as a workflow artifact. This is
-    what verifies the release packaging scripts on pull requests (see
-    "Desktop GUI" below).
+    the placeholder version 0.0.0, uploaded as a workflow artifact. Ubuntu
+    22.04 also runs the AppImage permission, metadata, offline non-root, and
+    visible-window smoke check. This verifies the release packaging scripts on
+    pull requests (see "Desktop GUI" below).
   - `snapshot` (30m): `goreleaser build --snapshot --clean` on its own runner
 - `.github/workflows/release-please.yml` manages release PRs, tags, and
   releases, then dispatches packaging.
@@ -67,10 +69,11 @@ needed for private repos.
     archives, checksums, cosign signatures and SBOMs. The post-universal hook
     waits for Apple acceptance and checks the binary ticket online; raw
     binaries cannot hold a stapled ticket. Snapshots skip Apple signing.
-  - `gui-linux` (ubuntu-latest and ubuntu-24.04-arm), `gui-darwin`
+  - `gui-linux` (ubuntu-22.04 and ubuntu-22.04-arm), `gui-darwin`
     (macos-latest), `gui-windows` (windows-latest): build td-gui natively
-    and upload the packages to the same release. All three `need` the
-    `release` job so the GitHub Release exists before they upload.
+    and upload the packages to the same release. Linux runs the same final
+    AppImage smoke acceptance before upload. All three `need` the `release`
+    job so the GitHub Release exists before they upload.
 - `.github/workflows/ui-preview.yml` records screenshots and a video of
   the real GUI on UI pull requests (see "UI preview" below).
 
@@ -87,17 +90,19 @@ needed for private repos.
    SBOMs to the release.
 7. The `gui-linux`, `gui-darwin`, and `gui-windows` jobs build td-gui
    natively per OS and upload the dmg, NSIS installer, AppImage, and deb
-   (plus `.sha256` sidecars) to the same release.
+   (plus `.sha256` sidecars and Linux `.AppImage.zsync` sidecars) to the same
+   release.
 8. The tap repository's Sync Releases workflow updates the Homebrew
    cask from the published assets (daily cron; may lag by up to a day,
    or run it manually after a release).
 
 ## Desktop GUI
 
-`td-gui` (ADR 0031) is built with the `gui` tag and is not part of the
-default gates: it links the platform webview through cgo (GTK 4 and
-WebKitGTK 6.0 on Linux), while `mise run check` stays CGO-free and needs no
-webview.
+`td-gui` (ADR 0031) is built with the `gui` tag everywhere and the additional
+`gtk3` tag on Linux. The latter selects Wails' GTK3/WebKitGTK 4.1 backend,
+which is available on the Ubuntu 22.04 glibc 2.35 baseline. It is not part of
+the default gates: desktop webviews need cgo, while `mise run check` stays
+CGO-free and needs no webview.
 
 The GUI toolchain is pinned in `mise.toml`: Bun is the frontend package
 manager, test runner, and Vite runtime (ADR 0042). Node LTS, also pinned
@@ -116,7 +121,7 @@ mise run check-gui     # or: make check-gui
 `check-gui` runs, in order:
 
 - `make gui-bindings-check`: regenerates the TypeScript bindings
-  (`wails3 generate bindings -f '-tags gui' -ts -i -d frontend/bindings
+  (`wails3 generate bindings -f '-tags gui,gtk3' -ts -i -d frontend/bindings
   ./cmd/td-gui`; the layout has `main.go` away from `frontend/`, so Wails'
   default Taskfiles do not apply) and fails on any drift — the bindings are
   committed.
@@ -125,27 +130,29 @@ mise run check-gui     # or: make check-gui
   behaviour tests (`bun test`).
 - `make gui-go-check`: builds the frontend into `frontend/dist` (the
   `gui`-tagged `frontend` package embeds it, so the Go side cannot compile
-  without it), then `go vet -tags gui ./...` and `go test -tags gui` over
-  the GUI packages.
+  without it), then `go vet -tags gui,gtk3 ./...` and `go test -tags gui,gtk3`
+  over the GUI packages.
 
 `make gui-build` additionally produces `dist/td-gui`.
 
 The CI `gui` job runs the same targets natively on Ubuntu, macOS, and
-Windows. On Ubuntu it first installs `libgtk-4-dev` and `libwebkitgtk-6.0-dev`;
-on Windows it installs `make` and `nsis` via Chocolatey (the runners ship
-Git Bash but no make). Tools come from `mise-action` at the pinned versions.
-The job is informational, not a required check.
+Windows. On Ubuntu 22.04 it first installs `libgtk-3-dev`,
+`libwebkit2gtk-4.1-dev`, and `zsync`; on Windows it installs `make` and `nsis`
+via Chocolatey (the runners ship Git Bash but no make). Tools come from
+`mise-action` at the pinned versions. The job is informational, not a
+required check.
 
 ### GUI packaging
 
 `make gui-package-<linux|darwin|windows>` builds td-gui and wraps it in the
 platform package, writing versioned artifacts and `.sha256` sidecars to
-`dist/gui/`. The targets depend on `gui-frontend-build` and `gui-tools`, and
-each is a thin wrapper over a script under `build/<os>/package.sh`, so what
-CI runs is exactly what runs locally:
+`dist/gui/`. Linux also writes the adjacent
+`td-gui_<version>_linux_<arch>.AppImage.zsync` sidecar. The targets depend on
+`gui-frontend-build` and `gui-tools`, and each is a thin wrapper over a script
+under `build/<os>/package.sh`, so what CI runs is exactly what runs locally:
 
 ```sh
-make gui-package-linux GUI_VERSION=1.2.3    # .deb + AppImage (host arch)
+make gui-package-linux GUI_VERSION=1.2.3    # .deb + AppImage + .zsync (host arch)
 make gui-package-darwin GUI_VERSION=1.2.3   # universal .dmg
 make gui-package-windows GUI_VERSION=1.2.3  # NSIS installer (x64)
 ```
@@ -158,6 +165,15 @@ GTK plugin for the AppImage, hdiutil for the DMG, plus icon (.ico/.icns),
 (desktop file, nfpm config, Info.plist, NSIS script) are plain files under
 `build/`, not the Wails Taskfile layout (which assumes `main.go` beside
 `frontend/`).
+
+Before upload, Ubuntu 22.04 CI runs
+`xvfb-run -a bash scripts/smoke-gui-appimage.sh dist/gui/*.AppImage`.
+The smoke check is REQUIRED to find publicly traversable AppImage directories,
+executable `AppRun` and `usr/bin/td-gui`, desktop/icon metadata, a non-empty
+`.zsync`, and embedded `gh-releases-zsync` update information. It then starts
+the extracted AppRun as the non-root runner in an isolated network namespace
+under Xvfb, requires a visible window within 30 seconds, keeps the process
+alive for three seconds, and stores a screenshot in CI.
 
 macOS release builds set `RELEASE_BUILD=true`. The package script signs
 and notarizes the App, staples its ticket and checks Gatekeeper before
@@ -323,10 +339,13 @@ The td-gui artifacts (each with a `.sha256` sidecar), for tag
 td-gui_1.2.3_darwin_universal.dmg
 td-gui_1.2.3_windows_x86_64-installer.exe
 td-gui_1.2.3_linux_x86_64.AppImage
+td-gui_1.2.3_linux_x86_64.AppImage.zsync
 td-gui_1.2.3_linux_aarch64.AppImage
+td-gui_1.2.3_linux_aarch64.AppImage.zsync
 td-gui_1.2.3_linux_amd64.deb
 td-gui_1.2.3_linux_arm64.deb
 ```
 
 The arch names follow each ecosystem's convention: `amd64`/`arm64` for deb,
-`x86_64`/`aarch64` for AppImage.
+`x86_64`/`aarch64` for AppImage. The AppImage update information is
+`gh-releases-zsync|thedavidweng|tg-drive|latest|td-gui_*_linux_<arch>.AppImage.zsync`.

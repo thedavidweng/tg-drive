@@ -19,7 +19,7 @@ contents:
     dst: /usr/share/icons/hicolor/512x512/apps/td-gui.png
   - src: build/linux/td-gui.desktop
     dst: /usr/share/applications/td-gui.desktop
-# GTK 4 + WebKitGTK 6.0 runtime (Ubuntu 24.04+ / Debian 13+ package names).
+# GTK3 + WebKitGTK 4.1 runtime (Ubuntu 22.04+ / Debian with WebKit 4.1).
 depends:
-  - libgtk-4-1
-  - libwebkitgtk-6.0-4
+  - libgtk-3-0
+  - libwebkit2gtk-4.1-0

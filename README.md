@@ -97,10 +97,21 @@ nothing for it: the `td` binary and packages stay exactly as they are.
 | Windows (x64) | `td-gui_<version>_windows_x86_64-installer.exe` |
 | Linux | `td-gui_<version>_linux_x86_64.AppImage`, `td-gui_<version>_linux_amd64.deb` (arm64: `aarch64` / `arm64`) |
 
-Each artifact has a `.sha256` sidecar. The Linux `.deb` depends on
-`libgtk-4-1` and `libwebkitgtk-6.0-4` (Ubuntu 24.04+ / Debian 13+); install
-with `sudo apt install ./td-gui_<version>_linux_amd64.deb`. The AppImage is
-self-contained: `chmod +x` and run.
+Each binary artifact has a `.sha256` sidecar. Linux GUI packages are built on
+Ubuntu 22.04 with Wails' `gui,gtk3` tags and WebKitGTK 4.1, so the AppImage's
+glibc baseline is Ubuntu 22.04 (glibc 2.35). The `.deb` depends on
+`libgtk-3-0` and `libwebkit2gtk-4.1-0`; install with `sudo apt install
+./td-gui_<version>_linux_amd64.deb`. Each AppImage also ships a `.zsync`
+sidecar for AppImageUpdate; the embedded update information uses GitHub
+Releases (`gh-releases-zsync|thedavidweng|tg-drive|latest`) and the matching
+architecture-specific sidecar. The AppImage is self-contained: `chmod +x` and
+run.
+
+For a local Ubuntu 22.04 artifact smoke check (as used before release upload):
+
+```sh
+xvfb-run -a bash scripts/smoke-gui-appimage.sh dist/gui/td-gui_<version>_linux_<arch>.AppImage
+```
 
 > [!NOTE]
 > **The GUI artifacts are unsigned.** macOS and Windows warn on first

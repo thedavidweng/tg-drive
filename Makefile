@@ -52,10 +52,11 @@ goreleaser-check:
 	goreleaser check
 
 # ---- desktop GUI (ADR 0031) ------------------------------------------------
-# The GUI links the platform webview through cgo (GTK4 and WebKitGTK 6.0 on
-# Linux), so these targets are kept out of ci-local. Wails' own Taskfiles
-# assume main.go beside frontend/, which this layout does not have.
-GUI_TAGS=gui
+# The Linux GUI links Wails' GTK3 and WebKitGTK 4.1 stack, which is available
+# on the Ubuntu 22.04 glibc baseline. These targets stay out of ci-local;
+# Wails' own Taskfiles assume main.go beside frontend/, which this layout does
+# not have.
+GUI_TAGS=gui,gtk3
 GUI_BINDINGS=frontend/bindings
 # Pinned here rather than in mise.toml: mise's go backend drops the leading
 # v when it invokes go install, and that query fails on some platforms.
@@ -65,7 +66,7 @@ WAILS3=$(DIST_DIR)/bin/wails3
 gui-tools:
 	@mkdir -p $(DIST_DIR)/bin
 	@test -f $(DIST_DIR)/bin/.wails3-$(WAILS3_VERSION) || { \
-		GOBIN=$(CURDIR)/$(DIST_DIR)/bin go install github.com/wailsapp/wails/v3/cmd/wails3@$(WAILS3_VERSION) && \
+		GOBIN=$(CURDIR)/$(DIST_DIR)/bin go install -tags gtk3 github.com/wailsapp/wails/v3/cmd/wails3@$(WAILS3_VERSION) && \
 		touch $(DIST_DIR)/bin/.wails3-$(WAILS3_VERSION); }
 
 gui-bindings: gui-tools
