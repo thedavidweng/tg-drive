@@ -735,12 +735,13 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 					out.Deleted, out.Failed, out.Remaining, time.Now().UTC().Format(time.RFC3339))
 			}
 			var firstErr error
-			for i, child := range children {
+			var lastPath string
+			for _, child := range children {
+				lastPath = child
 				row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, child)
 				if err != nil {
 					firstErr = apperr.Wrap(apperr.ErrDB, "lookup directory delete source", err)
-					out.Failed = len(children) - i
-					out.Remaining = out.Failed
+					out.Failed++
 					if progressErr := persist("failed", child, firstErr.Error()); progressErr != nil {
 						return progressErr
 					}
@@ -771,8 +772,7 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 						}
 						continue
 					}
-					out.Failed = len(children) - i - 1
-					out.Remaining = out.Failed
+					out.Failed++
 					if progressErr := persist("failed", child, err.Error()); progressErr != nil {
 						return progressErr
 					}
@@ -785,13 +785,12 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 			}
 			if firstErr == nil {
 				out.Failed = 0
-				if err := persist("completed", "", ""); err != nil {
+				if err := persist("completed", lastPath, ""); err != nil {
 					return err
 				}
 				return nil
 			}
-			out.Remaining = out.Failed
-			if err := persist("failed", out.Path, firstErr.Error()); err != nil {
+			if err := persist("failed", lastPath, firstErr.Error()); err != nil {
 				return err
 			}
 			return firstErr

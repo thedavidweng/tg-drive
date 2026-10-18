@@ -103,7 +103,9 @@ success result or error details instead of returning an unsupported error.
 ```
 
 For a directory, `deleted`, `failed`, and `remaining` are included when
-non-zero. They count indexed files, not directory nodes:
+non-zero. They count indexed files, not directory nodes. `failed` counts
+attempted files that failed; `remaining` includes both the failed files still
+active in the index and the unattempted files:
 
 ```json
 {
