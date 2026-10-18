@@ -23,17 +23,28 @@ builds:
       - arm64
     main: ./cmd/td
     binary: td
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X github.com/thedavidweng/tg-drive/internal/version.Version={{.Version}}
       - -X github.com/thedavidweng/tg-drive/internal/version.Commit={{.Commit}}
       - -X github.com/thedavidweng/tg-drive/internal/version.Date={{.Date}}
       - -X github.com/thedavidweng/tg-drive/internal/version.BuiltBy=goreleaser
+    hooks:
+      post:
+        - cmd: >-
+            bash -c 'if [[ "{{ .Os }}" == darwin ]]; then
+            exec bash build/darwin/sign-and-notarize.sh "{{ .Path }}" "{{ .IsSnapshot }}";
+            fi'
+          output: true
 
 universal_binaries:
-  - replace: true
+  - replace: false
     hooks:
-      post: bash build/darwin/sign-and-notarize.sh "{{ .Path }}" "{{ .IsSnapshot }}"
+      post:
+        - cmd: bash build/darwin/sign-and-notarize.sh "{{ .Path }}" "{{ .IsSnapshot }}"
+          output: true
 
 archives:
   - formats:

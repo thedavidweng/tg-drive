@@ -65,8 +65,8 @@ needed for private repos.
 - `.github/workflows/release.yml` runs on `v*` tags or when dispatched with
   a tag name:
   - `release` (macos-latest, 90m): GoReleaser cross-builds the CGO-free CLI,
-    then signs and notarizes the universal macOS binary before creating
-    archives, checksums, cosign signatures and SBOMs. The post-universal hook
+    then signs and notarizes each macOS architecture and the universal binary
+    before creating archives, checksums, cosign signatures and SBOMs. The hooks
     waits for Apple acceptance and checks the binary ticket online; raw
     binaries cannot hold a stapled ticket. Snapshots skip Apple signing.
   - `gui-linux` (ubuntu-22.04 and ubuntu-22.04-arm), `gui-darwin`
@@ -307,6 +307,8 @@ the macOS universal binary renders as `universal`):
 
 ```text
 td_darwin_universal.tar.gz
+td_darwin_x86_64.tar.gz
+td_darwin_arm64.tar.gz
 td_linux_x86_64.tar.gz
 td_linux_arm64.tar.gz
 td_windows_x86_64.zip
@@ -349,3 +351,8 @@ td-gui_1.2.3_linux_arm64.deb
 The arch names follow each ecosystem's convention: `amd64`/`arm64` for deb,
 `x86_64`/`aarch64` for AppImage. The AppImage update information is
 `gh-releases-zsync|thedavidweng|tg-drive|latest|td-gui_*_linux_<arch>.AppImage.zsync`.
+
+Published download, executable and unpacked payload measurements are recorded
+in [release size accounting](release-size-accounting.md). The Universal macOS
+CLI name remains available for the installer and pull-based tap sync; adding
+thin macOS archives does not remove the Linux downloads or packages.
