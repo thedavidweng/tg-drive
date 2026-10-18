@@ -154,7 +154,9 @@ test("a failed preview call keeps Download, and Download opens the download shee
   expect(screen.queryByRole("dialog", { name: "Download" })).toBeNull()
   // The sheet closes from a native document listener; some runners commit
   // that state update after the event dispatch returns.
-  await waitFor(() => expect(sheet.isConnected).toBe(false))
+  await waitFor(() => {
+    if (sheet.isConnected) throw new Error("Download sheet remains connected")
+  })
   expect(screen.getByRole("dialog", { name: "cat.png" })).toBe(dialog)
 })
 
