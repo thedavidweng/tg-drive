@@ -272,14 +272,8 @@ func TestE2EFriendlyFileErrors(t *testing.T) {
 	if _, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, nil, "", "mv", "--confirm", "/dir", "/other"); err != nil {
 		t.Fatalf("directory mv: %v %s", err, stderr)
 	}
-	for _, args := range [][]string{{"rm", "--confirm", "/other"}} {
-		_, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, nil, "", args...)
-		if err == nil {
-			t.Fatalf("%v should fail", args)
-		}
-		if !strings.Contains(stderr, "directory") {
-			t.Fatalf("%v error should explain directories are unsupported, got %q", args, stderr)
-		}
+	if _, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, nil, "", "rm", "--confirm", "/other"); err != nil {
+		t.Fatalf("directory rm: %v %s", err, stderr)
 	}
 
 	// The discussion group is created by init and is never a drive candidate.

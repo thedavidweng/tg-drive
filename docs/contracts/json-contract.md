@@ -85,8 +85,9 @@ its confirmed parts.
 `ERR_TRANSFER_NOT_FOUND` (category `validation`, exit code 2) means no
 Transfer has the ID `td transfers show` was given.
 
-`ERR_DIRECTORY_MOVE_UNSUPPORTED` and `ERR_DIRECTORY_DELETE_UNSUPPORTED` carry
-the offending remote directory in `details.path`.
+`ERR_DIRECTORY_MOVE_UNSUPPORTED` carries the offending remote directory in
+`details.path`. Directory deletion now reports durable progress in the
+success result or error details instead of returning an unsupported error.
 
 ## Delete result
 
@@ -100,6 +101,23 @@ the offending remote directory in `details.path`.
   }
 }
 ```
+
+For a directory, `deleted`, `failed`, and `remaining` are included when
+non-zero. They count indexed files, not directory nodes:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "path": "/docs",
+    "mode": "delete",
+    "deleted": 3
+  }
+}
+```
+
+When a later mutation fails, the same counts are present in `error.details`;
+the already deleted rows are durable and the command is safe to retry.
 
 `mode` is `delete` or `tombstone`; album members are always deleted, so they
 report `delete`. `stale_manifest` is present only when the file's machine
