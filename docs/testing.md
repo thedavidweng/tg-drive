@@ -32,6 +32,15 @@ ls, get, mv, rm, scan, share — can be exercised this way.
 Integration tests under `internal/service` use the same fake for upload,
 scan, move, delete, repair, and crash-recovery paths.
 
+`directory_crash_test.go` kills a separate service test process before the
+second file's remote move/delete call, after the first file and its checkpoint
+are durable. Reopened SQLite and persistent fake Telegram retain the running
+checkpoint; after lease expiry an explicit retry finishes the remaining files
+without changing the killed attempt's history or nesting its destination again.
+A full scan reconstructs the resulting remote tree, and moved downloads retain
+their original bytes. This exercises termination between files, not the crash
+window between a remote write and its index commit.
+
 Binary-level end-to-end tests live in `internal/app`
 (`e2e_lifecycle_test.go`, `e2e_album_test.go`, `e2e_hardening_test.go`,
 `e2e_events_test.go`, `e2e_scan_events_test.go`,
