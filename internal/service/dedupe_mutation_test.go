@@ -57,6 +57,31 @@ type dedupeReadClient struct {
 	read      func(io.Writer) error
 }
 
+func TestWithDedupeProgressPreservesFailurePath(t *testing.T) {
+	result := &DedupeDeleteResult{
+		Path:         "/copies",
+		Groups:       2,
+		Retained:     2,
+		Deleted:      1,
+		DeletedPaths: []string{"/copies/b"},
+	}
+	failure := apperr.New(apperr.ErrPathConflict, "changed").WithDetails(map[string]any{
+		"path": "/copies/c",
+	})
+	ae, ok := apperr.As(withDedupeProgress(failure, result))
+	if !ok || ae.Details["path"] != "/copies/c" || ae.Details["dedupe_path"] != "/copies" {
+		t.Fatalf("preserved details = %+v", ae.Details)
+	}
+	if ae.Details["deleted"] != 1 {
+		t.Fatalf("progress details = %+v", ae.Details)
+	}
+
+	ae, ok = apperr.As(withDedupeProgress(context.Canceled, result))
+	if !ok || ae.Code != apperr.ErrCancelled {
+		t.Fatalf("cancellation = %v", ae)
+	}
+}
+
 func (c *dedupeReadClient) DownloadMedia(ctx context.Context, channelID int64, messageID int, dst io.Writer) error {
 	if messageID == c.messageID {
 		return c.read(dst)

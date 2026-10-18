@@ -125,6 +125,8 @@ out-of-band Telegram edits after verification.
 `groups` and `retained` describe the plan; `deleted` and `deleted_paths` report
 completed retirements. On failure these progress fields are in `error.details`,
 alongside the original error's details (including FloodWait retry information).
+The cleanup root is recorded as `error.details.dedupe_path`; an underlying
+failure's `error.details.path` remains the failed member path when present.
 Cleanup stops at the first error and never automatically retries.
 
 Deletion follows `delete.mode` and the existing album retirement rules.

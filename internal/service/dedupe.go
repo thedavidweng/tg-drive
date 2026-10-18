@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -216,17 +217,22 @@ func (a *App) duplicateRow(ctx context.Context, channelID int64, file DuplicateF
 }
 
 func withDedupeProgress(err error, result *DedupeDeleteResult) error {
-	if ae, ok := apperr.As(err); ok {
-		details := map[string]any{}
-		for key, value := range ae.Details {
-			details[key] = value
+	ae, ok := apperr.As(err)
+	if !ok {
+		if errors.Is(err, context.Canceled) {
+			ae = apperr.Cancelled()
+		} else {
+			ae = apperr.Wrap(apperr.ErrDB, "dedupe cleanup", err)
 		}
-		details["path"] = result.Path
-		details["groups"] = result.Groups
-		details["retained"] = result.Retained
-		details["deleted"] = result.Deleted
-		details["deleted_paths"] = result.DeletedPaths
-		return ae.WithDetails(details)
 	}
-	return err
+	details := map[string]any{}
+	for key, value := range ae.Details {
+		details[key] = value
+	}
+	details["dedupe_path"] = result.Path
+	details["groups"] = result.Groups
+	details["retained"] = result.Retained
+	details["deleted"] = result.Deleted
+	details["deleted_paths"] = result.DeletedPaths
+	return ae.WithDetails(details)
 }

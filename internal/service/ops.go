@@ -963,13 +963,13 @@ func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, row
 	if err := a.DB.MarkDeleted(ctx, row.ID, now); err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "mark deleted", err)
 	}
+	out := &DeleteResult{Path: row.CanonicalPath, Mode: retired.mode, StaleManifest: retired.stale != nil}
 	if err := a.DB.RunDirectoryGC(ctx, channelID); err != nil {
-		return nil, err
+		return out, err
 	}
 	if retired.recordErr != nil {
 		return nil, retired.recordErr
 	}
-	out := &DeleteResult{Path: row.CanonicalPath, Mode: retired.mode, StaleManifest: retired.stale != nil}
 	if err := retired.staleErr(row.CanonicalPath, opts.AllowStaleManifest); err != nil {
 		return out, err
 	}
