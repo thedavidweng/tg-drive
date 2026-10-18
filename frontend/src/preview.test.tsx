@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 import { App } from "@/App"
 import type { PreviewDescriptor } from "@/backend"
@@ -152,7 +152,9 @@ test("a failed preview call keeps Download, and Download opens the download shee
   // Escape belongs to the topmost dialog: it closes the sheet, not the preview.
   fireEvent.keyDown(document.activeElement!, { key: "Escape" })
   expect(screen.queryByRole("dialog", { name: "Download" })).toBeNull()
-  expect(sheet.isConnected).toBe(false)
+  // The sheet closes from a native document listener; some runners commit
+  // that state update after the event dispatch returns.
+  await waitFor(() => expect(sheet.isConnected).toBe(false))
   expect(screen.getByRole("dialog", { name: "cat.png" })).toBe(dialog)
 })
 
