@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.2](https://github.com/thedavidweng/tg-drive/compare/v1.0.1...v1.0.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **packaging:** make td-gui AppImage compatible with Ubuntu 22.04 ([#152](https://github.com/thedavidweng/tg-drive/issues/152)) ([0d5e663](https://github.com/thedavidweng/tg-drive/commit/0d5e6632dda7575d7f60250c3212b2a01cf9c6b6))
+* **release:** measure and preserve architecture-specific assets ([9f9a380](https://github.com/thedavidweng/tg-drive/commit/9f9a380a3ba4a2b4769634af0dd626b5dd59897b))
+* **release:** serialize memory-heavy cross-builds ([#150](https://github.com/thedavidweng/tg-drive/issues/150)) ([70eef86](https://github.com/thedavidweng/tg-drive/commit/70eef86231d2bc4df871f356e11524c063bbbf75))
+
 ## [1.0.1](https://github.com/thedavidweng/tg-drive/compare/v1.0.0...v1.0.1) (2026-10-17)
 
 
