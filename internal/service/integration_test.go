@@ -691,6 +691,16 @@ func TestDirectoryDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if res.OperationID == "" {
+		t.Fatal("directory delete did not return an operation id")
+	}
+	progress, err := app.DB.DirectoryDeleteProgress(ctx, res.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != "completed" || progress.Total != 2 || progress.Deleted != 2 || progress.Remaining != 0 {
+		t.Fatalf("progress = %+v, want completed 2/2/0", progress)
+	}
 	if res.Deleted != 2 || res.Remaining != 0 {
 		t.Fatalf("result = %+v, want two deleted files and no remaining files", res)
 	}
@@ -715,16 +725,41 @@ func TestDirectoryDeleteResumesAfterTelegramFailure(t *testing.T) {
 	if appErrCode(t, err) != apperr.ErrTelegramRPC {
 		t.Fatalf("code = %s, want ERR_TELEGRAM_RPC", appErrCode(t, err))
 	}
-	if res == nil || res.Deleted != 1 || res.Failed != 1 || res.Remaining != 1 {
-		t.Fatalf("partial result = %+v, want 1 deleted and 1 remaining after the failed item", res)
+	if res == nil || res.Deleted != 1 || res.Failed != 1 || res.Remaining != 2 {
+		t.Fatalf("partial result = %+v, want 1 deleted, 1 failed, and 2 remaining", res)
 	}
+	progress, err := app.DB.DirectoryDeleteProgress(ctx, res.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != "failed" || progress.Deleted != 1 || progress.Failed != 1 || progress.Remaining != 2 || progress.LastPath != "/retry/b.txt" || progress.Error == "" {
+		t.Fatalf("failed progress = %+v, want durable partial failure", progress)
+	}
+	failedProgress := progress
 	tg.SetFailDeleteAfterFirst(false)
 	res, err = app.DeleteFile(ctx, "/retry", DeleteOptions{Confirm: true})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if res.OperationID == failedProgress.ID {
+		t.Fatal("retry overwrote the failed operation")
+	}
+	progress, err = app.DB.DirectoryDeleteProgress(ctx, res.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Status != "completed" || progress.Total != 2 || progress.Deleted != 2 || progress.Remaining != 0 {
+		t.Fatalf("retry progress = %+v, want completed 2/2/0", progress)
+	}
 	if res.Deleted != 2 || res.Remaining != 0 {
 		t.Fatalf("retry result = %+v, want two remaining files deleted", res)
+	}
+	progress, err = app.DB.DirectoryDeleteProgress(ctx, failedProgress.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress != failedProgress {
+		t.Fatalf("retry changed failed history: got %+v, want %+v", progress, failedProgress)
 	}
 	for _, path := range []string{"/retry/a.txt", "/retry/b.txt", "/retry/c.txt"} {
 		if got := fileStatus(t, app, path); got != "deleted" {

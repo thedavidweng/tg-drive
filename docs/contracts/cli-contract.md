@@ -160,7 +160,8 @@ td rm <remote-path>
   [--confirm] [--dry-run]
   # a machine record left stale (manifest not redacted, album inventory
   # not rewritten) fails with ERR_TELEGRAM_RPC after the file is removed;
-  # --allow-stale-manifest exits 0 with stale_manifest: true instead
+  # --allow-stale-manifest exits 0 with stale_manifest: true instead;
+  # directory results also include operation_id for durable progress
 td share [remote-path]
 td adopt [message-id] [remote-path]
   [--unmanaged] [--into <dir>]

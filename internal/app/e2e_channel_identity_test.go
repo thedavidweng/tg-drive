@@ -35,7 +35,7 @@ func TestE2EChannelIdentityIsolation(t *testing.T) {
 	editIndex(`update channels set title=? where tg_channel_id=?`, secondID, firstID)
 	// Model a pre-Transfer v3 database. Reopening through the binary must
 	// retain both bindings and their same-path files while repairing v4.
-	editIndex(`drop table transfers; delete from schema_version where version=4`)
+	editIndex(`drop table transfers; delete from schema_version where version>=4`)
 	for i, id := range []string{firstID, secondID} {
 		dest := filepath.Join(dir, fmt.Sprintf("download-%d.txt", i))
 		runE2EJSON(t, bin, cfgPath, dbPath, statePath, "--channel", id, "get", "/same.txt", dest)

@@ -284,7 +284,9 @@ Flags:
 Delete a remote file or every indexed file below a remote directory. Each
 directory member is retired independently; if Telegram rejects a later
 mutation, the command returns the durable progress in its error details and a
-retry processes only the remaining active files.
+retry processes only the remaining active files. Directory results include an
+`operation_id`; the local index keeps the counters and last attempted path for
+that operation, and a retry gets a new id.
 
 ```text
 Usage:

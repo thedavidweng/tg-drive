@@ -103,7 +103,9 @@ success result or error details instead of returning an unsupported error.
 ```
 
 For a directory, `deleted`, `failed`, and `remaining` are included when
-non-zero. They count indexed files, not directory nodes:
+non-zero. They count indexed files, not directory nodes. `failed` counts
+attempted files that failed; `remaining` includes both the failed files still
+active in the index and the unattempted files:
 
 ```json
 {
@@ -111,13 +113,17 @@ non-zero. They count indexed files, not directory nodes:
   "data": {
     "path": "/docs",
     "mode": "delete",
+    "operation_id": "550e8400-e29b-41d4-a716-446655440000",
     "deleted": 3
   }
 }
 ```
 
 When a later mutation fails, the same counts are present in `error.details`;
-the already deleted rows are durable and the command is safe to retry.
+the already deleted rows are durable and the command is safe to retry. The
+`operation_id` identifies a durable `directory_delete_operations` row; its
+latest counters and failed path remain available in the local index after the
+command exits.
 
 `mode` is `delete` or `tombstone`; album members are always deleted, so they
 report `delete`. `stale_manifest` is present only when the file's machine
