@@ -11,6 +11,7 @@ import (
 	"github.com/gotd/td/telegram/query"
 	"github.com/gotd/td/telegram/query/dialogs"
 	"github.com/gotd/td/tg"
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	tgtelegram "github.com/thedavidweng/tg-drive/core/telegram"
 )
 
@@ -82,13 +83,10 @@ func (c *Client) resolveChannelPeer(ctx context.Context, api *tg.Client, titleOr
 			return &tg.InputPeerChannel{ChannelID: id, AccessHash: hash}, nil
 		}
 		titleOrID = strconv.FormatInt(id, 10)
-	} else if id, ok := c.channelByTitle(titleOrID); ok {
-		if hash, ok := c.channelAccessHash(id); ok {
-			return &tg.InputPeerChannel{ChannelID: id, AccessHash: hash}, nil
-		}
 	}
 
 	var found *tg.InputPeerChannel
+	var ambiguous, exactID bool
 	err := query.GetDialogs(api).ForEach(ctx, func(ctx context.Context, elem dialogs.Elem) error {
 		pch, ok := elem.Peer.(*tg.InputPeerChannel)
 		if !ok {
@@ -102,17 +100,27 @@ func (c *Client) resolveChannelPeer(ctx context.Context, api *tg.Client, titleOr
 		}
 		c.rememberChannelTitle(pch.ChannelID, title)
 		idStr := fmt.Sprintf("%d", pch.ChannelID)
-		if idStr == titleOrID || channelTitleMatches(titleOrID, title) {
+		if idStr == titleOrID {
 			found = &tg.InputPeerChannel{ChannelID: pch.ChannelID, AccessHash: pch.AccessHash}
+			exactID = true
 			return errResolveDone
+		}
+		if channelTitleMatches(titleOrID, title) {
+			if found != nil && found.ChannelID != pch.ChannelID {
+				ambiguous = true
+			}
+			found = &tg.InputPeerChannel{ChannelID: pch.ChannelID, AccessHash: pch.AccessHash}
 		}
 		return nil
 	})
 	if err != nil && !errors.Is(err, errResolveDone) {
 		return nil, mapRPCError(err)
 	}
+	if ambiguous && !exactID {
+		return nil, apperr.New(apperr.ErrUsage, "channel title is ambiguous; use the Telegram ID from td channels list")
+	}
 	if found != nil {
 		return found, nil
 	}
-	return nil, errors.New("channel not found")
+	return nil, apperr.New(apperr.ErrChannelNotFound, "channel not found")
 }

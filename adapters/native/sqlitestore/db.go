@@ -450,8 +450,8 @@ func LockKey(channelID int64, canonicalPath string) string {
 }
 
 // AcquireLock acquires the lock, re-entrant for the same owner, or takes over
-// a stale (expired) lock. Lock timestamps are RFC3339 UTC strings written by
-// this package; the comparisons below rely on that lexicographic ordering.
+// a stale (expired) lock. Lock timestamps are RFC3339Nano UTC strings written
+// by this package; the comparisons below rely on that lexicographic ordering.
 // a stale (expired) lock. It is a single conditional write so two racing
 // processes cannot both observe a free lock: the loser gets the typed
 // operation-locked error rather than a raw database-busy failure.
@@ -463,7 +463,7 @@ func (d *DB) AcquireLock(ctx context.Context, key, owner string, ttl time.Durati
 		on conflict(key) do update set owner_token=excluded.owner_token, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at
 		where operation_locks.owner_token = excluded.owner_token
 		   or operation_locks.expires_at < ?`,
-		key, owner, now.Format(time.RFC3339), expires.Format(time.RFC3339), now.Format(time.RFC3339))
+		key, owner, now.Format(time.RFC3339Nano), expires.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return apperr.Wrap(apperr.ErrDB, "acquire lock", err)
 	}
@@ -477,7 +477,7 @@ func (d *DB) AcquireLock(ctx context.Context, key, owner string, ttl time.Durati
 // lock was lost (taken over after expiry), so long operations abort instead of
 // running unprotected.
 func (d *DB) RenewLock(ctx context.Context, key, owner string, ttl time.Duration) error {
-	expires := time.Now().UTC().Add(ttl).Format(time.RFC3339)
+	expires := time.Now().UTC().Add(ttl).Format(time.RFC3339Nano)
 	res, err := d.sql.ExecContext(ctx, `update operation_locks set expires_at=? where key=? and owner_token=?`,
 		expires, key, owner)
 	if err != nil {
@@ -499,7 +499,7 @@ func (d *DB) ReleaseLock(ctx context.Context, key, owner string) error {
 func (d *DB) LockHeld(ctx context.Context, key string) (bool, error) {
 	var n int
 	err := d.sql.QueryRowContext(ctx, `select count(*) from operation_locks where key=? and expires_at > ?`,
-		key, time.Now().UTC().Format(time.RFC3339)).Scan(&n)
+		key, time.Now().UTC().Format(time.RFC3339Nano)).Scan(&n)
 	if err != nil {
 		return false, err
 	}

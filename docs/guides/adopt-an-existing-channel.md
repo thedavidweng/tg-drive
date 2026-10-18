@@ -15,6 +15,10 @@ are masked). Blocks that depend on your own data are prefixed *Illustrative*.
 (`td init <root> --bind-channel`) and `td ls /` shows nothing. The messages
 are there; the index just does not know them yet.
 
+If multiple channels share a title, select the Telegram ID from
+`td channels list` with `td init <root> --bind-channel=<id>`. Binding by an
+ambiguous title is rejected before local bindings or discussion groups change.
+
 Preview first — a dry run edits nothing on Telegram and writes no file rows:
 
 ```sh

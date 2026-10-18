@@ -22,6 +22,15 @@ a title with the same text. A title shared by multiple bound drives is rejected
 with `ERR_USAGE` (exit 2); select an explicit Telegram ID from `td status`.
 An unmatched selector returns `ERR_CHANNEL_NOT_FOUND`.
 
+Initial `init --bind-channel=<title-or-id>` selection applies the same identity
+rule to remote Telegram dialogs: an exact ID wins, and a title must be unique
+across the complete dialog lookup, including the optional ` [TD]` title alias.
+Ambiguous titles return `ERR_USAGE` (exit 2); use an ID from `td channels list`.
+A failed or interrupted lookup leaves the binding unchanged. When an init
+caller supplies a title to resolve or create, creation occurs only after
+`ERR_CHANNEL_NOT_FOUND` (exit 4), never after ambiguity, authentication,
+rate-limit or transport errors.
+
 `--root` selects a drive by its persisted local-root binding, independent of
 Telegram titles. Relative paths are made absolute against the current directory;
 symlinks are not resolved. It overrides `TD_CHANNEL`; combining it with an

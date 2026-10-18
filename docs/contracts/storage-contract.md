@@ -416,9 +416,11 @@ path:<channel_id>:<canonical_path>
 ```
 
 Acquisition is a single atomic conditional write: the winner inserts or takes
-over a stale row (`expires_at < now`) with its own `owner_token`; the loser
-receives the typed `ERR_OPERATION_LOCKED` error, never a raw database-busy
-failure. A process may release only locks with its own `owner_token`.
+over a stale row (`expires_at < now`) with its own `owner_token`; lock times are
+stored as UTC RFC3339Nano text so short configured TTLs do not lose sub-second
+lease precision. The loser receives the typed `ERR_OPERATION_LOCKED` error,
+never a raw database-busy failure. A process may release only locks with its
+own `owner_token`.
 
 Long operations (uploads, moves, deletes, imports, album rewrites) hold their
 locks with **heartbeat renewal**: the holder renews at one third of the TTL

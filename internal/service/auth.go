@@ -132,7 +132,7 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 		ch, err = a.TG.ResolveChannel(ctx, bind)
 	case channelTitle != "":
 		ch, err = a.TG.ResolveChannel(ctx, channelTitle)
-		if err != nil {
+		if ae, ok := apperr.As(err); ok && ae.Code == apperr.ErrChannelNotFound {
 			ch, err = a.TG.CreateChannel(ctx, channelTitle)
 		}
 	default:
