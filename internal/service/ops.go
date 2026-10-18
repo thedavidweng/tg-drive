@@ -668,18 +668,22 @@ func (o DeleteOptions) Validate() error {
 	return nil
 }
 
-// DeleteResult reports how a file was removed. StaleManifest marks a
-// manifest record that could not be redacted or an album inventory that
-// could not be rewritten.
+// DeleteResult reports how a file or directory was removed. Directory deletes
+// commit each file independently, so Deleted and Failed describe durable
+// progress when a later Telegram mutation stops the batch.
 type DeleteResult struct {
 	Mode          string `json:"mode"`
 	Path          string `json:"path"`
 	StaleManifest bool   `json:"stale_manifest,omitempty"`
+	Deleted       int    `json:"deleted,omitempty"`
+	Failed        int    `json:"failed,omitempty"`
+	Remaining     int    `json:"remaining,omitempty"`
 }
 
-// DeleteFile removes a remote file according to the delete policy. A record
-// left stale fails with ERR_TELEGRAM_RPC unless AllowStaleManifest is set;
-// the file is removed regardless, and the result is returned with the error.
+// DeleteFile removes a remote file or all indexed files below a directory
+// according to the delete policy. Directory members commit independently, so
+// a failed Telegram mutation leaves the completed rows retired and a retry
+// processes only the remaining active rows.
 func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOptions) (*DeleteResult, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, err
@@ -696,12 +700,74 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	if err != nil {
 		return nil, err
 	}
+	var directory bool
+	var children []string
 	for _, ap := range active {
 		if ap.IsDir && ap.Canonical == p {
-			return nil, apperr.New(apperr.ErrDirectoryDeleteUnsupported,
-				fmt.Sprintf("%s is a directory; td rm deletes single files (list them with td ls %s)", p, p)).
-				WithDetails(map[string]any{"path": p})
+			directory = true
 		}
+		if !ap.IsDir && (p == "/" || strings.HasPrefix(ap.Canonical, p+"/")) {
+			directory = true
+			children = append(children, ap.Canonical)
+		}
+	}
+	if p == "/" {
+		directory = true
+	}
+	if directory {
+		sort.Strings(children)
+		paths := append([]string{p}, children...)
+		var out *DeleteResult
+		lockErr := a.operate(ctx, ch, paths, func(ctx context.Context) error {
+			mode := a.Cfg.Delete.Mode
+			if opts.Tombstone {
+				mode = "tombstone"
+			}
+			out = &DeleteResult{Path: p, Mode: mode, Remaining: len(children)}
+			var firstErr error
+			for i, child := range children {
+				row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, child)
+				if err != nil {
+					return apperr.Wrap(apperr.ErrDB, "lookup directory delete source", err)
+				}
+				if !found {
+					// A retry or repair may have retired this row after the
+					// initial enumeration; it is already complete.
+					out.Remaining--
+					continue
+				}
+				res, err := a.deleteFileLocked(ctx, ch.rowID, ch.tgID, row, opts)
+				if res != nil {
+					out.Deleted++
+					out.Remaining--
+					out.StaleManifest = out.StaleManifest || res.StaleManifest
+				}
+				if err != nil {
+					if res != nil && res.StaleManifest {
+						if firstErr == nil {
+							firstErr = err
+						}
+						continue
+					}
+					out.Failed = len(children) - i - 1
+					firstErr = err
+					break
+				}
+			}
+			if firstErr == nil {
+				out.Failed = 0
+				return nil
+			}
+			out.Remaining = out.Failed
+			return firstErr
+		})
+		if lockErr != nil {
+			if out != nil {
+				return out, withDeleteProgress(lockErr, out)
+			}
+			return nil, lockErr
+		}
+		return out, nil
 	}
 	row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, p)
 	if err != nil {
@@ -719,6 +785,24 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 		return err
 	})
 	return out, lockErr
+}
+
+func withDeleteProgress(err error, result *DeleteResult) error {
+	if result == nil {
+		return err
+	}
+	if ae, ok := apperr.As(err); ok {
+		details := map[string]any{}
+		for key, value := range ae.Details {
+			details[key] = value
+		}
+		details["path"] = result.Path
+		details["deleted"] = result.Deleted
+		details["failed"] = result.Failed
+		details["remaining"] = result.Remaining
+		return ae.WithDetails(details)
+	}
+	return err
 }
 
 func (a *App) deleteFileLocked(ctx context.Context, channelID, tgChID int64, row sqlitestore.FileRow, opts DeleteOptions) (*DeleteResult, error) {

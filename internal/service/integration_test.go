@@ -676,15 +676,60 @@ func TestAutoRenameCompoundExtension(t *testing.T) {
 	}
 }
 
-func TestDirectoryDeleteUnsupported(t *testing.T) {
+func TestDirectoryDelete(t *testing.T) {
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
-	local := writeLocal(t, "x")
-	_, _ = app.UploadFile(ctx, local, "/dir/f.txt", ConflictFail, false, UploadOptions{})
-	_, err := app.DeleteFile(ctx, "/dir", DeleteOptions{Confirm: true})
-	if code := appErrCode(t, err); code != apperr.ErrDirectoryDeleteUnsupported {
-		t.Fatalf("code = %s, want ERR_DIRECTORY_DELETE_UNSUPPORTED", code)
+	first, second := writeLocal(t, "first"), writeLocal(t, "second")
+	if _, err := app.UploadFile(ctx, first, "/dir/nested/a.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.UploadFile(ctx, second, "/dir/b.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := app.DeleteFile(ctx, "/dir", DeleteOptions{Confirm: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Deleted != 2 || res.Remaining != 0 {
+		t.Fatalf("result = %+v, want two deleted files and no remaining files", res)
+	}
+	for _, path := range []string{"/dir/nested/a.txt", "/dir/b.txt"} {
+		if got := fileStatus(t, app, path); got != "deleted" {
+			t.Fatalf("status for %s = %q, want deleted", path, got)
+		}
+	}
+}
+
+func TestDirectoryDeleteResumesAfterTelegramFailure(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+	for _, path := range []string{"/retry/a.txt", "/retry/b.txt", "/retry/c.txt"} {
+		if _, err := app.UploadFile(ctx, writeLocal(t, path), path, ConflictFail, false, UploadOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tg.SetFailDeleteAfterFirst(true)
+	res, err := app.DeleteFile(ctx, "/retry", DeleteOptions{Confirm: true})
+	if appErrCode(t, err) != apperr.ErrTelegramRPC {
+		t.Fatalf("code = %s, want ERR_TELEGRAM_RPC", appErrCode(t, err))
+	}
+	if res == nil || res.Deleted != 1 || res.Failed != 1 || res.Remaining != 1 {
+		t.Fatalf("partial result = %+v, want 1 deleted and 1 remaining after the failed item", res)
+	}
+	tg.SetFailDeleteAfterFirst(false)
+	res, err = app.DeleteFile(ctx, "/retry", DeleteOptions{Confirm: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Deleted != 2 || res.Remaining != 0 {
+		t.Fatalf("retry result = %+v, want two remaining files deleted", res)
+	}
+	for _, path := range []string{"/retry/a.txt", "/retry/b.txt", "/retry/c.txt"} {
+		if got := fileStatus(t, app, path); got != "deleted" {
+			t.Fatalf("status for %s = %q, want deleted", path, got)
+		}
 	}
 }
 

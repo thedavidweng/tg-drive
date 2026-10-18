@@ -57,7 +57,7 @@ Files
   init        Initialize a local root
   ls          List remote directory
   mv          Move or rename remote file
-  rm          Delete remote file
+  rm          Delete remote file or directory
   tree        Show remote tree
 
 Maintenance
@@ -281,7 +281,10 @@ Flags:
 
 ### td rm
 
-Delete remote file.
+Delete a remote file or every indexed file below a remote directory. Each
+directory member is retired independently; if Telegram rejects a later
+mutation, the command returns the durable progress in its error details and a
+retry processes only the remaining active files.
 
 ```text
 Usage:

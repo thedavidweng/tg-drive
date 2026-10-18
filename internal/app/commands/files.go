@@ -330,7 +330,7 @@ func NewRmCmd(rt Runtime) *cobra.Command {
 	var tombstone, allowStaleManifest, confirm, dryRun bool
 	c := &cobra.Command{
 		Use:   "rm <remote-path>",
-		Short: "Delete remote file",
+		Short: "Delete remote file or directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
@@ -359,7 +359,13 @@ func NewRmCmd(rt Runtime) *cobra.Command {
 					fmt.Fprintln(os.Stderr, "warning: the file's machine record could not be updated and remains stale on Telegram")
 				}
 				if data.Mode == "tombstone" {
+					if data.Deleted > 0 {
+						return r.SuccessLine("tombstoned %d files under %s", data.Deleted, args[0])
+					}
 					return r.SuccessLine("tombstoned %s (hidden from td ls; the Telegram message is kept with a tombstone caption)", args[0])
+				}
+				if data.Deleted > 0 {
+					return r.SuccessLine("deleted %d files under %s", data.Deleted, args[0])
 				}
 				return r.SuccessLine("deleted %s", args[0])
 			}
