@@ -49,13 +49,14 @@ Bare CLI executables have no stapled ticket; Apple's
 [notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
 explains that standalone binaries cannot currently carry a stapled ticket.
 
-Windows signing and native installation remain unaccepted. Direct inspection
+Windows signing remains unaccepted. Direct inspection
 of the published v1.0.2 installer, its extracted `td-gui.exe`, and both CLI
 ZIP executables found PE security-directory offset and size `0/0`; green
 Windows CI does not supply
 an Authenticode certificate, trust chain, or timestamp. Linux native package
 acceptance, package-manager install/update paths, secured macOS enforcement,
-and native Intel/Windows installation remain tracked in #124 and #106.
+and native Intel/Windows ARM64 installation remain tracked in #124 and #106.
+Native Windows x86-64 installer acceptance is recorded below.
 
 ## Published v1.0.2 Linux and Windows follow-up
 
@@ -119,6 +120,31 @@ exit 0 with nonempty output. Tests removed the temporary files. This does
 not establish Linux GUI/ARM64/package-manager acceptance, native Windows or
 Intel Mac acceptance, secured-host Gatekeeper enforcement, interactive GUI
 behavior, or authenticated Telegram acceptance.
+
+## Published Windows x86-64 installation
+
+[Native acceptance run 39163826647](https://github.com/thedavidweng/tg-drive/actions/runs/39163826647)
+used a disposable Windows x86-64 runner and checksum-verified published
+assets. The v1.0.1 installer completed a fresh per-user install; the v1.0.2
+installer overwrote it in the same directory. At both versions the installed
+GUI reported the expected version, registry DisplayVersion and both shortcuts
+matched, and the GUI process remained alive for five seconds. The v1.0.2
+uninstaller removed the installation directory, registry entry and shortcuts.
+The published x86-64 CLI reported v1.0.2 and the release source above, and
+generated nonempty bash, zsh and fish completions.
+
+| Published v1.0.2 executable | Installed/extracted SHA-256 |
+| --- | --- |
+| `td.exe` | `613c74826017767bc7d189bb7063184eaec55a2748abc9b12669c40574790ba0` |
+| `td-gui.exe` | `e2dacf9097476e740e57e4c1466d77d552ced60afba53c8795dce6a51b634df8` |
+
+The run's `published-windows-acceptance` artifact contains the native JSON
+receipt, all three downloaded asset hashes, versions and Authenticode
+observations. The v1.0.1/v1.0.2 installers, both installed GUI versions and
+the v1.0.2 CLI all report `NotSigned`, with no signer or timestamp certificate.
+Installation success does not establish signing, trust-chain or timestamp
+acceptance. No ARM64 execution, SmartScreen enforcement, interactive login
+or authenticated Telegram operation was tested.
 
 ## Published v1.0.1 downloads and payloads
 
@@ -282,7 +308,9 @@ The published Windows installer and its embedded `td-gui.exe` both have zero
 PE security-directory offset and size: neither carries Authenticode. The
 Windows release workflow has no signing step. macOS acceptance does not
 complete #106; it remains open for a Windows signing identity, timestamped
-application/installer signatures and native installation/verification.
+application/installer signatures and native signature/trust verification.
+The v1.0.2 x86-64 installer lifecycle is accepted above; signed Windows
+release and verification remain unfulfilled.
 
 ## Reproduction
 
