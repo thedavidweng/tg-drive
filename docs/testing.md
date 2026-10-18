@@ -32,6 +32,14 @@ ls, get, mv, rm, scan, share — can be exercised this way.
 Integration tests under `internal/service` use the same fake for upload,
 scan, move, delete, repair, and crash-recovery paths.
 
+`directory_reconstruction_test.go` rejects the second file's SQLite commit
+after its remote move/delete succeeds. After reopening the index, an explicit
+full scan reconstructs the remote outcome and retry processes only the last
+remaining file. The failed attempt's history is retained, unrelated content
+survives, and moved downloads retain their bytes. This injects a commit failure
+against the offline fake; it does not exercise every remote-write window or
+provide automatic crash replay.
+
 Binary-level end-to-end tests live in `internal/app`
 (`e2e_lifecycle_test.go`, `e2e_album_test.go`, `e2e_hardening_test.go`,
 `e2e_events_test.go`, `e2e_scan_events_test.go`,
