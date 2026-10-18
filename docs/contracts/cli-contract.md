@@ -66,8 +66,9 @@ td scan [remote-root]
   # scan line (see the JSON contract)
 td ls [remote-path]
 td dedupe [remote-path]
-  # read-only content-hash audit; reports duplicate groups and files without
-  # hashes, and never deletes or rewrites Telegram messages
+  [--delete --confirm]
+  # read-only by default; --delete retains the first path in each duplicate
+  # group and retires the remaining Telegram messages
 td tree [remote-path]
   [--depth <n>]
 td completion [bash|zsh|fish|powershell]

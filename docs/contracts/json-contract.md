@@ -96,6 +96,44 @@ operation and creates a new history row. Successful `mv` output is unchanged.
 Directory deletion reports durable progress in the success result or error
 details.
 
+## Dedupe
+
+`td dedupe [remote-path]` is read-only unless `--delete --confirm` is passed.
+The destructive result retains the lexicographically first path in each
+duplicate group and reports completed retirements:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "path": "/docs",
+    "groups": 1,
+    "retained": 1,
+    "deleted": 1,
+    "deleted_paths": ["/docs/copy.txt"],
+    "reclaimable_bytes": 1024
+  }
+}
+```
+
+Cleanup locks all group paths, rechecks indexed hashes and sizes, and streams
+each member's remote bytes through BLAKE3 before the first Telegram mutation.
+A changed or missing keeper/duplicate stops cleanup. Files without hashes are
+untouched. Locks coordinate cooperating td operations; they cannot prevent
+out-of-band Telegram edits after verification.
+
+`groups` and `retained` describe the plan; `deleted` and `deleted_paths` report
+completed retirements. On failure these progress fields are in `error.details`,
+alongside the original error's details (including FloodWait retry information).
+Cleanup stops at the first error and never automatically retries.
+
+Deletion follows `delete.mode` and the existing album retirement rules.
+`reclaimable_bytes` is the audit estimate, not measured storage freed;
+tombstones keep media bytes. A remote success followed by an index commit
+failure may be absent from the reported completed count. Run `td scan --full`
+to reconcile that window before explicitly retrying. No dedupe batch history
+or automatic crash replay is persisted.
+
 ## Delete result
 
 ```json

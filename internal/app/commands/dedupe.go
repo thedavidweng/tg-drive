@@ -4,26 +4,48 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/thedavidweng/tg-drive/internal/service"
 )
 
-// NewDedupeCmd reports content-addressed duplicates without deleting or
-// rewriting any Telegram messages.
+// NewDedupeCmd audits content-addressed duplicates and optionally removes
+// duplicate members after an explicit confirmation.
 func NewDedupeCmd(rt Runtime) *cobra.Command {
-	return &cobra.Command{
+	var deleteDuplicates, confirm bool
+	c := &cobra.Command{
 		Use:   "dedupe [remote-path]",
-		Short: "Audit indexed files for duplicate content",
+		Short: "Audit or delete indexed duplicate content",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r := rt.Renderer()
+			path := "/"
+			if len(args) == 1 {
+				path = args[0]
+			}
+			if deleteDuplicates {
+				opts := service.DedupeDeleteOptions{Confirm: confirm}
+				if err := opts.Validate(); err != nil {
+					return r.Error(err)
+				}
+				app, cleanup, err := rt.OpenApp(cmd)
+				if err != nil {
+					return r.Error(err)
+				}
+				defer cleanup()
+				result, err := app.DeleteDuplicates(cmd.Context(), path, opts)
+				if err != nil {
+					return r.Error(err)
+				}
+				if rt.JSON() {
+					return r.Success(result)
+				}
+				return r.SuccessLine("deleted %d duplicate files across %d groups (retained %d; estimated reclaimable %s)",
+					result.Deleted, result.Groups, result.Retained, humanSize(result.ReclaimableBytes))
+			}
 			app, cleanup, err := rt.OpenOfflineApp(cmd)
 			if err != nil {
 				return r.Error(err)
 			}
 			defer cleanup()
-			path := "/"
-			if len(args) == 1 {
-				path = args[0]
-			}
 			result, err := app.FindDuplicates(cmd.Context(), path)
 			if err != nil {
 				return r.Error(err)
@@ -43,4 +65,7 @@ func NewDedupeCmd(rt Runtime) *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&deleteDuplicates, "delete", false, "delete duplicate members, retaining the first path in each group")
+	c.Flags().BoolVar(&confirm, "confirm", false, "confirm deleting duplicate members")
+	return c
 }

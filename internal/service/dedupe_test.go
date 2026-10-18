@@ -56,3 +56,45 @@ func TestFindDuplicatesRejectsInvalidPath(t *testing.T) {
 		t.Fatal("empty path segment should fail")
 	}
 }
+
+func TestDeleteDuplicatesRetainsFirstPathAndRequiresConfirmation(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+	a := writeLocal(t, "same bytes")
+	b := writeLocal(t, "same bytes")
+	if _, err := app.UploadFile(ctx, a, "/docs/a.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.UploadFile(ctx, b, "/docs/b.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DeleteDuplicates(ctx, "/docs", DedupeDeleteOptions{}); err == nil {
+		t.Fatal("unconfirmed cleanup should fail")
+	}
+
+	result, err := app.DeleteDuplicates(ctx, "/docs", DedupeDeleteOptions{Confirm: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Groups != 1 || result.Retained != 1 || result.Deleted != 1 {
+		t.Fatalf("cleanup result = %+v", result)
+	}
+	if len(result.DeletedPaths) != 1 || result.DeletedPaths[0] != "/docs/b.txt" {
+		t.Fatalf("deleted paths = %v", result.DeletedPaths)
+	}
+	audit, err := app.FindDuplicates(ctx, "/docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.Groups) != 0 || audit.HashedFiles != 1 {
+		t.Fatalf("post-cleanup audit = %+v", audit)
+	}
+	channelID, _, err := app.channelID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := app.DB.ActiveByPath(ctx, channelID, "/docs/b.txt"); err != nil || found {
+		t.Fatalf("deleted row still active: found=%v err=%v", found, err)
+	}
+}
