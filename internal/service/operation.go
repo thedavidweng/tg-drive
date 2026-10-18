@@ -52,16 +52,32 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 		return op.ch, nil
 	}
 	ch := &channelContext{app: a}
-	var title string
 	var err error
 	if sel := a.channelSelector(ctx); sel != "" {
-		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, title from channels where title=? or tg_channel_id=? limit 1`,
-			sel, sel).Scan(&ch.rowID, &ch.tgIDStr, &title)
-		if err == sql.ErrNoRows {
+		rows, err := a.DB.Raw().QueryContext(ctx, `
+			select id, tg_channel_id from channels where title=? or tg_channel_id=?
+			order by (tg_channel_id=?) desc, id limit 2`, sel, sel, sel)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		if !rows.Next() {
+			if err := rows.Err(); err != nil {
+				return nil, err
+			}
 			return nil, apperr.New(apperr.ErrChannelNotFound, "channel not found: "+sel)
 		}
+		if err := rows.Scan(&ch.rowID, &ch.tgIDStr); err != nil {
+			return nil, err
+		}
+		if ch.tgIDStr != sel && rows.Next() {
+			return nil, apperr.New(apperr.ErrUsage, "channel title is ambiguous: "+sel+"; select a Telegram ID from td status")
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
 	} else {
-		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, title from channels limit 1`).Scan(&ch.rowID, &ch.tgIDStr, &title)
+		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id from channels order by id limit 1`).Scan(&ch.rowID, &ch.tgIDStr)
 		if err == sql.ErrNoRows {
 			return nil, apperr.New(apperr.ErrChannelNotFound,
 				"no channel bound in this database; run: td init <local-root> --create-channel (new drive) or --bind-channel (existing drive, rebuilds the index)")
