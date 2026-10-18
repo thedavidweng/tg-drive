@@ -60,12 +60,19 @@ export UPDATE_INFORMATION="gh-releases-zsync|thedavidweng|tg-drive|latest|td-gui
 	-builddir "$WORK/appimage"
 artifact="$OUT/td-gui_${VERSION}_linux_${APPIMAGE_ARCH}.AppImage"
 mv "$WORK/td-gui-${APPIMAGE_ARCH}.AppImage" "$artifact"
-zsync="$WORK/td-gui-${APPIMAGE_ARCH}.AppImage.zsync"
+zsync="$artifact.zsync"
 if [ ! -s "$zsync" ]; then
-	echo "package.sh: AppImage generation did not produce $zsync (install zsyncmake)" >&2
-	exit 1
+	found="$(find "$WORK" . -maxdepth 3 -name '*.AppImage.zsync' -print -quit 2>/dev/null || true)"
+	if [ -n "$found" ]; then mv "$found" "$zsync"; fi
 fi
-mv "$zsync" "$artifact.zsync"
+if [ ! -s "$zsync" ]; then
+	command -v zsyncmake >/dev/null 2>&1 || {
+		echo "package.sh: no .zsync was produced and zsyncmake is unavailable; install zsync" >&2
+		exit 1
+	}
+	zsyncmake -u "$(basename "$artifact")" -o "$zsync" "$artifact"
+fi
+test -s "$zsync"
 
 cd "$OUT"
 for artifact in \
