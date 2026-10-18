@@ -85,9 +85,16 @@ its confirmed parts.
 `ERR_TRANSFER_NOT_FOUND` (category `validation`, exit code 2) means no
 Transfer has the ID `td transfers show` was given.
 
-`ERR_DIRECTORY_MOVE_UNSUPPORTED` carries the offending remote directory in
-`details.path`. Directory deletion now reports durable progress in the
-success result or error details instead of returning an unsupported error.
+Directory move errors after an operation starts include `operation_id`,
+`from`, `to` (the resolved destination), `moved`, `failed`, and `remaining`
+in `error.details`. The counts cover indexed files; `remaining` includes
+failed and unattempted files. `operation_id` identifies a durable
+`directory_move_operations` row. Retrying the same source and requested
+destination preserves the resolved destination of the latest unfinished
+operation and creates a new history row. Successful `mv` output is unchanged.
+
+Directory deletion reports durable progress in the success result or error
+details.
 
 ## Delete result
 
