@@ -166,6 +166,9 @@ td mv <remote-from> <remote-to>
   # move; error details include operation_id, from, resolved to, moved,
   # failed, and remaining. Retry the original source and requested destination
   # to move remaining indexed files without changing the resolved destination.
+  # after indexed files finish, move remaining local folders transactionally,
+  # including an entirely empty subtree; counts remain indexed-file counts.
+  # moving into / retains the source basename like any existing directory.
 td rm <remote-path>
   [--tombstone] [--allow-stale-manifest]
   [--confirm] [--dry-run]
