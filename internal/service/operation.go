@@ -30,11 +30,20 @@ type channelContext struct {
 
 type channelSelectorKey struct{}
 
+type localRootSelectorKey struct{}
+
 // WithChannel returns ctx selecting a bound drive channel, by title or
 // Telegram ID, for the calls made with it. It overrides App.Channel for
 // those calls only; an empty selector keeps App.Channel.
 func WithChannel(ctx context.Context, selector string) context.Context {
 	return context.WithValue(ctx, channelSelectorKey{}, selector)
+}
+
+// WithLocalRoot returns ctx selecting the bound drive whose local root is
+// localRoot. The binding's absolute local-root path is the logical-root
+// identity; unlike a title, it is independent of Telegram display names.
+func WithLocalRoot(ctx context.Context, localRoot string) context.Context {
+	return context.WithValue(ctx, localRootSelectorKey{}, localRoot)
 }
 
 // channelSelector is the channel selector in effect for a call.
@@ -45,6 +54,13 @@ func (a *App) channelSelector(ctx context.Context) string {
 	return a.Channel
 }
 
+func (a *App) localRootSelector(ctx context.Context) string {
+	if root, _ := ctx.Value(localRootSelectorKey{}).(string); root != "" {
+		return root
+	}
+	return ""
+}
+
 // channel returns the bound drive channel. Inside an operation it is the
 // operation's channel; otherwise it is read from the index.
 func (a *App) channel(ctx context.Context) (*channelContext, error) {
@@ -53,7 +69,30 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 	}
 	ch := &channelContext{app: a}
 	var err error
-	if sel := a.channelSelector(ctx); sel != "" {
+	if root := a.localRootSelector(ctx); root != "" {
+		rows, err := a.DB.Raw().QueryContext(ctx, `
+			select id, tg_channel_id from channels where root_local_path=?
+			order by id limit 2`, root)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		if !rows.Next() {
+			if err := rows.Err(); err != nil {
+				return nil, err
+			}
+			return nil, apperr.New(apperr.ErrChannelNotFound, "logical root not found: "+root)
+		}
+		if err := rows.Scan(&ch.rowID, &ch.tgIDStr); err != nil {
+			return nil, err
+		}
+		if rows.Next() {
+			return nil, apperr.New(apperr.ErrUsage, "logical root is ambiguous: "+root)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	} else if sel := a.channelSelector(ctx); sel != "" {
 		rows, err := a.DB.Raw().QueryContext(ctx, `
 			select id, tg_channel_id from channels where title=? or tg_channel_id=?
 			order by (tg_channel_id=?) desc, id limit 2`, sel, sel, sel)

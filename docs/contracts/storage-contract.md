@@ -215,6 +215,20 @@ create index idx_transfers_stage on transfers(stage);
 create index idx_transfers_created on transfers(created_at);
 ```
 
+## Logical-root routing
+
+`channels.root_local_path` is the logical-root identity for a binding. It is
+stored as the absolute path resolved by `td init` and maps one local root to
+one storage channel row; all channel-scoped nodes, files, slugs, scan state and
+operation locks retain that row's identity.
+
+The service selector `WithLocalRoot(ctx, localRoot)` resolves an exact
+`root_local_path` before an operation starts. An unknown path returns
+`ERR_CHANNEL_NOT_FOUND`; duplicate rows return `ERR_USAGE` rather than routing
+by row order. This reuses the existing schema and needs no migration. Forum
+topic identity is intentionally not represented here until Telegram capability
+checks and manifest routing are specified together.
+
 ## Transfers
 
 `transfers` records every Transfer (ADR 0033), one row per Transfer, written
