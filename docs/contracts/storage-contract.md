@@ -388,6 +388,15 @@ interpretation on retry. Destinations are still validated before mutation.
 Each retry creates a separate history row. A completed operation does not
 affect the interpretation of a new move.
 
+After all indexed files move, remaining local directory nodes move in one
+transaction within the held source/destination locks. Empty subtrees use the
+same operation history with zero file counters. Moved local folders remain
+ephemeral; missing destination ancestors are created locally. A remote failure
+leaves these folders at the source. A local transaction failure rolls back
+its node changes and records failed history; retry reuses the resolved
+destination even when all files already moved. The operation's counters
+continue to count indexed files, not local folders.
+
 Process interruption can leave a running checkpoint. The history is local;
 it does not make Telegram and SQLite atomic or replace repair after a crash
 between remote and index writes.
