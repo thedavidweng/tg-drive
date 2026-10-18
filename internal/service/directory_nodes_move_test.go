@@ -69,6 +69,9 @@ func TestDirectoryMoveEmptyFolderRejectsFileDestination(t *testing.T) {
 	if err := app.MoveFile(ctx, "/empty", "/target", MoveOptions{Confirm: true}); appErrCode(t, err) != apperr.ErrPathExists {
 		t.Fatalf("file destination error = %v", err)
 	}
+	if err := app.MoveFile(ctx, "/empty", "/target/child", MoveOptions{Confirm: true}); appErrCode(t, err) != apperr.ErrPathAncestorIsFile {
+		t.Fatalf("file ancestor error = %v", err)
+	}
 	if _, err := app.ListDir(ctx, "/empty"); err != nil {
 		t.Fatal(err)
 	}
@@ -186,5 +189,26 @@ func TestDirectoryMoveLocalFolderPreservesDestinationAncestorGC(t *testing.T) {
 	}
 	if _, err := app.ListDir(ctx, "/target"); appErrCode(t, err) != apperr.ErrRemoteNotFound {
 		t.Fatalf("move made an existing derived ancestor permanent: %v", err)
+	}
+}
+
+func TestDirectoryMoveLocalFolderPreservesExistingDestinationGC(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+	if err := app.Mkdir(ctx, "/source"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.UploadFile(ctx, writeLocal(t, "keep"), "/target/source/keep.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.MoveFile(ctx, "/source", "/target", MoveOptions{Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.DeleteFile(ctx, "/target/source/keep.txt", DeleteOptions{Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.ListDir(ctx, "/target/source"); appErrCode(t, err) != apperr.ErrRemoteNotFound {
+		t.Fatalf("move made an existing derived destination permanent: %v", err)
 	}
 }

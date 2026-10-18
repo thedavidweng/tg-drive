@@ -46,11 +46,6 @@ func (a *App) moveLocalDirectoryNodes(ctx context.Context, channelID int64, sour
 					return apperr.Wrap(apperr.ErrDB, "write local directory move", err)
 				}
 			}
-			if _, err := tx.ExecContext(ctx, `
-				update nodes set ephemeral=1, updated_at=?
-				where channel_id=? and canonical_path=?`, now, channelID, target); err != nil {
-				return apperr.Wrap(apperr.ErrDB, "preserve moved local directory", err)
-			}
 		}
 		if _, err := tx.ExecContext(ctx, `
 			delete from nodes where channel_id=? and type='dir'

@@ -635,17 +635,23 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 			remaining = append(remaining, ap)
 		}
 	}
+	remainingFiles := make(map[string]bool)
+	for _, ap := range remaining {
+		if !ap.IsDir {
+			remainingFiles[ap.Canonical] = true
+		}
+	}
 	for _, ap := range active {
 		if !ap.IsDir || (ap.Canonical != src && !strings.HasPrefix(ap.Canonical, src+"/")) {
 			continue
 		}
 		dst := strings.TrimSuffix(to, "/") + strings.TrimPrefix(ap.Canonical, src)
-		for _, existing := range remaining {
-			if !existing.IsDir && existing.Canonical == dst {
-				return apperr.New(apperr.ErrPathExists, "file exists at destination: "+dst)
-			}
-			if !existing.IsDir && strings.HasPrefix(dst+"/", existing.Canonical+"/") {
-				return apperr.New(apperr.ErrPathAncestorIsFile, "ancestor path is a file: "+existing.Canonical)
+		if remainingFiles[dst] {
+			return apperr.New(apperr.ErrPathExists, "file exists at destination: "+dst)
+		}
+		for _, ancestor := range fsmodel.AncestorPaths(dst) {
+			if remainingFiles[ancestor] {
+				return apperr.New(apperr.ErrPathAncestorIsFile, "ancestor path is a file: "+ancestor)
 			}
 		}
 	}

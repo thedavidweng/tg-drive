@@ -390,8 +390,9 @@ affect the interpretation of a new move.
 
 After all indexed files move, remaining local directory nodes move in one
 transaction within the held source/destination locks. Empty subtrees use the
-same operation history with zero file counters. Moved local folders remain
-ephemeral; missing destination ancestors are created locally. A remote failure
+same operation history with zero file counters. New local destination nodes
+are ephemeral; existing destination nodes retain their GC state, as with
+explicit folder creation. Missing destination ancestors are created locally. A remote failure
 leaves these folders at the source. A local transaction failure rolls back
 its node changes and records failed history; retry reuses the resolved
 destination even when all files already moved. The operation's counters
