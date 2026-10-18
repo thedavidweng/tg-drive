@@ -606,15 +606,21 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 	if err != nil {
 		return err
 	}
-	if retrying {
+	switch {
+	case retrying:
 		to = retryDestination
-	} else {
+	case to == "/":
+		to += fsmodel.BaseName(src)
+	default:
 		for _, ap := range active {
 			if ap.IsDir && ap.Canonical == to {
 				to = strings.TrimSuffix(to, "/") + "/" + fsmodel.BaseName(src)
 				break
 			}
 		}
+	}
+	if to == src {
+		return nil
 	}
 	var sources []string
 	for _, ap := range active {
@@ -623,13 +629,30 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 		}
 	}
 	sort.Strings(sources)
-	if len(sources) == 0 {
-		return nil
-	}
 	remaining := make([]fsmodel.ActivePath, 0, len(active))
 	for _, ap := range active {
-		if !strings.HasPrefix(ap.Canonical, src+"/") {
+		if ap.Canonical != src && !strings.HasPrefix(ap.Canonical, src+"/") {
 			remaining = append(remaining, ap)
+		}
+	}
+	remainingFiles := make(map[string]bool)
+	for _, ap := range remaining {
+		if !ap.IsDir {
+			remainingFiles[ap.Canonical] = true
+		}
+	}
+	for _, ap := range active {
+		if !ap.IsDir || (ap.Canonical != src && !strings.HasPrefix(ap.Canonical, src+"/")) {
+			continue
+		}
+		dst := strings.TrimSuffix(to, "/") + strings.TrimPrefix(ap.Canonical, src)
+		if remainingFiles[dst] {
+			return apperr.New(apperr.ErrPathExists, "file exists at destination: "+dst)
+		}
+		for _, ancestor := range fsmodel.AncestorPaths(dst) {
+			if remainingFiles[ancestor] {
+				return apperr.New(apperr.ErrPathAncestorIsFile, "ancestor path is a file: "+ancestor)
+			}
 		}
 	}
 	destinations := make([]string, 0, len(sources))
@@ -640,7 +663,7 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 		}
 		destinations = append(destinations, dst)
 	}
-	locks := append(append([]string{}, sources...), destinations...)
+	locks := append(append([]string{src, to}, sources...), destinations...)
 	operationID := uuid.NewString()
 	moved, failed, remainingCount := 0, 0, len(sources)
 	started := false
@@ -696,7 +719,7 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 				return err
 			}
 		}
-		return nil
+		return a.moveLocalDirectoryNodes(ctx, ch.rowID, src, to)
 	})
 	if ae, ok := apperr.As(err); ok && started {
 		details := map[string]any{}

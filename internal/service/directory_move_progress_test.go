@@ -28,6 +28,9 @@ func TestDirectoryMoveProgressSurvivesReopenAndRetry(t *testing.T) {
 			app, tg := testApp(t)
 			loginAndInit(t, app, tg)
 			ctx := context.Background()
+			if err := app.Mkdir(ctx, "/retry/empty"); err != nil {
+				t.Fatal(err)
+			}
 			target := "/moved"
 			if existingDestination {
 				if _, err := app.UploadFile(ctx, writeLocal(t, "keep"), "/moved/keep.txt", ConflictFail, false, UploadOptions{}); err != nil {
@@ -63,6 +66,9 @@ func TestDirectoryMoveProgressSurvivesReopenAndRetry(t *testing.T) {
 			if failed.Status != "failed" || failed.Total != 3 || failed.Moved != 1 || failed.Failed != 1 || failed.Remaining != 2 || failed.LastPath != "/retry/b.txt" || failed.Error == "" || failed.Destination != target {
 				t.Fatalf("failed checkpoint = %+v", failed)
 			}
+			if _, err := app.ListDir(ctx, "/retry/empty"); err != nil {
+				t.Fatalf("partial move lost local folder: %v", err)
+			}
 			if err := app.DB.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -89,6 +95,9 @@ func TestDirectoryMoveProgressSurvivesReopenAndRetry(t *testing.T) {
 			history, err := app.DB.DirectoryMoveProgress(ctx, operationID)
 			if err != nil || history != failed {
 				t.Fatalf("failure history = %+v, %v; want %+v", history, err, failed)
+			}
+			if _, err := app.ListDir(ctx, target+"/empty"); err != nil {
+				t.Fatalf("retry did not move local folder: %v", err)
 			}
 			for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
 				if got := fileStatus(t, app, target+"/"+name); got != "active" {
