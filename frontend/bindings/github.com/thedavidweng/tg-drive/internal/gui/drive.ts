@@ -15,8 +15,8 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 import * as $models from "./models.js";
 
 /**
- * Delete removes a remote file from Telegram and the index. Directories
- * cannot be deleted (file-level deletes only).
+ * Delete removes a file or directory from Telegram and the index.
+ * Directory deletion retains durable per-file progress on partial failure.
  */
 export function Delete(path: string, opts: $models.DeleteOptions): $CancellablePromise<$models.DeleteOutcome | null> {
     return $Call.ByID(2894188476, path, opts);
@@ -40,8 +40,8 @@ export function Mkdir(path: string): $CancellablePromise<void> {
 }
 
 /**
- * Move renames a remote file or moves it into another directory of the
- * bound channel. Directories cannot move (file-level moves only).
+ * Move renames or moves a file or directory within the bound channel.
+ * Directory moves retain durable per-file progress on partial failure.
  */
 export function Move($from: string, to: string, opts: $models.MoveOptions): $CancellablePromise<void> {
     return $Call.ByID(317222262, $from, to, opts);

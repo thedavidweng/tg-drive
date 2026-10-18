@@ -144,6 +144,11 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   emits; and index sync — a second front end's writes trigger a
   `directory-changed` event through the `PRAGMA data_version` poll, which
   also survives an Auth reopen (setup re-pins the poller's connection).
+  Recursive directory move/delete tests verify confirmation gating, nested
+  contents and preservation of unrelated files. Frontend Drive tests verify
+  the folder actions, cancellation, recursive scope warnings, partial-operation
+  counters, listing refresh after failure and explicit retry without automatic
+  replay.
   File preview runs the real facade and media handler under
   `httptest` against the persistent fake: the descriptor of a seekable
   fixture and its HEAD headers, a byte-identical full GET, 206 ranges at
