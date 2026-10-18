@@ -366,6 +366,14 @@ and never overwrites the previous partial result.
 
 ## Directory move progress
 
+Directory move and delete terminal checkpoints run while the operation still
+holds its locks, with a separate local context limited to five seconds. A
+cancelled Telegram call therefore records `failed` and its last attempted
+path/counters without replacing `ERR_CANCELLED` with a cancelled SQL write.
+Remote writes always use the original cancellable context. A checkpoint write
+failure remains an error. Process termination can still leave `running` records;
+these checkpoints do not implement crash replay.
+
 `directory_move_operations` records a UUID, channel, source, requested and
 resolved destination, total/moved/failed/remaining counters, status, last
 attempted source path and error. Its row is created under the path locks
