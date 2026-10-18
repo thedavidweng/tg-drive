@@ -144,8 +144,14 @@ td transfers retry <id>
   # connects to Telegram, so it can wait for the Session lock.
   # --events streams one transfer.stage event per stage the retried
   # Transfer enters, transfer.progress lines for upload kinds as td cp
-  # emits them, then a final transfers.retry line with the ended Transfer.td mv <remote-from> <remote-to>
+  # emits them, then a final transfers.retry line with the ended Transfer.
+td mv <remote-from> <remote-to>
   [--confirm] [--dry-run]
+  # moves one file or every indexed file below a directory. Directory moves
+  # preserve source-relative paths; when the destination is an existing
+  # directory, the source directory name is appended. All destinations are
+  # validated before Telegram mutation. A remote failure may leave a partial
+  # move; retry the original source to move remaining indexed files.
 td rm <remote-path>
   [--tombstone] [--allow-stale-manifest]
   [--confirm] [--dry-run]
@@ -263,7 +269,6 @@ ERR_MANIFEST_INVALID
 ERR_ALBUM_INVENTORY_INVALID
 ERR_SCAN_INCOMPLETE
 ERR_CROSS_CHANNEL_MOVE
-ERR_DIRECTORY_MOVE_UNSUPPORTED
 ERR_DIRECTORY_DELETE_UNSUPPORTED
 ERR_EMPTY_DIRS_UNSUPPORTED
 ERR_MESSAGE_NOT_EDITABLE

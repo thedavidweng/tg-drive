@@ -546,9 +546,7 @@ func (a *App) MoveFile(ctx context.Context, from, to string, opts MoveOptions) e
 		return err
 	}
 	if fsmodel.IsDirectorySource(src, active) {
-		return apperr.New(apperr.ErrDirectoryMoveUnsupported,
-			fmt.Sprintf("%s is a directory; td mv moves single files (move each file, e.g. td mv %s/<file> <dest>/)", src, src)).
-			WithDetails(map[string]any{"path": src})
+		return a.moveDirectory(ctx, ch, src, to, active)
 	}
 	dst, err := fsmodel.MoveDestination(src, to, active)
 	if err != nil {
@@ -584,6 +582,69 @@ func (a *App) MoveFile(ctx context.Context, from, to string, opts MoveOptions) e
 	// holds both for the whole operation regardless of duration.
 	return a.operate(ctx, ch, []string{src, dst}, func(ctx context.Context) error {
 		return a.fileRecord(channelID, ch.tgID, srcRow).Rename(ctx, dst)
+	})
+}
+
+// moveDirectory applies the existing per-file rename protocol to every file
+// below a directory. Validation and all path locks happen before Telegram is
+// touched; a later remote failure leaves an explicit partial move that can be
+// retried safely for the remaining source paths.
+func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to string, active []fsmodel.ActivePath) error {
+	to, err := fsmodel.NormalizeCanonicalPath(to)
+	if err != nil {
+		return err
+	}
+	if to == src {
+		return nil
+	}
+	if strings.HasPrefix(to+"/", src+"/") {
+		return apperr.New(apperr.ErrPathConflict, "cannot move a directory into itself: "+to)
+	}
+	for _, ap := range active {
+		if ap.IsDir && ap.Canonical == to {
+			to = strings.TrimSuffix(to, "/") + "/" + fsmodel.BaseName(src)
+			break
+		}
+	}
+	var sources []string
+	for _, ap := range active {
+		if !ap.IsDir && strings.HasPrefix(ap.Canonical, src+"/") {
+			sources = append(sources, ap.Canonical)
+		}
+	}
+	sort.Strings(sources)
+	if len(sources) == 0 {
+		return nil
+	}
+	remaining := make([]fsmodel.ActivePath, 0, len(active))
+	for _, ap := range active {
+		if !strings.HasPrefix(ap.Canonical, src+"/") {
+			remaining = append(remaining, ap)
+		}
+	}
+	destinations := make([]string, 0, len(sources))
+	for _, source := range sources {
+		dst := strings.TrimSuffix(to, "/") + strings.TrimPrefix(source, src)
+		if err := fsmodel.CheckUploadConflict(dst, remaining); err != nil {
+			return err
+		}
+		destinations = append(destinations, dst)
+	}
+	locks := append(append([]string{}, sources...), destinations...)
+	return a.operate(ctx, ch, locks, func(ctx context.Context) error {
+		for i, source := range sources {
+			row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, source)
+			if err != nil {
+				return apperr.Wrap(apperr.ErrDB, "lookup directory move source", err)
+			}
+			if !found {
+				return apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q disappeared during directory move", source))
+			}
+			if err := a.fileRecord(ch.rowID, ch.tgID, row).Rename(ctx, destinations[i]); err != nil {
+				return err
+			}
+		}
+		return a.DB.RunDirectoryGC(ctx, ch.rowID)
 	})
 }
 

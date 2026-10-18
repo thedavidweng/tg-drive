@@ -688,15 +688,29 @@ func TestDirectoryDeleteUnsupported(t *testing.T) {
 	}
 }
 
-func TestDirectoryMoveUnsupportedIntegration(t *testing.T) {
+func TestDirectoryMoveIntegration(t *testing.T) {
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)
 	ctx := context.Background()
-	local := writeLocal(t, "x")
-	_, _ = app.UploadFile(ctx, local, "/dirmv/f.txt", ConflictFail, false, UploadOptions{})
-	err := app.MoveFile(ctx, "/dirmv", "/dirmv2", MoveOptions{Confirm: true})
-	if code := appErrCode(t, err); code != apperr.ErrDirectoryMoveUnsupported {
-		t.Fatalf("code = %s, want ERR_DIRECTORY_MOVE_UNSUPPORTED", code)
+	first, second := writeLocal(t, "first"), writeLocal(t, "second")
+	if _, err := app.UploadFile(ctx, first, "/dirmv/nested/f.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.UploadFile(ctx, second, "/dirmv/g.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.MoveFile(ctx, "/dirmv", "/dirmv2", MoveOptions{Confirm: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/dirmv2/nested/f.txt", "/dirmv2/g.txt"} {
+		if got := fileStatus(t, app, path); got != "active" {
+			t.Fatalf("moved path %s status = %q, want active", path, got)
+		}
+	}
+	for _, path := range []string{"/dirmv/nested/f.txt", "/dirmv/g.txt"} {
+		if got := fileStatus(t, app, path); got != "" {
+			t.Fatalf("source path %s status = %q, want absent", path, got)
+		}
 	}
 }
 
