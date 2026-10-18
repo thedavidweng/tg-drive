@@ -121,6 +121,14 @@ The Session lock wraps the fake as well as the real client, so the binary
 E2E proves a second process waits and fails with `ERR_SESSION_LOCKED` while
 `td ls` runs at once.
 
+`directory_reconstruction_test.go` rejects the second file's SQLite commit
+after its remote move/delete succeeds. After reopening the index, an explicit
+full scan reconstructs the remote outcome and retry processes only the last
+remaining file. The failed attempt's history is retained, unrelated content
+survives, and moved downloads retain their bytes. This injects a commit failure
+against the offline fake; it does not exercise every remote-write window or
+provide automatic crash replay.
+
 ## Desktop GUI
 
 GUI tests are not part of the default gates; `mise run check-gui` runs them
