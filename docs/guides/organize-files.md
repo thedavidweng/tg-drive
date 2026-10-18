@@ -182,7 +182,8 @@ Rules worth knowing:
 
 ## What moves and deletes cannot do
 
-- Directory move/rename/delete are unsupported — file-level only.
+- Directory move/delete commits each file separately; failures can leave a
+  partial change (see [Move or delete a directory](#move-or-delete-a-directory)).
 - Empty directories live only in the local cache and vanish after a full scan.
 - Moves across channels are rejected (`ERR_CROSS_CHANNEL_MOVE`).
 
