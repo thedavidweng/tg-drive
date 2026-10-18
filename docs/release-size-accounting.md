@@ -50,8 +50,9 @@ Bare CLI executables have no stapled ticket; Apple's
 explains that standalone binaries cannot currently carry a stapled ticket.
 
 Windows signing and native installation remain unaccepted. Direct inspection
-of the published v1.0.2 installer and both CLI ZIP executables found PE
-security-directory offset and size `0/0`; green Windows CI does not supply
+of the published v1.0.2 installer, its extracted `td-gui.exe`, and both CLI
+ZIP executables found PE security-directory offset and size `0/0`; green
+Windows CI does not supply
 an Authenticode certificate, trust chain, or timestamp. Linux native package
 acceptance, package-manager install/update paths, secured macOS enforcement,
 and native Intel/Windows installation remain tracked in #124 and #106.
