@@ -238,6 +238,26 @@ create table directory_delete_operations (
 
 create index idx_directory_delete_operations_channel
   on directory_delete_operations(channel_id, updated_at);
+
+create table directory_move_operations (
+  id text primary key,
+  channel_id integer not null references channels(id),
+  source_path text not null,
+  requested_destination text not null,
+  destination_path text not null,
+  total integer not null,
+  moved integer not null default 0,
+  failed integer not null default 0,
+  remaining integer not null,
+  status text not null check(status in ('running', 'completed', 'failed')),
+  last_path text not null default '',
+  error text not null default '',
+  created_at text not null,
+  updated_at text not null
+);
+
+create index idx_directory_move_operations_channel
+  on directory_move_operations(channel_id, updated_at);
 ```
 
 ## Logical-root routing
