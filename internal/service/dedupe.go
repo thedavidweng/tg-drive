@@ -2,10 +2,17 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"sort"
 
+	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/core/fsmodel"
+	"github.com/thedavidweng/tg-drive/core/telegram"
+
+	"lukechampine.com/blake3"
 )
 
 // DuplicateFile is one active indexed file with a content hash.
@@ -29,6 +36,29 @@ type DedupeResult struct {
 	HashedFiles      int              `json:"hashed_files"`
 	UnhashedFiles    int              `json:"unhashed_files"`
 	ReclaimableBytes int64            `json:"reclaimable_bytes"`
+}
+
+// DedupeDeleteOptions controls the destructive duplicate cleanup operation.
+type DedupeDeleteOptions struct {
+	Confirm bool
+}
+
+func (o DedupeDeleteOptions) Validate() error {
+	if !o.Confirm {
+		return apperr.New(apperr.ErrConfirmationRequired, "deleting duplicate files requires --confirm")
+	}
+	return nil
+}
+
+// DedupeDeleteResult reports a cleanup that retains the lexicographically
+// first path in each duplicate group and deletes the remaining paths.
+type DedupeDeleteResult struct {
+	Path             string   `json:"path"`
+	Groups           int      `json:"groups"`
+	Retained         int      `json:"retained"`
+	Deleted          int      `json:"deleted"`
+	DeletedPaths     []string `json:"deleted_paths"`
+	ReclaimableBytes int64    `json:"reclaimable_bytes"`
 }
 
 // FindDuplicates audits active indexed files under remotePath. It only uses
@@ -91,4 +121,118 @@ func (a *App) FindDuplicates(ctx context.Context, remotePath string) (*DedupeRes
 	// deterministic even when SQLite's query plan changes.
 	sort.Slice(result.Groups, func(i, j int) bool { return result.Groups[i].Hash < result.Groups[j].Hash })
 	return result, nil
+}
+
+// DeleteDuplicates removes the duplicate members reported by FindDuplicates.
+// All group paths are locked and their remote bytes verified before the first
+// mutation. The index alone cannot prove a retained copy still exists.
+func (a *App) DeleteDuplicates(ctx context.Context, remotePath string, opts DedupeDeleteOptions) (*DedupeDeleteResult, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	if err := cancelled(ctx); err != nil {
+		return nil, err
+	}
+	audit, err := a.FindDuplicates(ctx, remotePath)
+	if err != nil {
+		return nil, err
+	}
+	ch, err := a.channel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := &DedupeDeleteResult{
+		Path:             audit.Path,
+		Groups:           len(audit.Groups),
+		Retained:         len(audit.Groups),
+		ReclaimableBytes: audit.ReclaimableBytes,
+		DeletedPaths:     []string{},
+	}
+	var paths []string
+	for _, group := range audit.Groups {
+		for _, file := range group.Files {
+			paths = append(paths, file.Path)
+		}
+	}
+	if len(paths) == 0 {
+		return result, nil
+	}
+	err = a.operate(ctx, ch, paths, func(ctx context.Context) error {
+		for _, group := range audit.Groups {
+			for _, file := range group.Files {
+				row, err := a.duplicateRow(ctx, ch.rowID, file, group.Hash)
+				if err != nil {
+					return err
+				}
+				hw := &countingHasher{h: blake3.New(32, nil)}
+				if err := a.TG.DownloadMedia(ctx, ch.tgID, int(row.MessageID.Int64), hw); err != nil {
+					return telegram.MapError(err)
+				}
+				if hw.n != file.Size || "blake3:"+hex.EncodeToString(hw.h.Sum(nil)) != group.Hash {
+					return apperr.New(apperr.ErrPathConflict, fmt.Sprintf("remote bytes for %q differ from the duplicate audit; resolve the changed content before retrying", file.Path))
+				}
+			}
+		}
+		for _, group := range audit.Groups {
+			for _, file := range group.Files[1:] {
+				// Album retirement can replace a shared manifest pointer on
+				// sibling rows, so read the current row for each deletion.
+				row, err := a.duplicateRow(ctx, ch.rowID, file, group.Hash)
+				if err != nil {
+					return err
+				}
+				deleted, err := a.deleteFileLocked(ctx, ch.rowID, ch.tgID, row, DeleteOptions{Confirm: true})
+				if deleted != nil {
+					result.Deleted++
+					result.DeletedPaths = append(result.DeletedPaths, file.Path)
+				}
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return result, withDedupeProgress(err, result)
+	}
+	return result, nil
+}
+
+func (a *App) duplicateRow(ctx context.Context, channelID int64, file DuplicateFile, hash string) (sqlitestore.FileRow, error) {
+	if err := cancelled(ctx); err != nil {
+		return sqlitestore.FileRow{}, err
+	}
+	row, found, err := a.DB.ActiveByPath(ctx, channelID, file.Path)
+	if err != nil {
+		return row, apperr.Wrap(apperr.ErrDB, "lookup duplicate", err)
+	}
+	if !found || !row.MessageID.Valid {
+		return row, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("duplicate path %q disappeared during cleanup", file.Path))
+	}
+	if row.ContentHash.String != hash || row.Size.Int64 != file.Size {
+		return row, apperr.New(apperr.ErrPathConflict, fmt.Sprintf("duplicate path %q changed since the audit", file.Path))
+	}
+	return row, nil
+}
+
+func withDedupeProgress(err error, result *DedupeDeleteResult) error {
+	ae, ok := apperr.As(err)
+	if !ok {
+		if errors.Is(err, context.Canceled) {
+			ae = apperr.Cancelled()
+		} else {
+			ae = apperr.Wrap(apperr.ErrDB, "dedupe cleanup", err)
+		}
+	}
+	details := map[string]any{}
+	for key, value := range ae.Details {
+		details[key] = value
+	}
+	details["dedupe_path"] = result.Path
+	details["groups"] = result.Groups
+	details["retained"] = result.Retained
+	details["deleted"] = result.Deleted
+	details["deleted_paths"] = result.DeletedPaths
+	return ae.WithDetails(details)
 }

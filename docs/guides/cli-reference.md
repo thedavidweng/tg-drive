@@ -264,6 +264,30 @@ Flags:
       --depth int   max depth
 ```
 
+### td dedupe
+
+Audit indexed content hashes without changing Telegram by default. With
+`--delete --confirm`, the command retains the lexicographically first path in
+each duplicate group and retires the remaining messages. The cleanup locks
+all group paths, rechecks indexed hashes/sizes, and downloads every group
+member to verify its BLAKE3 hash before the first deletion. Files without
+hashes stay untouched. Deletion follows `delete.mode`; tombstones keep media
+bytes, so the reclaimable-byte estimate is not measured space freed.
+
+Cleanup stops at the first error and reports completed deletion progress in
+JSON error details. Retry explicitly after resolving the cause. If a remote
+mutation succeeded but its index commit failed, run `td scan --full` before
+retrying. Locks cannot prevent changes made outside td after verification.
+
+```text
+Usage:
+  td dedupe [remote-path] [flags]
+
+Flags:
+      --confirm   confirm deleting duplicate members
+      --delete    delete duplicate members, retaining the first path in each group
+```
+
 ### td mv
 
 Move or rename remote file.
