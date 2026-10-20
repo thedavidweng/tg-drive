@@ -74,6 +74,14 @@ against a slowed `td cp` in another: the watch's `transfer.stage` stream
 (under `--events` and under `--json`) must advance with the upload and end
 with its terminal stage, and the piped human output must print one line per
 observed stage, no more. Both watch forms must exit 130 on Ctrl-C.
+
+`e2e_filesystem_watch_test.go` exercises the separate `td watch` command:
+content edits, checkpointed restart, download byte identity, default retention,
+explicit deletion and confirmation errors. The non-Windows SIGINT binary test
+interrupts an idle watch and verifies a fresh process adopts its completed
+checkpoint. Service tests cover upload-before-delete rename, remote conflicts
+and byte verification, checkpoint-write failure after committed upload, root
+rebind refusal, forum isolation, lease exclusion and source rejection.
 `e2e_transfer_retention_test.go` seeds old Transfer rows straight into the
 index and asserts a Manager start prunes the terminal ones past 30 days
 while keeping recent and active ones.

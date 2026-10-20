@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test"
+import { afterEach, beforeAll, beforeEach, expect, test } from "bun:test"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 
 import { App } from "@/App"
@@ -10,6 +10,12 @@ import { memoryBackend } from "@/testing/memory-backend"
 
 const realFetch = globalThis.fetch
 let fetched: string[] = []
+
+// Initialize the real workbook library separately from the 5s UI assertions.
+// Its cold CommonJS import can take longer on a native Windows runner.
+beforeAll(async () => {
+  await import("exceljs")
+}, 30_000)
 
 beforeEach(() => {
   fetched = []

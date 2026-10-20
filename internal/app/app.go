@@ -164,6 +164,7 @@ Get started:
 	add(commands.NewScanCmd(opts), "maintenance")
 	add(commands.NewLsCmd(opts), "files")
 	add(commands.NewDedupeCmd(opts), "files")
+	add(commands.NewWatchCmd(opts), "files")
 	add(commands.NewTreeCmd(opts), "files")
 	add(commands.NewCpCmd(opts), "files")
 	add(commands.NewGetCmd(opts), "files")

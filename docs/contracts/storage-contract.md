@@ -48,6 +48,11 @@ Foreign-key enforcement is disabled on the migration's dedicated connection
 before BEGIN, integrity is checked before COMMIT, and enforcement is restored
 afterwards. A failed integrity check rolls back the schema and version row.
 All migration steps and their version records run in a transaction.
+Version 8 adds `watch_checkpoints`, preserving all existing rows. Each completed
+watched file records its BLAKE3 hash and size under the channel row, absolute
+local directory, canonical remote directory and relative path. These local
+ownership checkpoints authorize optional deletion; a full Telegram scan
+recovers file content but cannot recreate watch deletion ownership.
 
 ## Schema
 
@@ -266,6 +271,20 @@ create table directory_move_operations (
 
 create index idx_directory_move_operations_channel
   on directory_move_operations(channel_id, updated_at);
+```
+
+Schema 8 also creates:
+
+```sql
+create table watch_checkpoints (
+  channel_id integer not null references channels(id),
+  local_root text not null,
+  remote_root text not null,
+  relative_path text not null,
+  content_hash text not null,
+  size integer not null,
+  primary key(channel_id, local_root, remote_root, relative_path)
+);
 ```
 
 ## Logical-root routing

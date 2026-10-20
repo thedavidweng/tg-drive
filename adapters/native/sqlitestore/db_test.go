@@ -57,7 +57,7 @@ func TestMigrationRepairsPreTransferVersionCollision(t *testing.T) {
 				values(1,1,'/kept.txt','kept.txt','active','2026-01-01')`); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := db.Raw().Exec(tc.prepare); err != nil {
+			if _, err := db.Raw().Exec(`drop table watch_checkpoints;` + tc.prepare); err != nil {
 				t.Fatal(err)
 			}
 			if err := db.Close(); err != nil {
@@ -78,8 +78,8 @@ func TestMigrationRepairsPreTransferVersionCollision(t *testing.T) {
 				if err := reopened.Raw().QueryRow(`select max(version) from schema_version`).Scan(&version); err != nil {
 					t.Fatal(err)
 				}
-				if version != 7 {
-					t.Fatalf("schema version = %d, want 7", version)
+				if version != 8 {
+					t.Fatalf("schema version = %d, want 8", version)
 				}
 				var tables int
 				if err := reopened.Raw().QueryRow(`select count(*) from sqlite_master where type='table' and name='transfers'`).Scan(&tables); err != nil {

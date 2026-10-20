@@ -75,6 +75,14 @@ td dedupe [remote-path]
   # group and retires the remaining Telegram messages
 td tree [remote-path]
   [--depth <n>]
+td watch <local-directory> <remote-directory> --confirm
+  [--delete] [--once] [--interval <duration>]
+  # one-way regular-file content sync; default interval 2s
+  # requires hash.enabled=true; rejects symlinks, special files and local
+  # names that change under remote canonical path normalization
+  # --delete retires only checkpointed paths absent locally
+  # otherwise local removals retain remote content; empty dirs are ignored
+  # remote content conflicts stop the watch; restart is explicit
 td completion [bash|zsh|fish|powershell]
 td cp <local> [local...] <remote-path>
   [--replace] [--skip-existing] [--auto-rename] [--no-hash]
