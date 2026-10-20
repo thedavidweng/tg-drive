@@ -2,6 +2,8 @@ import { afterEach, expect, test } from "bun:test"
 import { cleanup, fireEvent, render, screen, waitForElementToBeRemoved, within } from "@testing-library/react"
 
 import { App } from "@/App"
+import { ChannelSwitcher } from "@/channels"
+import { I18nProvider } from "@/i18n"
 import { memoryBackend } from "@/testing/memory-backend"
 
 afterEach(() => {
@@ -15,6 +17,30 @@ const twoChannels = [
   { id: "1001", title: "Drive", discussion: "Drive Discussion" },
   { id: "2002", title: "Archive" },
 ]
+
+test("forum roots sharing a peer select and persist their unique selector", async () => {
+  const backend = memoryBackend({})
+  let selected = "root:/first"
+  const selections: string[] = []
+  backend.channels.list = async () => [
+    { channel_id: "1001", title: "Forum", topic_id: 10, selector: "root:/first", local_root: "/first", active: selected === "root:/first" },
+    { channel_id: "1001", title: "Forum", topic_id: 20, selector: "root:/second", local_root: "/second", active: selected === "root:/second" },
+  ]
+  backend.channels.select = async (selector) => {
+    selections.push(selector)
+    selected = selector
+    return { channel_id: "1001", title: "Forum", local_root: "/second", files: 0, discussion_linked: false, upload_limit_bytes: 2000000000 }
+  }
+  render(<I18nProvider languages={["en"]}><ChannelSwitcher backend={backend} onActiveChange={() => {}} /></I18nProvider>)
+  await screen.findByText("Forum / #10")
+  fireEvent.click(screen.getByRole("button", { name: "Switch drive" }))
+  const dialog = await screen.findByRole("dialog", { name: "Drives" })
+  expect(within(dialog).queryByRole("button", { name: "Link discussion group" })).toBeNull()
+  fireEvent.click(within(dialog).getByRole("button", { name: "Switch to Forum / #20" }))
+  await screen.findByText("Forum / #20")
+  expect(selections).toEqual(["root:/second"])
+  expect(localStorage.getItem("td-channel")).toBe("root:/second")
+})
 
 test("the channel switcher changes the Drive view to the selected channel", async () => {
   const backend = memoryBackend({}, { channels: twoChannels })

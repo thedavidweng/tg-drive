@@ -199,6 +199,7 @@ func (a *App) ImportSaved(ctx context.Context, opts ImportSavedOptions) (*Import
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	// Imported files carry ADR 0018 machine records, so the discussion group
 	// must exist before anything is downloaded — including for a dry run,
 	// whose plan would otherwise promise an import that cannot happen.

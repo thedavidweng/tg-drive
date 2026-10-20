@@ -19,7 +19,8 @@ Binary: `td`
 
 `--channel` selects a bound drive. An exact Telegram ID takes precedence over
 a title with the same text. A title shared by multiple bound drives is rejected
-with `ERR_USAGE` (exit 2); select an explicit Telegram ID from `td status`.
+with `ERR_USAGE` (exit 2); select an explicit Telegram ID from `td status` for
+an ordinary channel, or a unique `--root` when multiple topics share a peer.
 An unmatched selector returns `ERR_CHANNEL_NOT_FOUND`.
 
 Initial `init --bind-channel=<title-or-id>` selection applies the same identity
@@ -52,10 +53,13 @@ td channels list [--only-drive]
 td channels link-discussion
 td init <local-root>
   [--create-channel [=<title>]]
-  [--bind-channel [=<title>]]
+  [--bind-channel [=<title-or-id>]]
+  [--topic <positive-existing-topic-id>]
   (bare --bind-channel lists and prompts)
-  # init always ensures a linked discussion group for the channel
-  # (created on demand); machine records live in its comment threads
+  # ordinary channels ensure a linked discussion group on demand
+  # --topic requires --bind-channel, refuses --create-channel and binds an
+  # existing open/visible forum topic; records are same-topic replies
+  # select forum drives with --root, not their ambiguous shared peer ID
 td status
   # succeeds before init (data.initialized=false); lists bound channels
 td doctor
@@ -327,3 +331,21 @@ ERR_UNKNOWN
 | 5 | DB/index/repair error | `ERR_DB`, `ERR_SCAN_FAILED`, `ERR_MANIFEST_INVALID`, `ERR_ALBUM_INVENTORY_INVALID`, `ERR_SCAN_INCOMPLETE`, `ERR_OPERATION_LOCKED`, `ERR_SESSION_LOCKED`, `ERR_ORPHANED_UPLOAD`, `ERR_REPAIR_REQUIRED`, `ERR_CAPTION_TOO_LONG` |
 | 10 | Confirmation/safety error | `ERR_CONFIRMATION_REQUIRED` |
 | 130 | Cancelled by SIGINT or SIGTERM | `ERR_CANCELLED` |
+
+### Existing forum topics
+
+`td init <root> --bind-channel=<exact-peer-id> --topic <positive-id>` binds
+one existing topic. It verifies forum/topic identity, open/visible state,
+required mutation capabilities and history access. No forum/topic is created.
+The explicit topic peer is not overridden by `TD_CHANNEL`. Ordinary init
+behavior and envelopes remain unchanged. `--topic=0`, missing --bind-channel,
+or a create/topic combination returns `ERR_USAGE` (exit 2); permission refusal
+uses `ERR_CHANNEL_PERMISSION` (exit 4). An unscoped legacy forum binding must
+be resolved explicitly. `td channels link-discussion` rejects forum roots.
+
+Use `td --root <root> ...` for upload, album, download, scan, move, delete,
+preview and dependent mutations. Same-topic replies carry the existing manifest
+and album records; no new remote metadata version is introduced. General ID 1
+follows Telegram's unflagged-message semantics. `td doctor` reports topic state;
+closed/hidden/missing topics are not writable. These are source contracts, not
+receipts for authenticated Telegram, a new release or clean-device signing.

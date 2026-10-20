@@ -70,6 +70,13 @@ func (c *Client) ResolveChannel(ctx context.Context, titleOrID string) (*telegra
 	return c.inner.ResolveChannel(ctx, titleOrID)
 }
 
+func (c *Client) ResolveForumTopic(ctx context.Context, channelID int64, topicID int) (*telegram.ForumTopic, error) {
+	if err := c.lock.Acquire(ctx); err != nil {
+		return nil, err
+	}
+	return c.inner.ResolveForumTopic(ctx, channelID, topicID)
+}
+
 func (c *Client) GetInviteLink(ctx context.Context, channelID int64) (string, error) {
 	if err := c.lock.Acquire(ctx); err != nil {
 		return "", err

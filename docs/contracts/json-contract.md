@@ -241,9 +241,10 @@ row marked deleted, so rerunning the same `td rm` fails with
 
 The `invite_link` field is omitted when the channel has no public/join link.
 `manifest_message_id` is the machine record's message id; since ADR 0018 it
-lives in the linked discussion group's comment thread (the row's
+lives in the linked discussion group's comment thread for ordinary channels (the row's
 `manifest_chat_tg_id` records the peer), so the id is not addressable in the
-drive channel itself.
+drive channel itself. For forum roots it is a reply in the selected topic in
+the same forum peer; the topic boundary is part of the persisted binding.
 
 A retry that adopted a pending upload and sent only its unconfirmed parts adds
 `"resumed": true` (files above 10 MB; the identity — size and content hash —
@@ -367,7 +368,7 @@ group.
   Telegram write, so `errors` stays empty on success.
 - `albums` lists every media group in send order; each carries Telegram's
   `grouped_id`, the `td-album:v1` inventory message's id (a comment in the
-  linked discussion group per ADR 0018), member message ids, and member
+  linked discussion group per ADR 0018, or a same-topic reply for forum roots), member message ids, and member
   paths. Empty (`[]`) when nothing grouped.
 - `--recursive` emits the same shape plus its historical keys.
 
@@ -724,3 +725,18 @@ unexpected per-message error.
   }
 }
 ```
+
+## Forum binding additions (ADR 0057)
+
+Ordinary-channel JSON is unchanged. For a forum binding, `td init` includes
+positive numeric `topic_id`; `td status`'s selected `channel` and `channels`
+entries include it too. `channel_id` always remains the actual Telegram peer ID.
+The selected `channel` is matched by peer **and** topic. `td doctor` includes a
+`forum_topic` check rather than a linked-discussion requirement for topic roots.
+
+Desktop `ChannelInfo` adds optional `topic_id` and `selector` only for forum
+bindings. `selector` is `root:<absolute-root>` and is accepted by Channels.Select;
+ordinary entries omit it and continue to use `channel_id`. Frontend list keys,
+selection persistence and status requests use that unique selector, display the
+topic ID, and do not offer linked-discussion creation for a forum root. No public
+error codes, JSON envelope or NDJSON event kinds change.

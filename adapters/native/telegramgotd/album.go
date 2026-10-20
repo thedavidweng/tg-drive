@@ -25,6 +25,10 @@ func (c *Client) UploadMediaGroup(ctx context.Context, reqs []tgtelegram.UploadR
 			return err
 		}
 
+		topic, err := tgtelegram.ForumTopicID(ctx, reqs[0].ChannelID)
+		if err != nil {
+			return err
+		}
 		media := make([]tg.InputSingleMedia, 0, len(reqs))
 		for i, req := range reqs {
 			upl := selectMediaUploader(req)
@@ -69,6 +73,7 @@ func (c *Client) UploadMediaGroup(ctx context.Context, reqs []tgtelegram.UploadR
 		updates, err := api.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
 			Peer:       peer,
 			MultiMedia: media,
+			ReplyTo:    topicReply(topic, 0),
 		})
 		if err != nil {
 			return mapRPCError(err)

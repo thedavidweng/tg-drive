@@ -34,6 +34,7 @@ type PreviewFile struct {
 	UpdatedAt string
 
 	channelTGID int64
+	topicID     int
 	messageID   int
 }
 
@@ -54,6 +55,7 @@ func (a *App) ResolvePreview(ctx context.Context, remotePath string) (PreviewFil
 	if err != nil {
 		return PreviewFile{}, err
 	}
+	ctx = ch.telegramContext(ctx)
 	row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, p)
 	if err != nil {
 		return PreviewFile{}, apperr.Wrap(apperr.ErrDB, "lookup file", err)
@@ -61,7 +63,9 @@ func (a *App) ResolvePreview(ctx context.Context, remotePath string) (PreviewFil
 	if !found {
 		return PreviewFile{}, apperr.New(apperr.ErrRemoteNotFound, fmt.Sprintf("remote path %q not found", p))
 	}
-	return previewFile(row, ch.tgID)
+	f, err := previewFile(row, ch.tgID)
+	f.topicID = ch.topicID
+	return f, err
 }
 
 // PreviewFileByID resolves an active files row by its id, in whichever
@@ -80,6 +84,10 @@ func (a *App) PreviewFileByID(ctx context.Context, id int64) (PreviewFile, bool,
 		return PreviewFile{}, false, apperr.New(apperr.ErrDB, "stored channel id is not numeric")
 	}
 	f, err := previewFile(row, tgID)
+	if err != nil {
+		return f, false, err
+	}
+	err = a.DB.Raw().QueryRowContext(ctx, `select c.topic_id from channels c join files f on f.channel_id=c.id where f.id=?`, row.ID).Scan(&f.topicID)
 	return f, err == nil, err
 }
 
@@ -126,6 +134,7 @@ func (a *App) ReadPreviewRange(ctx context.Context, f PreviewFile, offset, lengt
 	if err != nil {
 		return telegram.MediaInfo{Size: -1}, err
 	}
+	ctx = telegram.WithForumTopic(ctx, f.channelTGID, f.topicID)
 	info, err := tg.ReadMediaRange(ctx, f.channelTGID, f.messageID, offset, length, w)
 	if err != nil {
 		var re *telegram.MediaRangeError
@@ -144,6 +153,7 @@ func (a *App) StreamPreview(ctx context.Context, f PreviewFile, w io.Writer) err
 	if _, err := a.previewClient(); err != nil {
 		return err
 	}
+	ctx = telegram.WithForumTopic(ctx, f.channelTGID, f.topicID)
 	_, err := a.downloadTo(ctx, f.channelTGID, f.messageID, w, &progressWriter{})
 	return telegram.MapError(err)
 }

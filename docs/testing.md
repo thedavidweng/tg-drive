@@ -358,3 +358,20 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
 Real-account checks need a Telegram account, `api_id`, and `api_hash`. Use a
 private test channel. Sequence and caveats:
 [`docs/manual-smoke-tests.md`](manual-smoke-tests.md).
+
+### Offline forum-root acceptance
+
+`go test ./adapters/native/sqlitestore ./adapters/native/telegramgotd ./internal/service ./internal/transfer -run TestForum`
+exercises genuine v6 migration/reopen/integrity rollback, TL-encoded forum
+identity/capability and reply semantics, mixed-topic raw pagination, operation
+isolation and cross-topic reference rejection, and durable retry selection.
+`go test ./internal/app -run TestE2EForum` uses the actual binary/persistent fake
+for two topics plus General, upload/move/delete, index removal/full reconstruction
+and byte comparison. `go test -tags gui ./internal/gui -run TestForum` verifies
+same-peer topic selection and refuses ambiguous peer selectors. The frontend
+switcher regression uses distinct root selectors with one peer.
+
+These fixtures are not authenticated Telegram acceptance. A real authorized
+account/forum (including General and at least two existing topics), permissions
+and consent for mutation/reconstruction remain required for that external gate.
+No signing, real-device or published-V2 receipt is synthesized by these tests.

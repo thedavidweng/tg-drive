@@ -40,6 +40,13 @@ version 4 preserves all existing bindings, files, and transfer state while
 adding this progress table.
 Version 6 adds `directory_move_operations`, preserving existing bindings,
 indexed files, transfers and directory-delete history.
+Version 7 rebuilds `channels` with `topic_id` and uniqueness on
+`(account_id, tg_channel_id, topic_id)`. Existing bindings retain their IDs,
+all original columns and `topic_id=0`; files, nodes, transfers, upload state,
+scan checkpoints and directory histories keep their original references.
+Foreign-key enforcement is disabled on the migration's dedicated connection
+before BEGIN, integrity is checked before COMMIT, and enforcement is restored
+afterwards. A failed integrity check rolls back the schema and version row.
 All migration steps and their version records run in a transaction.
 
 ## Schema
@@ -63,6 +70,7 @@ create table channels (
   id integer primary key,
   account_id integer not null references accounts(id),
   tg_channel_id text not null,
+  topic_id integer not null default 0 check(topic_id >= 0),
   access_hash text,
   title text not null,
   username text,
@@ -75,7 +83,7 @@ create table channels (
   discussion_title text not null default '',
   created_at text not null,
   updated_at text not null,
-  unique(account_id, tg_channel_id)
+  unique(account_id, tg_channel_id, topic_id)
 );
 
 create table nodes (
@@ -270,9 +278,26 @@ operation locks retain that row's identity.
 The service selector `WithLocalRoot(ctx, localRoot)` resolves an exact
 `root_local_path` before an operation starts. An unknown path returns
 `ERR_CHANNEL_NOT_FOUND`; duplicate rows return `ERR_USAGE` rather than routing
-by row order. This reuses the existing schema and needs no migration. Forum
-topic identity is intentionally not represented here until Telegram capability
-checks and manifest routing are specified together.
+by row order. Schema 7 binds an existing forum topic by positive topic ID;
+0 identifies the ordinary-channel binding. Different topics under one peer
+have distinct channel rows, root paths, indexes, locks and scan checkpoints.
+Selecting their shared peer ID or title is ambiguous and returns `ERR_USAGE`;
+use `--root` instead. `td init --bind-channel=<peer> --topic <id>` verifies the
+peer is a forum, the existing topic is visible/open, required upload/edit/delete
+capabilities are available and a history request succeeds before binding.
+It does not create forums/topics. An unscoped legacy binding of the same forum
+must be resolved explicitly, not silently converted.
+
+Telegram routing is operation-scoped, never mutable global client state.
+New messages/albums target the topic's root message; subsequent machine-record
+replies carry `top_msg_id` when needed. General (ID 1) uses Telegram's unflagged
+message semantics. Manifest/album records remain the existing V1 format, carried
+by same-topic replies rather than a broadcast linked discussion group. Reads,
+preview/range bodies and mutation targets verify topic membership; full scan
+filters emitted records while retaining raw-page pagination/completeness proof.
+Cross-topic manifest references cannot resolve a media body. Closed/hidden or
+missing topics reject operations before remote writes. No authenticated Telegram
+acceptance is implied by offline fixtures.
 
 The CLI `--root` supplies this selector after making relative paths absolute.
 An explicit nonempty `WithChannel` selects its channel even when the incoming
@@ -471,7 +496,7 @@ deleted file count or Telegram metadata.
 ## Machine record carrier
 
 Machine records (`td-manifest:v1` per ungrouped file, `td-album:v1` per
-album) live in the comment thread of the file's post inside the channel's
+album) in ordinary channels live in the comment thread of the file's post inside the channel's
 linked discussion group (ADR 0018). Import annotations (`td-origin:v1` and
 `td-dupe:v1`) use the same carrier. Media captions carry human text only.
 Modern media captions contain the caller's human text and display name only;
@@ -487,9 +512,11 @@ forwarding is impossible (protected content), the record falls back to the
 legacy in-channel reply carrier. Rows record the
 carrier peer in `files.manifest_chat_tg_id`: empty means the legacy
 in-channel reply carrier, which remains first-class and is parsed forever.
-Every machine-record write (upload, mv, rm, import, repair) requires a
+Every ordinary-channel machine-record write (upload, mv, rm, import, repair) requires a
 linked discussion group; reads and scans work on legacy channels.
 `td channels link-discussion` creates and links one; `td doctor` reports it.
+Forum roots instead use replies within their selected topic and never require
+or create a linked discussion group (ADR 0057).
 
 `td-origin:v1` is an additive provenance record for content republished by
 `td import saved`. It names the source (`src=saved`), source message
@@ -555,3 +582,14 @@ For files above 10 MB the resumable path persists part state in
 - Stale state is garbage-collected: `td repair --pending` clears state for
   rows it resolves, supersedes/deletes cascade their state, and a completed
   upload deletes its state.
+
+## Forum transfer and desktop selection
+
+Forum Transfer options additionally persist `logical_root` and `topic_id`;
+`channel_tg_id` remains the real peer ID. Retry validates this root still maps
+to the recorded peer/topic before claiming work. Switching the current UI or
+CLI selection cannot redirect in-flight work or retry. Ordinary options are
+unchanged. A removed/rebound root is an explicit error, not a first-peer choice.
+Desktop bound-channel DTOs retain `channel_id`; forum entries additionally
+provide positive `topic_id` and `selector="root:<absolute-root>"`. Select and
+localStorage retain that selector; ordinary entries continue selecting by peer.

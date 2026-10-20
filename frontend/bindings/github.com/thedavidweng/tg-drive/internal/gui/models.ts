@@ -224,9 +224,11 @@ export interface ChannelChoice {
  */
 export interface ChannelInfo {
     /**
-     * ChannelID is the channel's Telegram ID, and the selector Select takes.
+     * ChannelID is the channel's Telegram ID, not a unique topic identity.
      */
     "channel_id": string;
+    "selector"?: string;
+    "topic_id"?: number;
     "title": string;
 
     /**

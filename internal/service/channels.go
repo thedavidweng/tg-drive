@@ -27,6 +27,7 @@ func (a *App) DiscussionGroup(ctx context.Context) (*LinkDiscussionResult, error
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	tgID, _, title, err := a.DB.DiscussionGroup(ctx, ch.rowID)
 	if err != nil {
 		return nil, err
@@ -57,6 +58,7 @@ func (a *App) ChannelPermissions(ctx context.Context) (*ChannelPermissions, erro
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	caps, err := a.TG.Doctor(ctx, ch.tgID)
 	if err != nil {
 		return nil, telegram.MapError(err)
@@ -83,6 +85,10 @@ func (a *App) LinkDiscussionGroup(ctx context.Context) (*LinkDiscussionResult, e
 	ch, err := a.channel(ctx)
 	if err != nil {
 		return nil, err
+	}
+	ctx = ch.telegramContext(ctx)
+	if ch.topicID > 0 {
+		return nil, apperr.New(apperr.ErrUsage, "forum topics carry records directly; linked discussions apply only to broadcast channels")
 	}
 	group, err := a.TG.EnsureDiscussionGroup(ctx, ch.tgID)
 	if err != nil {

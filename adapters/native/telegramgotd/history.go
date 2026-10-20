@@ -41,8 +41,17 @@ func (c *Client) streamHistory(ctx context.Context, channelID int64, afterID, li
 		if err != nil {
 			return err
 		}
+		topic, err := tgtelegram.ForumTopicID(ctx, channelID)
+		if err != nil {
+			return err
+		}
+		// Filter only emitted messages; raw-page completeness stays unchanged.
 		meta, err = c.paginateHistory(ctx, api, peer, afterID, limit, func(msg *tg.Message) error {
-			return fn(messageFromTG(msg))
+			converted := messageFromTG(msg)
+			if !tgtelegram.InForumTopic(converted, topic) {
+				return nil
+			}
+			return fn(converted)
 		})
 		return err
 	})
@@ -248,6 +257,12 @@ func messageFromTG(msg *tg.Message) tgtelegram.Message {
 	}
 	if msg.ReplyTo != nil {
 		if rt, ok := msg.ReplyTo.(*tg.MessageReplyHeader); ok {
+			if rt.ForumTopic {
+				out.TopicID = rt.ReplyToMsgID
+				if top, ok := rt.GetReplyToTopID(); ok {
+					out.TopicID = top
+				}
+			}
 			id := rt.ReplyToMsgID
 			out.ReplyTo = &id
 		}
@@ -318,6 +333,9 @@ func (c *Client) GetMessage(ctx context.Context, channelID int64, messageID int)
 		if err != nil {
 			return &tgtelegram.MessageNotFoundError{}
 		}
+		if err := checkTopicMessage(ctx, channelID, msg); err != nil {
+			return err
+		}
 		out = messageFromTG(msg)
 		return nil
 	})
@@ -364,8 +382,20 @@ func (c *Client) Doctor(ctx context.Context, channelID int64) (*tgtelegram.Capab
 			caps.EditOldCaptionOK = true
 		} else {
 			caps.UploadOK = ch.AdminRights.PostMessages
+			if ch.Forum {
+				caps.UploadOK = !ch.BannedRights.SendMessages && !ch.DefaultBannedRights.SendMessages && !ch.BannedRights.SendMedia && !ch.DefaultBannedRights.SendMedia
+			}
 			caps.DeleteOK = ch.AdminRights.DeleteMessages
 			caps.EditOldCaptionOK = ch.AdminRights.EditMessages
+		}
+		if topicID, err := tgtelegram.ForumTopicID(ctx, channelID); err != nil {
+			return err
+		} else if topicID > 0 {
+			topic, err := resolveForumTopic(ctx, api, peer, topicID)
+			if err != nil {
+				return err
+			}
+			caps.UploadOK = caps.UploadOK && !topic.Closed && !topic.Hidden
 		}
 		if _, ok, err := c.discussionGroup(ctx, api, channelID); err == nil && ok {
 			caps.DiscussionOK = true

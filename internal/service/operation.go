@@ -8,6 +8,7 @@ import (
 
 	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/core/telegram"
 )
 
 // An operation (ADR 0030) is one use case's exclusive claim on canonical
@@ -22,6 +23,7 @@ type channelContext struct {
 	rowID   int64
 	tgID    int64
 	tgIDStr string
+	topicID int
 
 	app          *App
 	discussionMu sync.Mutex
@@ -75,7 +77,7 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 	var err error
 	if root := a.localRootSelector(ctx); root != "" {
 		rows, err := a.DB.Raw().QueryContext(ctx, `
-			select id, tg_channel_id from channels where root_local_path=?
+			select id, tg_channel_id, topic_id from channels where root_local_path=?
 			order by id limit 2`, root)
 		if err != nil {
 			return nil, err
@@ -87,7 +89,7 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 			}
 			return nil, apperr.New(apperr.ErrChannelNotFound, "logical root not found: "+root)
 		}
-		if err := rows.Scan(&ch.rowID, &ch.tgIDStr); err != nil {
+		if err := rows.Scan(&ch.rowID, &ch.tgIDStr, &ch.topicID); err != nil {
 			return nil, err
 		}
 		if rows.Next() {
@@ -98,7 +100,7 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 		}
 	} else if sel := a.channelSelector(ctx); sel != "" {
 		rows, err := a.DB.Raw().QueryContext(ctx, `
-			select id, tg_channel_id from channels where title=? or tg_channel_id=?
+			select id, tg_channel_id, topic_id from channels where title=? or tg_channel_id=?
 			order by (tg_channel_id=?) desc, id limit 2`, sel, sel, sel)
 		if err != nil {
 			return nil, err
@@ -110,17 +112,25 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 			}
 			return nil, apperr.New(apperr.ErrChannelNotFound, "channel not found: "+sel)
 		}
-		if err := rows.Scan(&ch.rowID, &ch.tgIDStr); err != nil {
+		if err := rows.Scan(&ch.rowID, &ch.tgIDStr, &ch.topicID); err != nil {
 			return nil, err
 		}
-		if ch.tgIDStr != sel && rows.Next() {
-			return nil, apperr.New(apperr.ErrUsage, "channel title is ambiguous: "+sel+"; select a Telegram ID from td status")
+		if rows.Next() {
+			var nextID int64
+			var nextPeer string
+			var nextTopic int
+			if err := rows.Scan(&nextID, &nextPeer, &nextTopic); err != nil {
+				return nil, err
+			}
+			if ch.tgIDStr != sel || nextPeer == sel {
+				return nil, apperr.New(apperr.ErrUsage, "channel selector is ambiguous: "+sel+"; select an exact Telegram ID for an ordinary channel or a unique --root for forum topics")
+			}
 		}
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
 	} else {
-		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id from channels order by id limit 1`).Scan(&ch.rowID, &ch.tgIDStr)
+		err = a.DB.Raw().QueryRowContext(ctx, `select id, tg_channel_id, topic_id from channels order by id limit 1`).Scan(&ch.rowID, &ch.tgIDStr, &ch.topicID)
 		if err == sql.ErrNoRows {
 			return nil, apperr.New(apperr.ErrChannelNotFound,
 				"no channel bound in this database; run: td init <local-root> --create-channel (new drive) or --bind-channel (existing drive, rebuilds the index)")
@@ -144,6 +154,21 @@ func (a *App) ChannelTelegramID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return ch.tgIDStr, nil
+}
+
+// ForumBinding is the durable selector a Transfer must retain when a peer has
+// several bound topics. Ordinary-channel Transfer options remain unchanged.
+func (a *App) ForumBinding(ctx context.Context) (string, int, error) {
+	ch, err := a.channel(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	if ch.topicID == 0 {
+		return "", 0, nil
+	}
+	var root string
+	err = a.DB.Raw().QueryRowContext(ctx, `select root_local_path from channels where id=?`, ch.rowID).Scan(&root)
+	return root, ch.topicID, err
 }
 
 // operation is the running operation carried by its body's context.
@@ -184,7 +209,16 @@ func (a *App) operate(ctx context.Context, ch *channelContext, paths []string, f
 		}
 	}
 	run := func(ctx context.Context) error {
-		return fn(context.WithValue(ctx, operationKey{}, op))
+		if op.ch.topicID > 0 {
+			topic, err := a.TG.ResolveForumTopic(ctx, op.ch.tgID, op.ch.topicID)
+			if err != nil {
+				return telegram.MapError(err)
+			}
+			if topic.Closed || topic.Hidden {
+				return apperr.New(apperr.ErrChannelPermission, "forum topic is closed or hidden")
+			}
+		}
+		return fn(context.WithValue(op.ch.telegramContext(ctx), operationKey{}, op))
 	}
 	if len(missing) == 0 {
 		return run(ctx)
@@ -195,4 +229,8 @@ func (a *App) operate(ctx context.Context, ch *channelContext, paths []string, f
 // pathLocked reports whether some live operation holds path's lock.
 func (a *App) pathLocked(ctx context.Context, ch *channelContext, path string) (bool, error) {
 	return a.DB.LockHeld(ctx, sqlitestore.LockKey(ch.rowID, path))
+}
+
+func (ch *channelContext) telegramContext(ctx context.Context) context.Context {
+	return telegram.WithForumTopic(ctx, ch.tgID, ch.topicID)
 }

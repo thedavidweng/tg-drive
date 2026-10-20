@@ -69,6 +69,7 @@ func (a *App) UploadFilesAs(ctx context.Context, localPaths []string, remoteDir 
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	active, err := a.activePaths(ctx, ch.rowID)
 	if err != nil {
 		return nil, err

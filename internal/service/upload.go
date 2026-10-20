@@ -274,6 +274,7 @@ func (a *App) uploadFile(ctx context.Context, localPath, remotePath string, poli
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	active, err := a.activePaths(ctx, ch.rowID)
 	if err != nil {
 		return nil, err

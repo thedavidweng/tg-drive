@@ -174,6 +174,7 @@ const (
 
 func NewInitCmd(rt Runtime) *cobra.Command {
 	var createCh, bindCh string
+	var topicID int
 	c := &cobra.Command{
 		Use:   "init <local-root>",
 		Short: "Initialize a local root",
@@ -182,6 +183,9 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 			r := rt.Renderer()
 			if createCh != "" && bindCh != "" {
 				return r.Error(apperr.New(apperr.ErrFlagConflict, "--create-channel and --bind-channel are mutually exclusive"))
+			}
+			if cmd.Flags().Changed("topic") && (topicID <= 0 || bindCh == "" || createCh != "") {
+				return r.Error(apperr.New(apperr.ErrUsage, "--topic requires a positive ID and --bind-channel"))
 			}
 			app, cleanup, err := rt.OpenApp(cmd)
 			if err != nil {
@@ -215,11 +219,16 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 				if selected == nil {
 					return r.Error(apperr.New(apperr.ErrUsage, "channel selection required"))
 				}
-				bindChannel = selected.Title
-			} else if rt.Channel() != "" {
+				bindChannel = fmt.Sprint(selected.ID)
+			} else if rt.Channel() != "" && (topicID == 0 || bindCh == "") {
 				bindChannel = rt.Channel()
 			}
-			data, err := app.InitRoot(ctx, args[0], rt.Channel(), createCh, bindChannel)
+			var data *service.InitRootResult
+			if topicID > 0 {
+				data, err = app.InitForumRoot(ctx, args[0], bindChannel, topicID)
+			} else {
+				data, err = app.InitRoot(ctx, args[0], rt.Channel(), createCh, bindChannel)
+			}
 			if err != nil {
 				return r.Error(err)
 			}
@@ -227,6 +236,9 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 				return r.Success(data)
 			}
 			out := cmd.OutOrStdout()
+			if data.TopicID > 0 {
+				_, _ = fmt.Fprintf(out, "forum topic: %d; select this drive with --root %q\n", data.TopicID, data.LocalRoot)
+			}
 			if data.AlreadyInitialized {
 				_, _ = fmt.Fprintf(out, "already initialized: %v is bound to channel %q (id %v)\n", data.LocalRoot, data.ChannelTitle, data.ChannelID)
 				_, _ = fmt.Fprintln(out, "use --bind-channel to rebind, or init a different directory")
@@ -247,6 +259,7 @@ func NewInitCmd(rt Runtime) *cobra.Command {
 	c.Flags().Lookup("create-channel").NoOptDefVal = createChannelDefault
 	c.Flags().StringVar(&bindCh, "bind-channel", "", "bind an existing channel; bare flag lists and prompts")
 	c.Flags().Lookup("bind-channel").NoOptDefVal = bindChannelPick
+	c.Flags().IntVar(&topicID, "topic", 0, "bind an existing forum topic by positive ID (requires --bind-channel)")
 	return c
 }
 

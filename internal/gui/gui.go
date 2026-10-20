@@ -9,6 +9,7 @@ package gui
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
@@ -50,8 +51,8 @@ type appState struct {
 	mu       sync.Mutex
 	app      *service.App
 	closeApp func()
-	// channel is the active channel selector (a bound channel's Telegram
-	// ID); "" selects the first bound channel. Switching it never reopens
+	// channel is the active selector (Telegram ID, or root:<path> for a
+	// forum topic); "" selects the first binding. Switching it never reopens
 	// the App: use pins it on each call's ctx, and a Transfer pins the
 	// channel it was submitted on, so running Transfers keep their App,
 	// Telegram client, and channel across a switch.
@@ -74,7 +75,14 @@ func (s *appState) current() *service.App {
 func (s *appState) use(ctx context.Context) (*service.App, context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.app, service.WithChannel(ctx, s.channel)
+	return s.app, selectedContext(ctx, s.channel)
+}
+
+func selectedContext(ctx context.Context, selector string) context.Context {
+	if strings.HasPrefix(selector, "root:") {
+		return service.WithLocalRoot(ctx, strings.TrimPrefix(selector, "root:"))
+	}
+	return service.WithChannel(ctx, selector)
 }
 
 // scoped is ctx selecting the active channel.

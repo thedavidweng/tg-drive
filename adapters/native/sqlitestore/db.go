@@ -226,9 +226,44 @@ func Open(path string) (*DB, error) {
 }
 
 func (d *DB) init() error {
-	return d.WithTx(context.Background(), func(tx *sql.Tx) error {
-		return applyMigrations(context.Background(), tx)
-	})
+	ctx := context.Background()
+	conn, err := d.sql.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	// SQLite's generalized ALTER TABLE procedure requires FK enforcement
+	// off before BEGIN while replacing a referenced parent table. No other
+	// connection is exposed until migration and the integrity check finish.
+	if _, err := conn.ExecContext(ctx, `pragma foreign_keys=off`); err != nil {
+		return err
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := applyMigrations(ctx, tx); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `pragma foreign_key_check`)
+	if err != nil {
+		return err
+	}
+	invalid := rows.Next()
+	checkErr := rows.Err()
+	_ = rows.Close()
+	if checkErr != nil {
+		return checkErr
+	}
+	if invalid {
+		return apperr.New(apperr.ErrDB, "migration would leave invalid foreign keys")
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, `pragma foreign_keys=on`)
+	return err
 }
 
 // migration is one versioned schema step. Each migration runs in a single
@@ -257,6 +292,7 @@ var migrations = []migration{
 	{version: 4, run: repairTransferSchema},
 	{version: 5, stmts: []string{directoryDeleteProgressSQL}},
 	{version: 6, stmts: []string{directoryMoveProgressSQL}},
+	{version: 7, stmts: []string{forumRootsSQL}},
 }
 
 // repairTransferSchema converges both pre-Transfer and current v3 databases

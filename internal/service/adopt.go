@@ -98,6 +98,7 @@ func (a *App) Adopt(ctx context.Context, opts AdoptOptions) (*AdoptResult, error
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID, tgChID := ch.rowID, ch.tgID
 	// New machine records are comment threads (ADR 0018): adopt needs the
 	// linked discussion group.
@@ -482,6 +483,7 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID, tgChID := ch.rowID, ch.tgID
 	// Conversion posts comment records (ADR 0018): the discussion group
 	// must be linked.
