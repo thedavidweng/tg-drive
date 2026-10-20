@@ -3,20 +3,48 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
-// buildBinary compiles the td binary once per test.
+var (
+	binaryDir   string
+	binaryOnce  sync.Once
+	binaryError error
+)
+
+func TestMain(m *testing.M) {
+	var err error
+	binaryDir, err = os.MkdirTemp("", "td-app-e2e-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	if err := os.RemoveAll(binaryDir); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		code = 1
+	}
+	os.Exit(code)
+}
+
+// Every case runs the same immutable executable, with its own config and state.
 func buildBinary(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "td")
-	build := exec.Command("go", "build", "-o", bin, filepath.Join("..", "..", "cmd", "td"))
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
+	bin := filepath.Join(binaryDir, "td")
+	binaryOnce.Do(func() {
+		build := exec.Command("go", "build", "-o", bin, filepath.Join("..", "..", "cmd", "td"))
+		if out, err := build.CombinedOutput(); err != nil {
+			binaryError = fmt.Errorf("build: %w\n%s", err, out)
+		}
+	})
+	if binaryError != nil {
+		t.Fatal(binaryError)
 	}
 	return bin
 }

@@ -12,16 +12,23 @@ import (
 )
 
 func TestFilesystemWatchRejectsSymlinksAndNoncanonicalNames(t *testing.T) {
-	for _, kind := range []string{"symlink", "backslash"} {
+	for _, kind := range []string{"symlink", "symlink root", "backslash"} {
 		t.Run(kind, func(t *testing.T) {
 			a, tg := testApp(t)
 			loginAndInit(t, a, tg)
 			local := t.TempDir()
-			if kind == "symlink" {
+			switch kind {
+			case "symlink":
 				if err := os.Symlink(writeLocal(t, "outside"), filepath.Join(local, "link")); err != nil {
 					t.Fatal(err)
 				}
-			} else {
+			case "symlink root":
+				target := local
+				local = filepath.Join(t.TempDir(), "linked-root")
+				if err := os.Symlink(target, local); err != nil {
+					t.Fatal(err)
+				}
+			default:
 				watchWrite(t, local, "a\\b.txt", "must not become a subdirectory")
 			}
 			if _, err := watchOnce(t, a, context.Background(), local, "/sync", false); appErrCode(t, err) != apperr.ErrPathInvalid {

@@ -84,6 +84,13 @@ func (a *App) WatchDirectory(ctx context.Context, local, remote string, opts Wat
 		return err
 	}
 	defer func() { _ = root.Close() }()
+	opened, err := root.Stat(".")
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(info, opened) {
+		return apperr.New(apperr.ErrPathInvalid, "watch source changed while opening: "+local)
+	}
 	remote, err = fsmodel.NormalizeCanonicalPath(remote)
 	if err != nil {
 		return err
