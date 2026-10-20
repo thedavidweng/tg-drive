@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.1.0](https://github.com/thedavidweng/tg-drive/compare/v1.0.2...v1.1.0) (2026-10-20)
+
+
+### Features
+
+* add pinned read-only WebDAV and native FUSE adapters ([7b31e99](https://github.com/thedavidweng/tg-drive/commit/7b31e99a043d4beaf1ac827b5b04cf243ef52ee1))
+* add pinned read-only WebDAV and native FUSE adapters ([4887ba9](https://github.com/thedavidweng/tg-drive/commit/4887ba9c6b67757c5615c5fd84b1ad0129b34ffd))
+* add read-only duplicate audit ([d6df725](https://github.com/thedavidweng/tg-drive/commit/d6df725ca7fc4dd6c4dafcd8b76aa87c4978c4f6))
+* add read-only duplicate audit ([3767f75](https://github.com/thedavidweng/tg-drive/commit/3767f7589e78cb657512b6f3b6e35fdb6f40bbee))
+* add recipient-owned authenticated encrypted archives ([5c2aaac](https://github.com/thedavidweng/tg-drive/commit/5c2aaac3d41f44a31985a1b239803903787e3add))
+* add recipient-owned authenticated encrypted archives ([650cf29](https://github.com/thedavidweng/tg-drive/commit/650cf29e8772d67bffef7731571a8ade5f034fdf))
+* bind recoverable drives to existing forum topics ([e3c446b](https://github.com/thedavidweng/tg-drive/commit/e3c446be511af78b379b691e692be39faae09a1a))
+* bind recoverable drives to existing forum topics ([4cce104](https://github.com/thedavidweng/tg-drive/commit/4cce1041de2c9f949bfcb33bbe508ce49b4fefa2))
+* checkpoint local filesystem content watches ([db94b4c](https://github.com/thedavidweng/tg-drive/commit/db94b4c83febc5fc98dd00677bea8cffbb32b994))
+* checkpoint local filesystem content watches ([cd90c99](https://github.com/thedavidweng/tg-drive/commit/cd90c9949c39d77d8a69ea78d4d92242eebaa5e6))
+* **cli:** select bound drives by local root ([#168](https://github.com/thedavidweng/tg-drive/issues/168)) ([f8ba9e2](https://github.com/thedavidweng/tg-drive/commit/f8ba9e278b9753e88d9cbf615f5729250f7d4d94))
+* **dedupe:** add confirmed cleanup of verified duplicates ([#175](https://github.com/thedavidweng/tg-drive/issues/175)) ([1d3dec3](https://github.com/thedavidweng/tg-drive/commit/1d3dec38e5b5f24855bbf7ff31e4b2ab9504da6c))
+* **gui:** expose confirmed recursive directory actions ([#171](https://github.com/thedavidweng/tg-drive/issues/171)) ([a7f4a5d](https://github.com/thedavidweng/tg-drive/commit/a7f4a5deb4d57d236a2a8fbecbc51f15217f22ec))
+* **operations:** persist directory move progress and retry target ([#163](https://github.com/thedavidweng/tg-drive/issues/163)) ([3c4b5b2](https://github.com/thedavidweng/tg-drive/commit/3c4b5b2d186e9de541502baa2481e2a033ce5663))
+* **ops:** delete indexed directories incrementally ([8905476](https://github.com/thedavidweng/tg-drive/commit/89054768e7dc7f6c67f1a84dca2fda284ff88c55))
+* **ops:** delete indexed directories incrementally ([#159](https://github.com/thedavidweng/tg-drive/issues/159)) ([fcca7e5](https://github.com/thedavidweng/tg-drive/commit/fcca7e535865df16e297212855d0cead7e3aa649))
+* **ops:** move indexed directories ([#157](https://github.com/thedavidweng/tg-drive/issues/157)) ([140cb1d](https://github.com/thedavidweng/tg-drive/commit/140cb1d5632e0f278ef66e285e3f85b598ceb4b7))
+* persist directory delete progress ([07681c1](https://github.com/thedavidweng/tg-drive/commit/07681c1d5078529132dff12663d540c7e2802e51))
+* persist directory delete progress ([d42ad88](https://github.com/thedavidweng/tg-drive/commit/d42ad8852688eccee69173ac9a9865b3a1306030))
+* **service:** route operations by logical root ([9f4adcc](https://github.com/thedavidweng/tg-drive/commit/9f4adcc20f20bf5713db2acd3f16f38c4023457c))
+* **service:** route operations by logical root ([2f0e4ce](https://github.com/thedavidweng/tg-drive/commit/2f0e4ce6f3808578e6eb057455cbb210fea0d57e))
+
+
+### Bug Fixes
+
+* bound watch source identity and initialize Office test dependency ([2bcc22a](https://github.com/thedavidweng/tg-drive/commit/2bcc22ae3f60cf324ec1e71822755b3350fafdf8))
+* **init:** require unique remote channel identity ([#173](https://github.com/thedavidweng/tg-drive/issues/173)) ([9e34e04](https://github.com/thedavidweng/tg-drive/commit/9e34e046c2fdc615697987430e982bcb290b74d4))
+* **operations:** retain directory progress on cancellation ([#164](https://github.com/thedavidweng/tg-drive/issues/164)) ([f16edcd](https://github.com/thedavidweng/tg-drive/commit/f16edcd3a8a7ae99f734b4367dc57170f679c027))
+* preserve bounded forum history and diagnostic access ([48c7d41](https://github.com/thedavidweng/tg-drive/commit/48c7d414aaadfe32976a0edfa0a9bc3a4b249b29))
+* preserve failed directory delete checkpoints ([b826a50](https://github.com/thedavidweng/tg-drive/commit/b826a50a8346fe9219ac05206f7ee089128cab6c))
+* **service:** move local folders with directory batches ([#166](https://github.com/thedavidweng/tg-drive/issues/166)) ([3309da5](https://github.com/thedavidweng/tg-drive/commit/3309da548ad5abf235693bce243f0ba87d765d4c))
+* **service:** remove local folders after directory deletion ([#165](https://github.com/thedavidweng/tg-drive/issues/165)) ([a220334](https://github.com/thedavidweng/tg-drive/commit/a220334e6c0e6162b47f204357dc611056488dae))
+* **storage:** resolve bound channels by identity ([5f15e7e](https://github.com/thedavidweng/tg-drive/commit/5f15e7eecfd43d1133412f3cfb3725f3ca0b7a4a))
+
+
+### Documentation
+
+* record published v1.0.2 artifact acceptance ([#162](https://github.com/thedavidweng/tg-drive/issues/162)) ([339a1a8](https://github.com/thedavidweng/tg-drive/commit/339a1a8f8932338e7b1e687cb78df7f44d04d3c5))
+* **release:** record cross-platform v1.0.2 acceptance ([#167](https://github.com/thedavidweng/tg-drive/issues/167)) ([a2fb9a0](https://github.com/thedavidweng/tg-drive/commit/a2fb9a092e2e437af5c668a516c77d668d698c37))
+
 ## [1.0.2](https://github.com/thedavidweng/tg-drive/compare/v1.0.1...v1.0.2) (2026-10-18)
 
 
