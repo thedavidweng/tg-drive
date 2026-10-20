@@ -612,3 +612,16 @@ unchanged. A removed/rebound root is an explicit error, not a first-peer choice.
 Desktop bound-channel DTOs retain `channel_id`; forum entries additionally
 provide positive `topic_id` and `selector="root:<absolute-root>"`. Select and
 localStorage retain that selector; ordinary entries continue selecting by peer.
+
+## Encrypted archive objects
+
+Client-encrypted archives are ordinary file objects reconstructed through the
+existing td:v1 wire metadata and hash of ciphertext. Their private tree and
+`.td-archive-v1.json` live only inside age ciphertext. Archive manifest v1
+contains ordered unique portable relative entries: `path`, `size`, `hash`
+(BLAKE3 for files), `directory`. Manifest size is bounded to 8 MiB. Directory
+size/hash is 0/empty. Restore rejects unexpected entries/order/types/sizes,
+links, duplicate or escaping paths, invalid hashes and trailing payload,
+and consumes age through authenticated EOF. Keys are never stored in SQLite,
+remote metadata or config. No database migration is required for encryption.
+Randomized ciphertext does not imply plaintext deduplication.

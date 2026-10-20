@@ -87,6 +87,7 @@ gui-frontend-check: gui-frontend-install
 
 gui-go-check: gui-frontend-build
 	go vet -tags $(GUI_TAGS) ./...
+	go test ./adapters/native/atomicdir ./adapters/native/cryptarchive ./adapters/native/fileperm
 	go test -tags $(GUI_TAGS) ./internal/gui/... ./cmd/td-gui/... ./frontend
 
 check-gui: gui-bindings-check gui-frontend-check gui-go-check

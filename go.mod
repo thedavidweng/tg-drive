@@ -3,6 +3,7 @@ module github.com/thedavidweng/tg-drive
 go 1.26.0
 
 require (
+	filippo.io/age v1.3.2
 	github.com/go-faster/errors v0.8.0
 	github.com/google/uuid v1.6.0
 	github.com/gotd/td v0.162.0
@@ -21,6 +22,7 @@ require (
 )
 
 require (
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/andybalholm/brotli v1.2.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
