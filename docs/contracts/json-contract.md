@@ -753,3 +753,12 @@ ordinary entries omit it and continue to use `channel_id`. Frontend list keys,
 selection persistence and status requests use that unique selector, display the
 topic ID, and do not offer linked-discussion creation for a forum root. No public
 error codes, JSON envelope or NDJSON event kinds change.
+
+## Read-only adapter lifecycle
+
+`td webdav --json` emits a startup success envelope containing `address`
+(actual bound IP:port), `remote_root` and `read_only: true`. A cancelled server
+shuts down and emits ERR_CANCELLED/130. HTTP payloads are served separately
+from the command's stdout stream. `td mount --json` emits
+`{ "unmounted": true, "read_only": true }` after a normal external unmount;
+command cancellation emits ERR_CANCELLED/130 after requesting unmount.

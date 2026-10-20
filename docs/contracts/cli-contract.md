@@ -357,3 +357,23 @@ and album records; no new remote metadata version is introduced. General ID 1
 follows Telegram's unflagged-message semantics. `td doctor` reports topic state;
 closed/hidden/missing topics are not writable. These are source contracts, not
 receipts for authenticated Telegram, a new release or clean-device signing.
+
+## Read-only filesystem adapters
+
+`td webdav [remote-directory] --listen 127.0.0.1:8080` serves the selected
+subtree over loopback HTTP. A literal loopback IP is required; port 0 chooses
+a free port. GET/HEAD (including byte ranges), PROPFIND and OPTIONS are allowed;
+mutation/lock methods return 405. Non-loopback Host headers return 403; browser
+content is sandboxed with no active resource loading. This endpoint has no
+authentication and is intended for local clients only.
+
+`td mount <remote-directory> <local-mountpoint>` exposes the same read-only
+subtree through installed native FUSE on Linux/macOS. The mountpoint must be an
+existing empty directory, not a symlink. No driver installation or privilege
+escalation occurs. Other systems return ERR_USAGE. Mount/driver errors fail
+explicitly. SIGINT/SIGTERM cancels reads and requests normal unmount.
+
+Both adapters pin account/peer/topic/logical-root identity at startup and refuse
+rebinding. Changing the active selector cannot retarget them. Only seekable
+Telegram representations are supported. There is no writable mount or WebDAV
+mutation support.

@@ -383,3 +383,13 @@ These fixtures are not authenticated Telegram acceptance. A real authorized
 account/forum (including General and at least two existing topics), permissions
 and consent for mutation/reconstruction remain required for that external gate.
 No signing, real-device or published-V2 receipt is synthesized by these tests.
+
+### Read-only adapters
+
+`go test ./adapters/native/readwebdav ./adapters/native/readfuse ./internal/service ./internal/app -run 'TestWebDAV|TestReadOnlyFuse|TestMountRefuses|TestReadTree|TestE2EWebDAV'`
+checks loopback HTTP GET/HEAD/range/PROPFIND, mutation refusal, DNS-rebinding Host
+refusal and sandbox headers; kernel-free native FUSE lookup/list/range/write
+refusal; pinned forum/subtree reads and rebinding; and actual CLI startup and
+SIGINT shutdown. Kernel-free tests do not prove a real FUSE mount. Device
+acceptance requires one authorized native mount/read/unmount with an installed
+driver and a dedicated empty temporary mountpoint.
