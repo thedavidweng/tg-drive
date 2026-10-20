@@ -73,6 +73,9 @@ func (a *App) channel(ctx context.Context) (*channelContext, error) {
 	if op := operationFrom(ctx); op != nil {
 		return op.ch, nil
 	}
+	if ch, _ := ctx.Value(readChannelKey{}).(*channelContext); ch != nil {
+		return ch, nil
+	}
 	ch := &channelContext{app: a}
 	var err error
 	if root := a.localRootSelector(ctx); root != "" {
