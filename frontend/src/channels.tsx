@@ -15,6 +15,15 @@ import { useI18n, type Translate } from "@/i18n"
  */
 export const channelStorageKey = "td-channel"
 
+// Ordinary bindings select by peer; forum bindings select by durable root.
+function selection(ch: ChannelInfo): string {
+  return ch.topic_id ? ch.selector! : ch.channel_id
+}
+
+function driveTitle(ch: ChannelInfo): string {
+  return ch.topic_id ? `${ch.title} / #${ch.topic_id}` : ch.title
+}
+
 export function storedChannel(): string {
   return localStorage.getItem(channelStorageKey) ?? ""
 }
@@ -86,8 +95,9 @@ export function ChannelSwitcher({
     if (!channels || restored.current) return
     restored.current = true
     const stored = storedChannel()
-    const activeID = channels.find((c) => c.active)?.channel_id
-    if (!stored || stored === activeID || !channels.some((c) => c.channel_id === stored)) return
+    const activeChannel = channels.find((c) => c.active)
+    const activeID = activeChannel ? selection(activeChannel) : undefined
+    if (!stored || stored === activeID || !channels.some((c) => selection(c) === stored)) return
     let live = true
     backend.channels.select(stored).then(
       () => {
@@ -117,7 +127,7 @@ export function ChannelSwitcher({
         className="flex h-7 max-w-44 items-center gap-1 rounded-control px-2 text-[12.5px] text-ctl-fg transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg disabled:pointer-events-none"
       >
         <HardDrive aria-hidden className="size-3.5 shrink-0" />
-        <span className="truncate">{active ? active.title : t("channels.none")}</span>
+        <span className="truncate">{active ? driveTitle(active) : t("channels.none")}</span>
         <ChevronDown aria-hidden className="size-3 shrink-0 text-faint" />
       </button>
       {sheet === "channels" && (
@@ -172,7 +182,7 @@ function ChannelsSheet({
     error: BackendError | null
   } | null>(null)
   const [linking, setLinking] = useState(false)
-  const activeID = active?.channel_id
+  const activeID = active ? selection(active) : undefined
 
   useEffect(() => {
     if (!activeID) return
@@ -213,12 +223,12 @@ function ChannelsSheet({
       ) : (
         <ul aria-label={t("channels.sheetTitle")} className="divide-y divide-line-2">
           {channels.map((ch) => (
-            <li key={ch.channel_id} className="flex min-h-9 items-center gap-2 py-1">
+            <li key={selection(ch)} className="flex min-h-9 items-center gap-2 py-1">
               {ch.active ? (
                 <>
                   <Check aria-hidden className="size-4 shrink-0 text-primary" />
                   <span aria-current="true" className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                    {ch.title}
+                    {driveTitle(ch)}
                   </span>
                   <span className="shrink-0 rounded-full bg-pill px-2 py-0.5 text-[11px] text-fg-2">
                     {t("channels.active")}
@@ -227,11 +237,11 @@ function ChannelsSheet({
               ) : (
                 <button
                   type="button"
-                  aria-label={t("channels.switchTo", { title: ch.title })}
-                  onClick={() => onSelect(ch.channel_id)}
+                  aria-label={t("channels.switchTo", { title: driveTitle(ch) })}
+                  onClick={() => onSelect(selection(ch))}
                   className="min-w-0 flex-1 truncate rounded-control px-1 py-0.5 text-left text-[13px] text-fg-2 transition-colors duration-150 ease-quiet hover:bg-pill-hover hover:text-fg"
                 >
-                  {ch.title}
+                  {driveTitle(ch)}
                 </button>
               )}
             </li>
@@ -247,7 +257,7 @@ function ChannelsSheet({
           </h3>
           {status ? (
             <dl className="flex flex-col gap-1.5 text-[12.5px]">
-              <StatusRow
+              {!active.topic_id && <StatusRow
                 label={t("channels.status.discussion")}
                 value={
                   status.discussion_linked ? (
@@ -261,7 +271,7 @@ function ChannelsSheet({
                     </span>
                   )
                 }
-              />
+              />}
               <StatusRow label={t("channels.status.permissions")} value={permissionsText(status, t)} />
               <StatusRow label={t("channels.status.uploadLimit")} value={formatSize(status.upload_limit_bytes, t)} />
               <StatusRow

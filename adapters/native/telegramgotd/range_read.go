@@ -37,6 +37,9 @@ func (c *Client) ReadMediaRange(ctx context.Context, channelID int64, messageID 
 		if err != nil {
 			return err
 		}
+		if err := checkTopicMessage(ctx, channelID, msg); err != nil {
+			return err
+		}
 		info, err = readMessageRange(ctx, api, msg, offset, length, dst)
 		return err
 	})

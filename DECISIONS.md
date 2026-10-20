@@ -12,7 +12,7 @@ This document exists to prevent implementation drift. Do not replace these choic
 - Initialized roots select persisted channel bindings; each root retains one channel and a channel-scoped index/lock namespace.
 - Dedupe reports duplicate indexed content and supports explicit, confirmed
   cleanup while retaining one hash group member.
-- Forum topics, filesystem watch, WebDAV/FUSE, encryption, and multi-account switching remain tracked in [issues](https://github.com/thedavidweng/tg-drive/issues).
+- Existing forum topics are logical roots with operation-scoped routing and same-topic records (ADR 0057); authenticated acceptance remains tracked in #24. Filesystem watch, WebDAV/FUSE, encryption and multi-account switching remain tracked in [issues](https://github.com/thedavidweng/tg-drive/issues).
 - Empty directories are local-only and disappear after a full scan.
 
 ## Repository

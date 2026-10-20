@@ -18,7 +18,7 @@ import (
 func directoryCrashApp(t *testing.T, dir string) (*App, *fake.Client) {
 	t.Helper()
 	cfg := config.Defaults()
-	cfg.Locks.TTLSeconds = 1
+	cfg.Locks.TTLSeconds = 12
 	cfg.Storage.DBPath = filepath.Join(dir, "index.db")
 	db, err := sqlitestore.Open(cfg.Storage.DBPath)
 	if err != nil {
@@ -141,9 +141,9 @@ func TestDirectoryProcessKillAndRetry(t *testing.T) {
 				interrupted.failed != 0 || interrupted.remaining != 2 || interrupted.lastPath != "/batch/b.txt" {
 				t.Fatalf("killed checkpoint = %+v", interrupted)
 			}
-			// Operation leases compare at second precision, so allow two
-			// seconds for a one-second lease before the explicit retry.
-			if wait := time.Until(killed.Add(2300 * time.Millisecond)); wait > 0 {
+			// Keep the normal renewal headroom during live writes, then wait
+			// for the killed worker's real lease to expire before retrying.
+			if wait := time.Until(killed.Add(13 * time.Second)); wait > 0 {
 				time.Sleep(wait)
 			}
 			if err := run(app, operation); err != nil {

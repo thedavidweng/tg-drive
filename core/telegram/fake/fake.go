@@ -18,12 +18,13 @@ import (
 
 // Client is an in-memory fake Telegram client for tests.
 type Client struct {
-	mu        sync.Mutex
-	statePath string // non-empty: persist state across processes (NewPersistent)
-	user      *telegram.User
-	loggedIn  bool
-	channels  map[int64]*telegram.Channel
-	messages  map[int64][]telegram.Message
+	mu          sync.Mutex
+	statePath   string // non-empty: persist state across processes (NewPersistent)
+	user        *telegram.User
+	loggedIn    bool
+	channels    map[int64]*telegram.Channel
+	messages    map[int64][]telegram.Message
+	forumTopics map[int64]map[int]telegram.ForumTopic
 	// discussion maps a drive channel id to its linked discussion group
 	// channel id (ADR 0018). threadRoots maps a forwarded header message id
 	// inside a discussion group to the original channel post id.
@@ -98,6 +99,7 @@ type Client struct {
 func New() *Client {
 	return &Client{
 		channels:      make(map[int64]*telegram.Channel),
+		forumTopics:   make(map[int64]map[int]telegram.ForumTopic),
 		messages:      make(map[int64][]telegram.Message),
 		discussion:    make(map[int64]int64),
 		threadRoots:   make(map[int64]int64),
@@ -324,6 +326,10 @@ func (c *Client) UploadMedia(ctx context.Context, req telegram.UploadRequest) (*
 	if threshold <= 0 {
 		threshold = telegram.ResumableBigFileBytes
 	}
+	topic, err := c.writableTopic(ctx, req.ChannelID)
+	if err != nil {
+		return nil, err
+	}
 	data, err := c.uploadData(ctx, req, threshold)
 	if err != nil {
 		return nil, err
@@ -334,7 +340,7 @@ func (c *Client) UploadMedia(ctx context.Context, req telegram.UploadRequest) (*
 	if kind == telegram.KindNone {
 		kind = telegram.KindDocument
 	}
-	msg := telegram.Message{ID: id, Caption: req.Caption, FileSize: req.Size, Kind: kind, Data: data, Video: req.Video, Thumb: req.Thumb}
+	msg := telegram.Message{TopicID: topic, ID: id, Caption: req.Caption, FileSize: req.Size, Kind: kind, Data: data, Video: req.Video, Thumb: req.Thumb}
 	if kind == telegram.KindPhoto {
 		// Native photos carry no filename; Telegram reports them as JPEG.
 		msg.MIME = "image/jpeg"
@@ -382,6 +388,10 @@ func (c *Client) UploadMediaGroup(ctx context.Context, reqs []telegram.UploadReq
 		kind = telegram.KindDocument
 	}
 	channelID := reqs[0].ChannelID
+	topic, err := c.writableTopic(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
 	for i, req := range reqs {
 		memberKind := req.Kind
 		if memberKind == telegram.KindNone {
@@ -420,7 +430,7 @@ func (c *Client) UploadMediaGroup(ctx context.Context, reqs []telegram.UploadReq
 		id := c.nextID
 		c.nextID++
 		msg := telegram.Message{
-			ID: id, GroupedID: gid, FileSize: req.Size, Kind: kind,
+			TopicID: topic, ID: id, GroupedID: gid, FileSize: req.Size, Kind: kind,
 			Data: datas[i], Video: req.Video, Thumb: req.Thumb,
 		}
 		if i == 0 {
@@ -569,13 +579,20 @@ func (c *Client) saveUploadState(ctx context.Context, req telegram.UploadRequest
 func (c *Client) SendTextReply(ctx context.Context, channelID int64, replyTo int, text string) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	topic, err := c.writableTopic(ctx, channelID)
+	if err != nil {
+		return 0, err
+	}
+	if err := c.topicTarget(ctx, channelID, replyTo); err != nil {
+		return 0, err
+	}
 	if c.failReply {
 		return 0, fmt.Errorf("reply failed")
 	}
 	id := c.nextID
 	c.nextID++
 	rt := replyTo
-	c.messages[channelID] = append(c.messages[channelID], telegram.Message{ID: id, Text: text, ReplyTo: &rt})
+	c.messages[channelID] = append(c.messages[channelID], telegram.Message{TopicID: topic, ID: id, Text: text, ReplyTo: &rt})
 	c.save()
 	return id, nil
 }
@@ -583,6 +600,9 @@ func (c *Client) SendTextReply(ctx context.Context, channelID int64, replyTo int
 func (c *Client) EditCaption(ctx context.Context, channelID int64, messageID int, caption string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.topicTarget(ctx, channelID, messageID); err != nil {
+		return err
+	}
 	if c.denyPerms {
 		return &telegram.PermissionDeniedError{}
 	}
@@ -602,6 +622,9 @@ func (c *Client) EditCaption(ctx context.Context, channelID int64, messageID int
 func (c *Client) EditText(ctx context.Context, channelID int64, messageID int, text string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.topicTarget(ctx, channelID, messageID); err != nil {
+		return err
+	}
 	if c.failEditText {
 		return fmt.Errorf("edit text failed")
 	}
@@ -618,6 +641,9 @@ func (c *Client) EditText(ctx context.Context, channelID int64, messageID int, t
 func (c *Client) DeleteMessage(ctx context.Context, channelID int64, messageID int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.topicTarget(ctx, channelID, messageID); err != nil {
+		return err
+	}
 	if c.denyPerms {
 		return &telegram.PermissionDeniedError{}
 	}
@@ -639,6 +665,9 @@ func (c *Client) DeleteMessage(ctx context.Context, channelID int64, messageID i
 func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID int, dst io.Writer) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.topicTarget(ctx, channelID, messageID); err != nil {
+		return err
+	}
 	if c.mediaFloodWait > 0 {
 		return &telegram.FloodWaitError{Seconds: c.mediaFloodWait}
 	}
@@ -724,6 +753,10 @@ func (c *Client) logRange(event string, r MediaRangeRead, err error) {
 
 func (c *Client) readMediaRange(ctx context.Context, channelID int64, messageID int, offset, length int64, dst io.Writer) (telegram.MediaInfo, error) {
 	c.mu.Lock()
+	if err := c.topicTarget(ctx, channelID, messageID); err != nil {
+		c.mu.Unlock()
+		return telegram.MediaInfo{Size: -1}, err
+	}
 	c.rangeReads = append(c.rangeReads, MediaRangeRead{ChannelID: channelID, MessageID: messageID, Offset: offset, Length: length})
 	delay := c.transferDelay
 	floodWait := c.mediaFloodWait
@@ -781,6 +814,9 @@ func fakeMediaInfo(m telegram.Message) (info telegram.MediaInfo, ok bool) {
 func (c *Client) GetMessage(ctx context.Context, channelID int64, messageID int) (telegram.Message, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if err := c.topicTarget(ctx, channelID, messageID); err != nil {
+		return telegram.Message{}, err
+	}
 	for _, m := range c.messages[channelID] {
 		if m.ID == messageID {
 			return m, nil
@@ -848,18 +884,38 @@ func (c *Client) historyLocked(channelID int64, afterID, limit int) ([]telegram.
 func (c *Client) History(ctx context.Context, channelID int64, afterID, limit int) ([]telegram.Message, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out, _ := c.historyLocked(channelID, afterID, limit)
+	topic, err := telegram.ForumTopicID(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := c.historyLocked(channelID, afterID, 0)
+	var out []telegram.Message
+	for _, m := range raw {
+		if telegram.InForumTopic(m, topic) {
+			out = append(out, m)
+			if limit > 0 && len(out) >= limit {
+				break
+			}
+		}
+	}
 	return out, nil
 }
 
 func (c *Client) StreamHistory(ctx context.Context, channelID int64, afterID int, fn func(telegram.Message) error) (telegram.HistoryMeta, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	topic, err := telegram.ForumTopicID(ctx, channelID)
+	if err != nil {
+		return telegram.HistoryMeta{}, err
+	}
 	msgs, complete := c.historyLocked(channelID, afterID, 0)
 	meta := telegram.HistoryMeta{Complete: complete}
 	for _, m := range msgs {
 		if meta.OldestID == 0 || m.ID < meta.OldestID {
 			meta.OldestID = m.ID
+		}
+		if !telegram.InForumTopic(m, topic) {
+			continue
 		}
 		if err := fn(m); err != nil {
 			return telegram.HistoryMeta{}, err

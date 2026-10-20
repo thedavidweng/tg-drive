@@ -332,3 +332,13 @@ td cp
 | `internal/service` | composition root (`Open`) and use cases: upload (and its dry-run plan), scan, download, move, delete, repair, Telegram setup, config get/set, init channel choices |
 | `internal/gui` (`gui` tag) | GUI facade services: DTO translation and error mapping, no business rules; the pure tray-menu and quit-decision model (`lifecycle.go`) |
 | `cmd/td-gui` (`gui` tag) | Wails application wiring: service binding, typed event registration, the window, tray, single instance, quit confirmation, native title bars |
+
+### Existing forum logical roots
+
+Schema 7 extends a channel-row identity to account/peer/topic (ADR 0057).
+Service calls resolve a root before acquiring the existing row-scoped operation
+locks, then pin peer/topic on the call context. Telegram adapters validate target
+membership and preserve raw history completeness while filtering by topic.
+Same-topic replies carry unchanged manifest/album records; linked discussions
+remain the ordinary broadcast-channel carrier. Transfer retry and desktop
+selection retain the root, not just its shared peer ID.

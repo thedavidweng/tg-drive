@@ -87,6 +87,7 @@ func (a *App) ListDir(ctx context.Context, remotePath string) ([]LSEntry, error)
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID := ch.rowID
 	prefix := p
 	if prefix != "/" {
@@ -249,6 +250,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 		}
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID, tgID := ch.rowID, ch.tgIDStr
 	counts := map[string]int{}
 	rows, err := a.DB.Raw().QueryContext(ctx, `select status, count(*) from files where channel_id=? group by status`, channelID)
@@ -269,9 +271,9 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 		Files:       counts,
 		DBPath:      a.Cfg.Storage.DBPath,
 	}
-	for _, ch := range channels {
-		if ch.ChannelID == tgID {
-			out.Channel = &ch
+	for _, bound := range channels {
+		if bound.ChannelID == tgID && bound.TopicID == ch.topicID {
+			out.Channel = &bound
 		}
 	}
 	a.statusAuth(ctx, out)
@@ -311,10 +313,11 @@ type BoundChannel struct {
 	ChannelID string `json:"channel_id"`
 	Title     string `json:"title"`
 	LocalRoot string `json:"local_root"`
+	TopicID   int    `json:"topic_id,omitempty"`
 }
 
 func (a *App) boundChannels(ctx context.Context) ([]BoundChannel, error) {
-	rows, err := a.DB.Raw().QueryContext(ctx, `select tg_channel_id, title, coalesce(root_local_path,'') from channels order by id`)
+	rows, err := a.DB.Raw().QueryContext(ctx, `select tg_channel_id, title, coalesce(root_local_path,''), topic_id from channels order by id`)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "list channels", err)
 	}
@@ -322,7 +325,7 @@ func (a *App) boundChannels(ctx context.Context) ([]BoundChannel, error) {
 	out := []BoundChannel{}
 	for rows.Next() {
 		var ch BoundChannel
-		if err := rows.Scan(&ch.ChannelID, &ch.Title, &ch.LocalRoot); err != nil {
+		if err := rows.Scan(&ch.ChannelID, &ch.Title, &ch.LocalRoot, &ch.TopicID); err != nil {
 			return nil, apperr.Wrap(apperr.ErrDB, "list channels", err)
 		}
 		out = append(out, ch)
@@ -369,6 +372,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
@@ -541,6 +545,7 @@ func (a *App) MoveFile(ctx context.Context, from, to string, opts MoveOptions) e
 	if err != nil {
 		return err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID := ch.rowID
 	active, err := a.activePaths(ctx, channelID)
 	if err != nil {
@@ -786,6 +791,7 @@ func (a *App) DeleteFile(ctx context.Context, remotePath string, opts DeleteOpti
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	active, err := a.activePaths(ctx, ch.rowID)
 	if err != nil {
 		return nil, err
@@ -1030,6 +1036,7 @@ func (a *App) UploadRecursive(ctx context.Context, localDir, remoteDir string, p
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 
 	uploaded, skipped, failed := 0, 0, 0
 	var errs []string

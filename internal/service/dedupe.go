@@ -73,6 +73,7 @@ func (a *App) FindDuplicates(ctx context.Context, remotePath string) (*DedupeRes
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	prefix := p
 	if prefix != "/" {
 		prefix += "/"
@@ -141,6 +142,7 @@ func (a *App) DeleteDuplicates(ctx context.Context, remotePath string, opts Dedu
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	result := &DedupeDeleteResult{
 		Path:             audit.Path,
 		Groups:           len(audit.Groups),

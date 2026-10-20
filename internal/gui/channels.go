@@ -38,8 +38,10 @@ type Channels struct {
 // ChannelInfo is one channel bound in the shared index (td init or a GUI
 // bind), as the header switcher lists it.
 type ChannelInfo struct {
-	// ChannelID is the channel's Telegram ID, and the selector Select takes.
+	// ChannelID is the channel's Telegram ID, not a unique topic identity.
 	ChannelID string `json:"channel_id"`
+	Selector  string `json:"selector,omitempty"`
+	TopicID   int    `json:"topic_id,omitempty"`
 	Title     string `json:"title"`
 	// LocalRoot is the local root the channel is bound to. GUI bindings use
 	// a synthetic root per channel under the data directory; it is a label,
@@ -60,26 +62,40 @@ func (c *Channels) List(ctx context.Context) ([]ChannelInfo, error) {
 	// The active channel is the one the App's selector resolves to. Nothing
 	// bound yet is an empty list, not an error; a dangling selector is.
 	activeID := ""
+	activeRoot := ""
 	if len(bound) > 0 || c.state.activeChannel() != "" {
 		id, err := app.ChannelTelegramID(ctx)
 		if err != nil {
 			return nil, toError(err)
 		}
 		activeID = id
+		activeRoot, _, err = app.ForumBinding(ctx)
+		if err != nil {
+			return nil, toError(err)
+		}
 	}
 	out := make([]ChannelInfo, 0, len(bound))
 	for _, ch := range bound {
 		out = append(out, ChannelInfo{
 			ChannelID: ch.ChannelID,
+			Selector:  forumSelector(ch),
+			TopicID:   ch.TopicID,
 			Title:     ch.Title,
 			LocalRoot: ch.LocalRoot,
-			Active:    ch.ChannelID == activeID,
+			Active:    ch.ChannelID == activeID && (ch.TopicID == 0 || ch.LocalRoot == activeRoot),
 		})
 	}
 	c.mu.Lock()
 	c.last = out
 	c.mu.Unlock()
 	return out, nil
+}
+
+func forumSelector(ch service.BoundChannel) string {
+	if ch.TopicID > 0 {
+		return "root:" + ch.LocalRoot
+	}
+	return ""
 }
 
 // syncFromIndex reports a channel list another writer changed — a td
@@ -320,7 +336,7 @@ func (c *Channels) Select(ctx context.Context, channelID string) (*ChannelStatus
 	// Read the target before changing the shared selector. A failed status
 	// read must not leave the frontend showing the previous drive while
 	// subsequent calls operate on the new one.
-	status, err := c.statusFor(app, service.WithChannel(scoped, channelID))
+	status, err := c.statusFor(app, selectedContext(scoped, channelID))
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +356,7 @@ func (c *Channels) selectChannel(ctx context.Context, channelID string) error {
 	}
 	known := false
 	for _, ch := range bound {
-		if ch.ChannelID == channelID {
+		if (ch.TopicID == 0 && ch.ChannelID == channelID) || (ch.TopicID > 0 && forumSelector(ch) == channelID) {
 			known = true
 			break
 		}

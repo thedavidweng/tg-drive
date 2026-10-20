@@ -137,6 +137,7 @@ func (a *App) runUpload(ctx context.Context, run uploadRun) (_ *uploadOutcome, e
 	if err != nil {
 		return nil, err
 	}
+	ctx = cc.telegramContext(ctx)
 	channelID := cc.rowID
 	active, err := a.activePaths(ctx, channelID)
 	if err != nil {
@@ -266,6 +267,7 @@ func (a *App) publishLocked(ctx context.Context, run uploadRun, ch uploadChannel
 	if err != nil {
 		return err
 	}
+	ctx = cc.telegramContext(ctx)
 	manifestChat, err := cc.discussionChat(ctx)
 	if err != nil {
 		return err

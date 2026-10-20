@@ -17,7 +17,7 @@ func TestMigrationSixPreservesDeleteHistory(t *testing.T) {
 		insert into channels(id,account_id,tg_channel_id,title,root_local_path,created_at,updated_at)
 		values(1,1,'c','Drive','/root','now','now');
 		drop table directory_move_operations;
-		delete from schema_version where version=6;
+		delete from schema_version where version>=6;
 	`); err != nil {
 		t.Fatal(err)
 	}

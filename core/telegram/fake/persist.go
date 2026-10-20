@@ -13,13 +13,14 @@ import (
 
 // persistedState is the JSON image of a persistent fake client.
 type persistedState struct {
-	LoggedIn      bool                         `json:"logged_in"`
-	User          *telegram.User               `json:"user,omitempty"`
-	Channels      map[int64]*telegram.Channel  `json:"channels"`
-	Messages      map[int64][]telegram.Message `json:"messages"`
-	NextID        int                          `json:"next_id"`
-	NextChID      int64                        `json:"next_ch_id"`
-	NextGroupedID int64                        `json:"next_grouped_id,omitempty"`
+	ForumTopics   map[int64]map[int]telegram.ForumTopic `json:"forum_topics,omitempty"`
+	LoggedIn      bool                                  `json:"logged_in"`
+	User          *telegram.User                        `json:"user,omitempty"`
+	Channels      map[int64]*telegram.Channel           `json:"channels"`
+	Messages      map[int64][]telegram.Message          `json:"messages"`
+	NextID        int                                   `json:"next_id"`
+	NextChID      int64                                 `json:"next_ch_id"`
+	NextGroupedID int64                                 `json:"next_grouped_id,omitempty"`
 	// ADR 0018 state: linked discussion groups and forwarded thread roots.
 	Discussion  map[int64]int64 `json:"discussion,omitempty"`
 	ThreadRoots map[int64]int64 `json:"thread_roots,omitempty"`
@@ -122,6 +123,9 @@ func (c *Client) load() {
 	if err := json.Unmarshal(data, &st); err != nil {
 		return
 	}
+	if st.ForumTopics != nil {
+		c.forumTopics = st.ForumTopics
+	}
 	c.loggedIn = st.LoggedIn
 	c.user = st.User
 	if st.Channels != nil {
@@ -153,6 +157,7 @@ func (c *Client) save() {
 		return
 	}
 	st := persistedState{
+		ForumTopics:   c.forumTopics,
 		LoggedIn:      c.loggedIn,
 		User:          c.user,
 		Channels:      c.channels,

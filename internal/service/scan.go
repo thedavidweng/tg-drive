@@ -52,6 +52,7 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID, tgID, tgChID := ch.rowID, ch.tgIDStr, ch.tgID
 	root := "/"
 	if opts.Root != "" {

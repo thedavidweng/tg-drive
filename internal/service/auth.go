@@ -97,6 +97,7 @@ type InitRootResult struct {
 	IndexedFiles        *int   `json:"indexed_files,omitempty"`
 	LocalRoot           string `json:"local_root"`
 	ScanError           string `json:"scan_error,omitempty"`
+	TopicID             int    `json:"topic_id,omitempty"`
 }
 
 // InitRoot initializes a local root and optionally creates/binds a channel.
@@ -141,6 +142,9 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 	if err != nil {
 		return nil, telegram.MapError(err)
 	}
+	if ch.Forum {
+		return nil, apperr.New(apperr.ErrUsage, "forum binding requires --topic with --bind-channel")
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	var accountID int64
 	_ = a.DB.Raw().QueryRowContext(ctx, `select id from accounts where tg_user_id=?`, fmt.Sprintf("%d", user.ID)).Scan(&accountID)
@@ -158,7 +162,7 @@ func (a *App) InitRoot(ctx context.Context, localRoot, channelTitle, create, bin
 	err = a.DB.Raw().QueryRowContext(ctx, `
 		insert into channels(account_id,tg_channel_id,access_hash,title,root_local_path,root_remote_path,strategy,created_at,updated_at)
 		values(?,?,?,?,?,?,'single',?,?)
-		on conflict(account_id, tg_channel_id) do update set title=excluded.title, access_hash=excluded.access_hash, root_local_path=excluded.root_local_path, updated_at=excluded.updated_at
+		on conflict(account_id, tg_channel_id, topic_id) do update set title=excluded.title, access_hash=excluded.access_hash, root_local_path=excluded.root_local_path, updated_at=excluded.updated_at
 		returning id`,
 		accountID, fmt.Sprintf("%d", ch.ID), fmt.Sprintf("%d", ch.AccessHash), ch.Title, localRoot, "/", now, now).Scan(&channelRowID)
 	if err != nil {
@@ -244,6 +248,7 @@ func (a *App) Share(ctx context.Context, remotePath string) (*ShareResult, error
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	link, err := a.TG.GetInviteLink(ctx, ch.tgID)
 	if err != nil {
 		return nil, telegram.MapError(err)
@@ -367,7 +372,21 @@ func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 			out.SavedDeleteOK = &caps.SavedDeleteOK
 		}
 	} else {
+		ctx = ch.telegramContext(ctx)
 		checks["channel"] = "pass"
+		if ch.topicID > 0 {
+			topic, err := a.TG.ResolveForumTopic(ctx, ch.tgID, ch.topicID)
+			switch {
+			case err != nil:
+				checks["forum_topic"] = "fail"
+				hints["forum_topic"] = telegram.MapError(err).Error()
+			case topic.Closed || topic.Hidden:
+				checks["forum_topic"] = "fail"
+				hints["forum_topic"] = "topic is closed or hidden"
+			default:
+				checks["forum_topic"] = "pass"
+			}
+		}
 		tgChID := ch.tgID
 		// One-message page: proves td scan can page the channel history
 		// without walking it.
@@ -390,7 +409,10 @@ func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 			checks["discussion"] = boolCheck(caps.DiscussionOK)
 			checks["saved_history"] = boolCheck(caps.SavedHistoryOK)
 			checks["saved_delete"] = boolCheck(caps.SavedDeleteOK)
-			if !caps.DiscussionOK {
+			if ch.topicID > 0 {
+				delete(checks, "discussion")
+			}
+			if !caps.DiscussionOK && ch.topicID == 0 {
 				hints["discussion"] = "no linked discussion group; machine records need it (ADR 0018); run: td channels link-discussion"
 			}
 			if !caps.SavedHistoryOK {
@@ -400,7 +422,9 @@ func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 				hints["saved_delete"] = "--delete-source is unavailable for Saved Messages"
 			}
 			out.MaxUploadBytes = &caps.MaxUploadBytes
-			out.DiscussionOK = &caps.DiscussionOK
+			if ch.topicID == 0 {
+				out.DiscussionOK = &caps.DiscussionOK
+			}
 			out.SavedHistoryOK = &caps.SavedHistoryOK
 			out.SavedDeleteOK = &caps.SavedDeleteOK
 			switch {

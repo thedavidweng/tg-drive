@@ -13,6 +13,9 @@ import (
 // while use cases that write records call it before their first write so
 // they fail early.
 func (c *channelContext) discussionChat(ctx context.Context) (string, error) {
+	if c.topicID > 0 {
+		return "", nil
+	}
 	c.discussionMu.Lock()
 	defer c.discussionMu.Unlock()
 	if c.discussion != "" {

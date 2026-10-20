@@ -50,11 +50,13 @@ func (c *Client) ListChannels(ctx context.Context, opts tgtelegram.ListChannelsO
 			}
 			c.rememberChannel(pch.ChannelID, pch.AccessHash)
 			title := ""
+			forum := false
 			if ch, ok := elem.Entities.Channel(pch.ChannelID); ok {
 				title = ch.Title
-				// Supergroups (including td's own discussion groups) share
-				// the channel peer type but can never be a drive.
-				if !ch.Broadcast {
+				forum = ch.Forum
+				// Non-forum supergroups (including linked discussion groups)
+				// share the peer type but cannot be selected as drives.
+				if !ch.Broadcast && !ch.Forum {
 					return nil
 				}
 			}
@@ -66,6 +68,7 @@ func (c *Client) ListChannels(ctx context.Context, opts tgtelegram.ListChannelsO
 				ID:         pch.ChannelID,
 				AccessHash: pch.AccessHash,
 				Title:      title,
+				Forum:      forum,
 			})
 			return nil
 		})

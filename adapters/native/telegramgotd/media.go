@@ -77,6 +77,7 @@ func (c *Client) ResolveChannel(ctx context.Context, titleOrID string) (*tgteleg
 			ID:         ch.ID,
 			AccessHash: ch.AccessHash,
 			Title:      ch.Title,
+			Forum:      ch.Forum,
 			Username:   ch.Username,
 			InviteLink: link,
 		}
@@ -220,6 +221,10 @@ func (c *Client) UploadMedia(ctx context.Context, req tgtelegram.UploadRequest) 
 			return err
 		}
 
+		topic, err := tgtelegram.ForumTopicID(ctx, req.ChannelID)
+		if err != nil {
+			return err
+		}
 		upl := selectMediaUploader(req)
 		uploaded, err := upl.upload(ctx, api, req)
 		if err != nil {
@@ -232,11 +237,15 @@ func (c *Client) UploadMedia(ctx context.Context, req tgtelegram.UploadRequest) 
 		// connection-level retries live in the rate-limiter middleware; the
 		// duplicate-claim guard during scan remains the reconciliation path.
 		sender := message.NewSender(api)
+		builder := sender.To(peer).CloneBuilder()
+		if topic > 1 {
+			builder = builder.Reply(topic)
+		}
 		var updates tg.UpdatesClass
 		if req.Kind == tgtelegram.KindPhoto {
 			// Native photo message: full preview UX; Telegram recompresses
 			// the bytes server-side.
-			updates, err = sender.To(peer).Media(ctx,
+			updates, err = builder.Media(ctx,
 				message.UploadedPhoto(uploaded, styling.Plain(req.Caption)))
 		} else {
 			var media message.MediaOption
@@ -244,7 +253,7 @@ func (c *Client) UploadMedia(ctx context.Context, req tgtelegram.UploadRequest) 
 			if buildErr != nil {
 				return buildErr
 			}
-			updates, err = sender.To(peer).Media(ctx, media)
+			updates, err = builder.Media(ctx, media)
 		}
 		if err != nil {
 			return mapRPCError(err)
@@ -321,13 +330,18 @@ func (c *Client) SendTextReply(ctx context.Context, channelID int64, replyTo int
 		if err != nil {
 			return err
 		}
+		topic, err := tgtelegram.ForumTopicID(ctx, channelID)
+		if err != nil {
+			return err
+		}
+		if err := checkTopicTarget(ctx, api, peer, replyTo); err != nil {
+			return err
+		}
 		updates, err := api.MessagesSendMessage(ctx, &tg.MessagesSendMessageRequest{
 			Peer:     peer,
 			Message:  text,
 			RandomID: randInt64(),
-			ReplyTo: &tg.InputReplyToMessage{
-				ReplyToMsgID: replyTo,
-			},
+			ReplyTo:  topicReply(topic, replyTo),
 		})
 		if err != nil {
 			return mapRPCError(err)
@@ -346,6 +360,9 @@ func (c *Client) EditCaption(ctx context.Context, channelID int64, messageID int
 	return c.run(ctx, func(ctx context.Context, api *tg.Client, _ *telegram.Client) error {
 		peer, err := c.resolveChannelPeer(ctx, api, strconv.FormatInt(channelID, 10))
 		if err != nil {
+			return err
+		}
+		if err := checkTopicTarget(ctx, api, peer, messageID); err != nil {
 			return err
 		}
 		// SetMessage sets the TL flag even when caption is empty, which is
@@ -371,6 +388,9 @@ func (c *Client) DeleteMessage(ctx context.Context, channelID int64, messageID i
 		if err != nil {
 			return err
 		}
+		if err := checkTopicTarget(ctx, api, peer, messageID); err != nil {
+			return err
+		}
 		_, err = api.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
 			Channel: &tg.InputChannel{ChannelID: peer.ChannelID, AccessHash: peer.AccessHash},
 			ID:      []int{messageID},
@@ -394,6 +414,9 @@ func (c *Client) DownloadMedia(ctx context.Context, channelID int64, messageID i
 		}
 		msg, err := firstMessage(msgs)
 		if err != nil {
+			return err
+		}
+		if err := checkTopicMessage(ctx, channelID, msg); err != nil {
 			return err
 		}
 		return streamMessageMedia(ctx, api, msg, dst)

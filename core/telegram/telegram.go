@@ -60,6 +60,15 @@ type Channel struct {
 	Title      string
 	Username   string
 	InviteLink string
+	Forum      bool
+}
+
+// ForumTopic is Telegram's current topic identity, not a locally assigned name.
+type ForumTopic struct {
+	ID     int
+	Title  string
+	Closed bool
+	Hidden bool
 }
 
 // ListChannelsOptions filters channel listing.
@@ -145,6 +154,7 @@ type ForwardOrigin struct {
 // Message represents a channel message with optional media.
 type Message struct {
 	ID          int
+	TopicID     int // 0 for ordinary channels and the forum's General topic (ID 1).
 	Text        string
 	Caption     string
 	FileName    string
@@ -268,6 +278,7 @@ type ChannelClient interface {
 	ResolveChannel(ctx context.Context, titleOrID string) (*Channel, error)
 	GetInviteLink(ctx context.Context, channelID int64) (string, error)
 	ListChannels(ctx context.Context, opts ListChannelsOptions) ([]Channel, error)
+	ResolveForumTopic(ctx context.Context, channelID int64, topicID int) (*ForumTopic, error)
 }
 
 // MediaClient handles media operations.

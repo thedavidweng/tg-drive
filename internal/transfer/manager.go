@@ -151,7 +151,12 @@ func parseOptions[T any](options string) (T, error) {
 // over an unbound drive) and the command's output stays the same.
 func (m *Manager) pinChannel(ctx context.Context) (context.Context, string) {
 	channel, _ := m.app.ChannelTelegramID(ctx)
-	return service.WithChannel(ctx, channel), channel
+	root, _, _ := m.app.ForumBinding(ctx)
+	ctx = service.WithChannel(ctx, channel)
+	if root != "" {
+		ctx = service.WithLocalRoot(ctx, root)
+	}
+	return ctx, channel
 }
 
 // absPath makes p absolute, keeping p when it cannot be resolved.
@@ -358,6 +363,23 @@ func (h *Handle[T]) Wait() (T, error) {
 func submit[T any](ctx context.Context, m *Manager, t Transfer, options string,
 	run func(ctx context.Context, tr *tracker) (T, error),
 ) (*Handle[T], error) {
+	root, topic, err := m.app.ForumBinding(ctx)
+	if err == nil && root != "" {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(options), &fields); err != nil {
+			return nil, err
+		}
+		fields["logical_root"], err = json.Marshal(root)
+		fields["topic_id"], _ = json.Marshal(topic)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			return nil, err
+		}
+		options = string(encoded)
+	}
 	now := time.Now().UTC()
 	t.ID = uuid.NewString()
 	t.Stage = StageQueued
@@ -563,6 +585,32 @@ func (m *Manager) Retry(ctx context.Context, id string, obs service.Observer) (*
 	if err != nil {
 		return nil, err
 	}
+	// Re-select the recorded peer/topic before claiming a retry. A root that
+	// was rebound must not redirect durable work to a different topic.
+	var route struct {
+		LogicalRoot string `json:"logical_root"`
+		TopicID     int    `json:"topic_id"`
+	}
+	if err := json.Unmarshal([]byte(r.Options), &route); err != nil {
+		return nil, err
+	}
+	if t.Channel != "" {
+		ctx = service.WithChannel(ctx, t.Channel)
+	}
+	if route.LogicalRoot != "" {
+		ctx = service.WithLocalRoot(ctx, route.LogicalRoot)
+		_, topic, err := m.app.ForumBinding(ctx)
+		if err != nil {
+			return nil, err
+		}
+		peer, err := m.app.ChannelTelegramID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if topic != route.TopicID || peer != t.Channel {
+			return nil, apperr.New(apperr.ErrUsage, "transfer logical root was rebound to a different peer/topic")
+		}
+	}
 	now := time.Now().UTC()
 	t.Stage = StageQueued
 	t.FinishedAt = nil
@@ -580,11 +628,7 @@ func (m *Manager) Retry(ctx context.Context, id string, obs service.Observer) (*
 	if !claimed {
 		return nil, apperr.New(apperr.ErrUsage, "transfer was claimed by another retry: "+id)
 	}
-	// The recorded channel pins the call, so the re-run works on the drive
-	// the Transfer was created on even when the app's selection changed.
-	if t.Channel != "" {
-		ctx = service.WithChannel(ctx, t.Channel)
-	}
+
 	return start(ctx, m, t, run), nil
 }
 

@@ -47,6 +47,7 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID, tgChannelID := ch.rowID, ch.tgID
 	root := "/"
 	if remotePath != "" {

@@ -105,6 +105,7 @@ func (a *App) RepairPending(ctx context.Context, obs Observer) (*RepairPendingRe
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID := ch.rowID
 	now := time.Now().UTC().Format(time.RFC3339)
 	ttl := time.Duration(a.Cfg.Locks.TTLSeconds) * time.Second
@@ -229,6 +230,7 @@ func (a *App) repairOrphaned(ctx context.Context, deleteOrphans bool, obs Observ
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID, tgChID := ch.rowID, ch.tgID
 	manifestChat, err := ch.discussionChat(ctx)
 	if err != nil {
@@ -362,6 +364,7 @@ func (a *App) RepairPath(ctx context.Context, remotePath string, obs Observer) (
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	row, found, err := a.DB.ActiveByPath(ctx, ch.rowID, p)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrDB, "lookup file", err)
@@ -393,6 +396,7 @@ func (a *App) RepairScanErrors(ctx context.Context, obs Observer) (*RepairScanEr
 	if err != nil {
 		return nil, err
 	}
+	ctx = ch.telegramContext(ctx)
 	channelID := ch.rowID
 	var before int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from scan_errors where channel_id=? and status='pending'`, channelID).Scan(&before)

@@ -27,6 +27,7 @@ func (a *App) Mkdir(ctx context.Context, remotePath string) error {
 	if err != nil {
 		return err
 	}
+	ctx = ch.telegramContext(ctx)
 	active, err := a.activePaths(ctx, ch.rowID)
 	if err != nil {
 		return err
