@@ -98,3 +98,5 @@ This document exists to prevent implementation drift. Do not replace these choic
 - Publish Homebrew cask to `thedavidweng/homebrew-tap`.
 - Sign checksums with cosign.
 - Generate SBOMs with syft.
+
+- Encrypted archives use age X25519 recipients and a versioned tar manifest; names and hashes stay inside ciphertext. Private identities belong to the user and are never stored in remote/index/config state. Restore authenticates the entire stream before exclusive native directory publication (ADR 0060).

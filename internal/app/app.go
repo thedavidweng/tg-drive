@@ -165,6 +165,7 @@ Get started:
 	add(commands.NewLsCmd(opts), "files")
 	add(commands.NewDedupeCmd(opts), "files")
 	add(commands.NewWatchCmd(opts), "files")
+	add(commands.NewArchiveCmd(opts), "files")
 	add(commands.NewWebDAVCmd(opts), "files")
 	add(commands.NewMountCmd(opts), "files")
 	add(commands.NewTreeCmd(opts), "files")

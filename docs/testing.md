@@ -393,3 +393,16 @@ refusal; pinned forum/subtree reads and rebinding; and actual CLI startup and
 SIGINT shutdown. Kernel-free tests do not prove a real FUSE mount. Device
 acceptance requires one authorized native mount/read/unmount with an installed
 driver and a dedicated empty temporary mountpoint.
+
+### Encrypted archive acceptance
+
+`go test ./adapters/native/cryptarchive ./adapters/native/atomicdir ./internal/service ./internal/app -run 'TestArchive|TestPublish|TestEncryptedArchive|TestE2EEncryptedArchive'`
+uses real age-generated X25519 keys for round trips, hidden plaintext names,
+empty directories, cancellation, wrong key, tampered/truncated final chunks,
+authenticated malicious manifests, traversal/device names, duplicate/unsorted
+entries, symlinks, hash mismatch and trailing payload. Native exclusive publish
+refuses existing empty directories. Service coverage drops the file index and
+full-scans the encrypted object before byte-exact restore; wrong-key failure
+leaves neither published destination nor staging. A separately uploaded large archive with a corrupted final age chunk proves late-authentication failure removes already decrypted staging. Actual binary coverage
+verifies private keygen/no overwrite, upload and restore. These use persistent
+offline Telegram fixtures, not authenticated real-service or release receipts.

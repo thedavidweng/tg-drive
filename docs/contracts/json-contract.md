@@ -762,3 +762,15 @@ shuts down and emits ERR_CANCELLED/130. HTTP payloads are served separately
 from the command's stdout stream. `td mount --json` emits
 `{ "unmounted": true, "read_only": true }` after a normal external unmount;
 command cancellation emits ERR_CANCELLED/130 after requesting unmount.
+
+## Encrypted archive results
+
+`archive keygen` returns `identity_file` (local path) and `recipient` (public
+X25519 recipient). The private identity never appears in JSON, Telegram
+metadata or the index. `archive put` returns `path`, `archive_version: 1`,
+`entries` (including directories), `hash` and `size` of the ciphertext object.
+`archive restore` returns `destination`, `archive_version: 1` and `entries`
+only after verified exclusive publication. All use the existing success/error
+envelope and exit mapping. Cryptographic verification failures map to
+ERR_MANIFEST_INVALID; existing destinations/identity files map to
+ERR_LOCAL_PATH_EXISTS.

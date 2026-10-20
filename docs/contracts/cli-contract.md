@@ -377,3 +377,37 @@ Both adapters pin account/peer/topic/logical-root identity at startup and refuse
 rebinding. Changing the active selector cannot retarget them. Only seekable
 Telegram representations are supported. There is no writable mount or WebDAV
 mutation support.
+
+## Client-encrypted archives
+
+```text
+td archive keygen <identity-file>
+td archive put <local-directory> <remote-file> --recipient <age1...>
+td archive restore <remote-file> <new-local-directory> --identity <private-key-file>
+```
+
+Keygen exclusively creates an owner-private X25519 identity file, prints only
+the public recipient, and refuses an existing identity (ERR_LOCAL_PATH_EXISTS).
+Put encrypts file names, directory entries, hashes and bytes inside an age
+recipient-encrypted tar stream before the existing upload protocol sees them.
+The explicitly selected remote object name, ciphertext size and public age
+recipient information are not hidden from Telegram. The remote object is an
+ordinary immutable file and cannot replace another path through this command.
+
+Restore requires the user's matching owner-private regular identity file. It
+downloads the encrypted object, decrypts and verifies its entire versioned
+manifest/entry stream, including the final authenticated chunk, in private
+staging. Publication uses native exclusive rename in the destination parent;
+even an existing empty destination is refused (ERR_LOCAL_PATH_EXISTS). Invalid
+ciphertext, unsupported archive version, unsafe paths or mismatched hashes fail
+with ERR_MANIFEST_INVALID and never publish a destination. A cancelled operation
+retains ERR_CANCELLED/130. There is no fallback copying or overwrite mode.
+
+Manifest version 1 is inside the encrypted object; it is distinct from the
+existing Telegram td:v1 reconstruction metadata. Index-loss full scan can
+recover the encrypted object but cannot recover its separately owned private
+key. Losing that key loses access. age recipient encryption provides
+confidentiality and ciphertext integrity, not sender authentication. No key
+escrow or automatic key recovery exists. Restored mode is private 0700/0600;
+ownership, ACLs, executable bits and timestamps are not preserved. Only portable
+regular files/directories are supported; links and special files are refused.
