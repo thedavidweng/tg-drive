@@ -306,6 +306,7 @@ var migrations = []migration{
 	{version: 5, stmts: []string{directoryDeleteProgressSQL}},
 	{version: 6, stmts: []string{directoryMoveProgressSQL}},
 	{version: 7, stmts: []string{forumRootsSQL}},
+	{version: 8, stmts: []string{watchCheckpointsSQL}},
 }
 
 // repairTransferSchema converges both pre-Transfer and current v3 databases

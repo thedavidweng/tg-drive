@@ -96,6 +96,19 @@ operation and creates a new history row. Successful `mv` output is unchanged.
 Directory deletion reports durable progress in the success result or error
 details.
 
+## Filesystem watch
+
+`td watch --json` emits one success envelope per completed pass, with command
+`watch` and the same request ID. `--once` emits one envelope and exits. Data
+contains `local_root`, `remote_root`, `uploaded`, `unchanged`, `deleted` and
+`retained`. Counts cover regular files in that pass; `unchanged` includes
+verified identical remote files adopted after an interrupted checkpoint.
+
+An error ends the stream with the existing error envelope. SIGINT/SIGTERM
+ends with `ERR_CANCELLED` and exit 130. Completed per-file checkpoints remain
+durable even if a later file fails. The watch does not automatically retry,
+choose conflicts or resurrect missing checkpointed remote content.
+
 ## Dedupe
 
 `td dedupe [remote-path]` is read-only unless `--delete --confirm` is passed.
