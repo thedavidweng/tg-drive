@@ -2,6 +2,7 @@ package telegramgotd
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -45,20 +46,42 @@ func (c *Client) streamHistory(ctx context.Context, channelID int64, afterID, li
 		if err != nil {
 			return err
 		}
-		// Filter only emitted messages; raw-page completeness stays unchanged.
-		meta, err = c.paginateHistory(ctx, api, peer, afterID, limit, func(msg *tg.Message) error {
-			converted := messageFromTG(msg)
-			if !tgtelegram.InForumTopic(converted, topic) {
-				return nil
-			}
-			return fn(converted)
-		})
+		meta, err = c.topicHistory(ctx, api, peer, afterID, limit, topic, fn)
 		return err
 	})
 	if err != nil {
 		return tgtelegram.HistoryMeta{}, err
 	}
 	return meta, nil
+}
+
+func (c *Client) topicHistory(ctx context.Context, api *tg.Client, peer tg.InputPeerClass, afterID, limit, topic int, fn func(tgtelegram.Message) error) (tgtelegram.HistoryMeta, error) {
+	rawLimit := limit
+	if topic > 0 {
+		rawLimit = 0
+	}
+	reachedLimit := errors.New("topic history limit reached")
+	emitted := 0
+	meta, err := c.paginateHistory(ctx, api, peer, afterID, rawLimit, func(msg *tg.Message) error {
+		converted := messageFromTG(msg)
+		if !tgtelegram.InForumTopic(converted, topic) {
+			return nil
+		}
+		if err := fn(converted); err != nil {
+			return err
+		}
+		emitted++
+		if topic > 0 && limit > 0 && emitted >= limit {
+			return reachedLimit
+		}
+		return nil
+	})
+	if errors.Is(err, reachedLimit) {
+		// A bounded topic read proves neither raw history completeness nor
+		// a scan checkpoint. StreamHistory (limit 0) keeps the raw proof.
+		return tgtelegram.HistoryMeta{}, nil
+	}
+	return meta, err
 }
 
 // paginateHistory walks messages.getHistory for one peer from newest to

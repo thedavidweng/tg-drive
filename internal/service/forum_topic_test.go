@@ -69,6 +69,29 @@ func TestForumBindingRefusesMissingCapabilitiesWithoutPersistence(t *testing.T) 
 	}
 }
 
+func TestForumDoctorOmitsDiscussionCapability(t *testing.T) {
+	a, tg := testApp(t)
+	loginAndInit(t, a, tg)
+	ctx := context.Background()
+	ordinary, err := a.Doctor(ctx)
+	if err != nil || ordinary.DiscussionOK == nil {
+		t.Fatalf("ordinary doctor=%+v err=%v", ordinary, err)
+	}
+	peer, err := tg.CreateChannel(ctx, "Forum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tg.SetForumTopic(peer.ID, telegram.ForumTopic{ID: 10, Title: "Topic"})
+	r, err := a.InitForumRoot(ctx, t.TempDir(), fmt.Sprint(peer.ID), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.Doctor(WithLocalRoot(ctx, r.LocalRoot))
+	if err != nil || result.DiscussionOK != nil || result.Checks["discussion"] != "" {
+		t.Fatalf("topic doctor=%+v err=%v", result, err)
+	}
+}
+
 func TestForumRootsConsumeOperationsAndReconstructInIsolation(t *testing.T) {
 	a, tg := testApp(t)
 	loginAndInit(t, a, tg)

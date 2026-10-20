@@ -137,3 +137,22 @@ func TestForumReplyProtocol(t *testing.T) {
 		t.Fatalf("invalid ID: %v", err)
 	}
 }
+
+func TestForumHistoryLimitCountsTopicMessages(t *testing.T) {
+	for _, limit := range []int{1, 2, 0} {
+		inv := &forumInvoker{}
+		c := New(1, "hash", "", false, 0)
+		var ids []int
+		meta, err := c.topicHistory(context.Background(), tg.NewClient(inv), &tg.InputPeerChannel{ChannelID: 100}, 0, limit, 10, func(m port.Message) error {
+			ids = append(ids, m.ID)
+			return nil
+		})
+		want := 2
+		if limit == 1 {
+			want = 1
+		}
+		if err != nil || len(ids) != want || ids[0] != 103 || (want == 2 && ids[1] != 101) || meta.Complete != (limit == 0) {
+			t.Fatalf("limit=%d meta=%+v ids=%v pages=%d err=%v", limit, meta, ids, inv.pages, err)
+		}
+	}
+}

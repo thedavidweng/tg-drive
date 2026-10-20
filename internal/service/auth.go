@@ -422,7 +422,9 @@ func (a *App) Doctor(ctx context.Context) (*DoctorResult, error) {
 				hints["saved_delete"] = "--delete-source is unavailable for Saved Messages"
 			}
 			out.MaxUploadBytes = &caps.MaxUploadBytes
-			out.DiscussionOK = &caps.DiscussionOK
+			if ch.topicID == 0 {
+				out.DiscussionOK = &caps.DiscussionOK
+			}
 			out.SavedHistoryOK = &caps.SavedHistoryOK
 			out.SavedDeleteOK = &caps.SavedDeleteOK
 			switch {

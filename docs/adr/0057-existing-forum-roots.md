@@ -19,6 +19,11 @@ or child records. Bind only existing, visible/open topics after capability and
 history probes. Keep the existing row-scoped operations and pin peer/topic on
 each call context; do not maintain a mutable active topic in the client.
 
+Retain conservative edit/delete capability gates for recovered messages.
+Permission to send does not establish permission to edit or delete arbitrary
+older messages reconstructed from a topic. Recheck topic state at each nested
+write operation so a topic closed during a batch stops subsequent mutations.
+
 Use Telegram's topic reply protocol (including General's unflagged semantics)
 and existing V1 manifest/album payloads. Topic records are same-topic replies,
 not linked broadcast-discussion comments. Filter history emissions, not the raw

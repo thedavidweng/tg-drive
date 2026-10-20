@@ -153,3 +153,29 @@ func TestForumMigrationIntegrityFailureRollsBack(t *testing.T) {
 		t.Fatalf("failed migration committed: version=%d topic columns=%d", version, topics)
 	}
 }
+
+func TestCurrentSchemaOpensForIntegrityDiagnosis(t *testing.T) {
+	path := forumV6Fixture(t)
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`pragma foreign_keys=off; update files set channel_id=999 where id=11`); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.Close()
+	db, err = Open(path)
+	if err != nil {
+		t.Fatalf("current schema must remain accessible for diagnosis: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	var invalid int
+	if err := db.Raw().QueryRow(`select count(*) from pragma_foreign_key_check`).Scan(&invalid); err != nil || invalid == 0 {
+		t.Fatalf("integrity diagnosis count=%d err=%v", invalid, err)
+	}
+}

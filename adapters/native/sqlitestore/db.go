@@ -243,9 +243,26 @@ func (d *DB) init() error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	before, err := currentVersion(ctx, tx)
+	if err != nil {
+		return apperr.Wrap(apperr.ErrDB, "read schema version", err)
+	}
 	if err := applyMigrations(ctx, tx); err != nil {
 		return err
 	}
+	if before < migrations[len(migrations)-1].version {
+		if err := checkMigrationForeignKeys(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, `pragma foreign_keys=on`)
+	return err
+}
+
+func checkMigrationForeignKeys(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `pragma foreign_key_check`)
 	if err != nil {
 		return err
@@ -259,11 +276,7 @@ func (d *DB) init() error {
 	if invalid {
 		return apperr.New(apperr.ErrDB, "migration would leave invalid foreign keys")
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	_, err = conn.ExecContext(ctx, `pragma foreign_keys=on`)
-	return err
+	return nil
 }
 
 // migration is one versioned schema step. Each migration runs in a single
