@@ -16,6 +16,15 @@ updates:
     directory: "/frontend"
     schedule:
       interval: weekly
+    groups:
+      # React refuses to render when react and react-dom differ, so they
+      # must move in the same PR.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
     cooldown:
       default-days: 7
   # The UI preview harness (plain npm with a lockfile).
