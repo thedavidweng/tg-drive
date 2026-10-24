@@ -86,7 +86,7 @@ func clearLoginState(sessionPath string) {
 
 func (c *Client) Login(ctx context.Context, apiID int64, apiHash, phone string, codeFn tgtelegram.CodeFunc, passwordFn tgtelegram.PasswordFunc, opts tgtelegram.LoginOptions) (*tgtelegram.LoginResult, error) {
 	if apiID != 0 {
-		c.apiID = int(apiID)
+		c.apiID = appID(apiID)
 	}
 	if apiHash != "" {
 		c.apiHash = apiHash

@@ -3,6 +3,7 @@ package telegramgotd
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -56,6 +57,16 @@ type conn struct {
 	err    error
 }
 
+// appID narrows a configured api_id to gotd's int. Telegram app IDs are
+// int32, so an out-of-range value maps to 0 (unset) instead of silently
+// truncating on 32-bit builds.
+func appID(v int64) int {
+	if v < 0 || v > math.MaxInt32 {
+		return 0
+	}
+	return int(v)
+}
+
 // New creates a real Telegram client. maxWait bounds flood-wait sleeps when
 // waitFlood is enabled.
 func New(apiID int64, apiHash, sessionPath string, waitFlood bool, maxWait time.Duration) *Client {
@@ -63,7 +74,7 @@ func New(apiID int64, apiHash, sessionPath string, waitFlood bool, maxWait time.
 		maxWait = 300 * time.Second
 	}
 	return &Client{
-		apiID:         int(apiID),
+		apiID:         appID(apiID),
 		apiHash:       apiHash,
 		sessionPath:   sessionPath,
 		waitFlood:     waitFlood,
