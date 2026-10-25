@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/thedavidweng/tg-drive/compare/v1.1.0...v1.1.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **deps:** align react with react-dom 19.3.1 and group React updates ([#190](https://github.com/thedavidweng/tg-drive/issues/190)) ([d91d60e](https://github.com/thedavidweng/tg-drive/commit/d91d60e7543601df11f3510dbb1028fed16f53ef))
+* **telegram:** bound api_id before narrowing to int ([#196](https://github.com/thedavidweng/tg-drive/issues/196)) ([e52a756](https://github.com/thedavidweng/tg-drive/commit/e52a756b81fe04b4233198277245e5a9de7dcc1f))
+
 ## [1.1.0](https://github.com/thedavidweng/tg-drive/compare/v1.0.2...v1.1.0) (2026-10-20)
 
 
