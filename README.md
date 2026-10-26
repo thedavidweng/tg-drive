@@ -114,12 +114,8 @@ xvfb-run -a bash scripts/smoke-gui-appimage.sh dist/gui/td-gui_<version>_linux_<
 ```
 
 > [!NOTE]
-> **The GUI artifacts are unsigned.** macOS and Windows warn on first
-> launch; this is expected and safe to bypass.
+> macOS releases from v1.0.1 use Developer ID signing and Apple notarization.
 >
-> - **macOS (Gatekeeper):** after copying `td-gui.app` to Applications,
->   right-click it and choose **Open**, then confirm. Or remove the
->   quarantine flag: `xattr -d com.apple.quarantine /Applications/td-gui.app`.
 > - **Windows (SmartScreen):** click **More info** → **Run anyway**. The
 >   installer also installs the WebView2 runtime if your system lacks it.
 
