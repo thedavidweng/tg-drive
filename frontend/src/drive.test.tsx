@@ -249,7 +249,7 @@ test("a rescan reports live progress and its outcome", async () => {
   expect((await screen.findByRole("status")).textContent).toContain("Indexing… 2 files")
 
   backend.finishScan()
-  expect((await screen.findByRole("status")).textContent).toContain("Scan complete: 3 files indexed")
+  await screen.findByText("Scan complete: 3 files indexed.")
 })
 
 test("the tree view renders the nested structure", async () => {
