@@ -41,6 +41,10 @@ jobs:
           version: v2.12.2
       - name: Test macOS signing gate
         run: python3 build/darwin/test-signing.py
+      # The publish job's trust boundary over the untrusted ui-preview
+      # artifact; tested here because this job checks out the PR's tree.
+      - name: Test the ui-preview publish trust boundary
+        run: node --test ui-preview/publish.test.mjs
       - name: Test
         run: go test -coverprofile=coverage.out ./...
       - name: Race test
