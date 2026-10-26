@@ -64,6 +64,29 @@ const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 const PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
+test("the workbook writer generates extended-format UUIDs and round-trips its cells", async () => {
+  const { default: ExcelJS } = await import("exceljs")
+  const { default: JSZip } = await import("jszip")
+  const book = new ExcelJS.Workbook()
+  const sheet = book.addWorksheet("Audit")
+  sheet.addRow([42])
+  sheet.addConditionalFormatting({
+    ref: "A1",
+    rules: [{
+      type: "iconSet", iconSet: "3Stars", priority: 1,
+      cfvo: [{ type: "percent", value: 0 }, { type: "percent", value: 33 }, { type: "percent", value: 67 }],
+    }],
+  })
+  const bytes = await book.xlsx.writeBuffer()
+  const zip = await JSZip.loadAsync(bytes)
+  const xml = await zip.file("xl/worksheets/sheet1.xml")!.async("string")
+  expect(xml).toContain("x14:cfRule")
+  expect(xml).toMatch(/[A-F0-9]{8}-[A-F0-9]{4}-4[A-F0-9]{3}-[89AB][A-F0-9]{3}-[A-F0-9]{12}/)
+  const reopened = new ExcelJS.Workbook()
+  await reopened.xlsx.load(bytes)
+  expect(reopened.getWorksheet("Audit")!.getCell("A1").value).toBe(42)
+})
+
 test("the registry routes docx, xlsx, and pptx by MIME and by extension", () => {
   const pick = (name: string, mime: string) => choosePreview(descriptor(name, mime), previewProviders).id
   expect(pick("report.bin", DOCX)).toBe("docx")
