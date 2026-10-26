@@ -14,6 +14,7 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
+import { fileURLToPath } from "node:url"
 
 const BEGIN = "<!-- td-gui-preview:start -->"
 const END = "<!-- td-gui-preview:end -->"
@@ -65,7 +66,7 @@ function git(args, cwd) {
 // the branch never piles up old media; directories of PRs that have since
 // closed are dropped. Another PR's run pushing in between makes this one
 // start over from theirs.
-async function pushMedia(sha, dir) {
+async function pushMedia(sha, dir, manifest, media) {
   const work = await fs.mkdtemp(path.join(os.tmpdir(), "td-gui-previews-"))
   const remote = `https://x-access-token:${token}@github.com/${repo}.git`
   git(["init", "-q"], work)
@@ -87,8 +88,7 @@ async function pushMedia(sha, dir) {
     }
     const to = path.join(work, `pr-${pr}`, short(sha))
     await fs.mkdir(to, { recursive: true })
-    for (const f of await fs.readdir(dir)) await fs.copyFile(path.join(dir, f), path.join(to, f))
-    const manifest = JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8"))
+    for (const f of media) await fs.copyFile(path.join(dir, f), path.join(to, f))
     await fs.writeFile(path.join(to, "index.html"), player(sha, manifest))
     await fs.writeFile(path.join(work, ".nojekyll"), "")
     // The branch root belongs to the project site (site/publish.mjs); the
@@ -117,6 +117,48 @@ async function pushMedia(sha, dir) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
 
+// The artifact comes from the record job, which runs the PR's code, so
+// nothing in it is trusted: only media with a plain name and a known
+// extension reaches the Pages origin (never HTML, scripts, symlinks, or
+// anything outside the output directory), each under a size cap. The
+// manifest is reduced to known fields with one-line plain text, so no
+// value can close the preview block or inject markup.
+const MEDIA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.(png|jpg|jpeg|mp4|webm)$/
+const MAX_FILE_BYTES = 200 * 1024 * 1024
+
+async function mediaFiles(dir) {
+  const ok = new Set()
+  for (const f of await fs.readdir(dir).catch(() => [])) {
+    if (!MEDIA.test(f)) continue
+    const st = await fs.lstat(path.join(dir, f))
+    if (st.isFile() && st.size <= MAX_FILE_BYTES) ok.add(f)
+  }
+  return ok
+}
+
+// one line of plain text for Markdown and HTML alike: no newlines, and no
+// characters that could open markup, close the block, or break a link
+const text = (s) =>
+  String(s ?? "")
+    .replace(/[`[\]|*_<>]/g, "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .slice(0, 200)
+    .trim()
+
+function cleanManifest(raw, media) {
+  const file = (f) => (typeof f === "string" && media.has(f) ? f : "")
+  const scenes = (Array.isArray(raw?.scenes) ? raw.scenes : [])
+    .map((s) => ({
+      title: text(s?.title),
+      file: file(s?.file),
+      width: Number.isFinite(s?.width) ? Math.max(1, Math.min(4000, s.width)) : 1520,
+    }))
+    .filter((s) => s.file)
+  const errors = (Array.isArray(raw?.errors) ? raw.errors : []).slice(0, 50).map(text)
+  return { scenes, errors, video: file(raw?.video), poster: file(raw?.poster) }
+}
+
 // The page the video plays on: GitHub renders no video it does not host
 // itself, so the recording lives on the Pages site next to the shots.
 function player(sha, m) {
@@ -130,7 +172,7 @@ main{max-width:1100px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;mar
 video,img{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--card)}figure{margin:0 0 28px}figcaption{color:var(--muted);font-size:13px;margin-top:8px}
 a{color:inherit}</style>
 <main><h1>#${pr} td-gui preview</h1><p class="m">commit ${short(sha)} · <a href="https://github.com/${repo}/pull/${pr}">back to the PR</a></p>
-${m.video ? `<figure><video src="${esc(m.video)}" controls autoplay muted playsinline poster="${esc(m.poster || "")}"></video><figcaption>A walkthrough of the scenes below, recorded from the real app.</figcaption></figure>` : ""}
+${m.video ? `<figure><video src="${esc(m.video)}" controls autoplay muted playsinline poster="${esc(m.poster)}"></video><figcaption>A walkthrough of the scenes below, recorded from the real app.</figcaption></figure>` : ""}
 ${shots.map((s) => `<figure><img src="${esc(s.file)}" alt="${esc(s.title)}"><figcaption>${esc(s.title)}</figcaption></figure>`).join("\n")}
 </main></html>`
 }
@@ -150,26 +192,27 @@ async function publish() {
   const dir = process.env.OUT_DIR
   const result = process.env.RECORD_RESULT || "success"
   let m = null
+  const media = await mediaFiles(dir)
   try {
-    m = JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8"))
+    m = cleanManifest(JSON.parse(await fs.readFile(path.join(dir, "manifest.json"), "utf8")), media)
   } catch {
     /* no manifest: the record job never produced one */
   }
   if (result === "cancelled" && !m) return // a newer commit took over
   if (!m || (!m.scenes.length && !m.video)) {
-    await setBlock(`${head(sha)}\nThe preview could not be recorded (${result}).${runURL ? ` See the [workflow run](${runURL}).` : ""}`)
+    await setBlock(`${head(sha)}\nThe preview could not be recorded (${text(result)}).${runURL ? ` See the [workflow run](${runURL}).` : ""}`)
     return
   }
-  await pushMedia(sha, dir)
+  await pushMedia(sha, dir, m, media)
   const raw = `https://raw.githubusercontent.com/${repo}/${BRANCH}/pr-${pr}/${short(sha)}/`
   const site = `${await pagesURL()}pr-${pr}/${short(sha)}/`
   let md = `${head(sha)}\n`
   if (m.video) {
-    md += `[![Play the recording](${raw}${m.poster})](${site})\n\n`
-    md += `<sub>▶ Open the recording (pausable, seekable) · [download the mp4](${raw}${m.video})</sub>\n\n`
+    if (m.poster) md += `[![Play the recording](${raw}${m.poster})](${site})\n\n`
+    md += `<sub>▶ [Open the recording](${site}) (pausable, seekable) · [download the mp4](${raw}${m.video})</sub>\n\n`
   }
   for (const s of m.scenes) {
-    md += `#### ${s.title}\n\n<img src="${raw}${s.file}" width="${Math.min(760, Math.round((s.width || 1520) / 2))}" alt="${esc(s.title)}">\n\n`
+    md += `#### ${s.title}\n\n<img src="${raw}${s.file}" width="${Math.min(760, Math.round(s.width / 2))}" alt="${esc(s.title)}">\n\n`
   }
   if (m.errors?.length) {
     md += `<details><summary>Some scenes failed to record</summary>\n\n${m.errors.map((e) => "- " + e).join("\n")}\n</details>\n`
@@ -177,8 +220,14 @@ async function publish() {
   await setBlock(md)
 }
 
-if (process.argv[2] !== "publish") throw new Error("usage: publish.mjs publish")
-publish().catch((e) => {
-  console.error(e)
-  process.exit(1)
-})
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] !== "publish") throw new Error("usage: publish.mjs publish")
+  publish().catch((e) => {
+    console.error(e)
+    process.exit(1)
+  })
+}
+
+// imported by publish.test.mjs: the trust-boundary helpers are the unit
+// under test, not the publish run
+export { cleanManifest, mediaFiles, text, MEDIA, MAX_FILE_BYTES }

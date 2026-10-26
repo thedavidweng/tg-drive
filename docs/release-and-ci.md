@@ -270,6 +270,13 @@ The workflow has two jobs with a strict security split (ADR 0036):
   to the `previews` branch (one directory per open PR, force-with-lease,
   closed PRs dropped), and rewrites the PR description block. Fork pull
   requests hold a read-only token regardless, so `publish` skips them.
+- The artifact is untrusted because `record` ran the PR's code. `publish`
+  copies only plain-named `.png`/`.jpg`/`.jpeg`/`.mp4`/`.webm` files under
+  200 MiB (no HTML, scripts, symlinks, nested paths, or anything outside
+  the output directory), and reduces the manifest to known fields with
+  one-line plain text, so no artifact value can inject markup, close the
+  preview block, or break a link. `publish.test.mjs` pins that boundary
+  and the publish job runs it before touching the branch or description.
 
 One-time setup: enable GitHub Pages on the repository (Settings → Pages →
 deploy from the `previews` branch, root). The Actions token cannot enable
