@@ -100,6 +100,8 @@ func printStatus(w io.Writer, data *service.StatusResult) {
 		_, _ = fmt.Fprintf(w, "%-14s "+format+"\n", append([]any{label}, args...)...)
 	}
 	switch {
+	case data.SessionBusy:
+		row("account", "unknown (the Telegram session is in use by another td process)")
 	case data.Authenticated == nil:
 		row("account", "unknown (Telegram unreachable)")
 	case *data.Authenticated:
