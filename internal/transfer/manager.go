@@ -409,7 +409,7 @@ func start[T any](ctx context.Context, m *Manager, t Transfer,
 	// A Transfer submitted without an item total (the recursive kinds, whose
 	// item count only the walk discovers) grows it as items report; one
 	// submitted with a total keeps it.
-	tr := &tracker{m: m, t: t, written: time.Now().UTC(), ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0}
+	tr := &tracker{m: m, t: t, written: time.Now().UTC(), ctx: context.WithoutCancel(ctx), growItems: t.ItemsTotal == 0, lost: cancel}
 	stop := m.leaseHeartbeat(t.ID, tr.ctx, cancel)
 	tr.notify(m.opts.Observer.OnStage)
 	h := &Handle[T]{id: t.ID, done: make(chan struct{})}
@@ -437,13 +437,20 @@ func start[T any](ctx context.Context, m *Manager, t Transfer,
 	return h
 }
 
-// leaseHeartbeat renews the Transfer's lease and polls its cancel-requested
-// flag on the Operation-lock heartbeat: same TTL, renewed at one third of
-// it. A set flag — written by any process sharing the index — cancels the
-// Transfer's context, as does a renewal that finds the lease lost, so a
-// Transfer never runs unowned. It writes with writeCtx, which outlives the
-// Transfer's cancellation. The returned stop waits for the heartbeat to
-// exit.
+// cancelPollInterval is how often an owner checks that it still holds its
+// Transfer and whether another process asked to cancel it. It is far shorter
+// than the lease heartbeat (a third of locks.ttl_seconds, five minutes by
+// default), so a cancel from the GUI or td transfers lands within about a
+// second.
+const cancelPollInterval = time.Second
+
+// leaseHeartbeat renews the Transfer's lease on the Operation-lock heartbeat
+// (same TTL, renewed at one third of it) and polls its ownership and
+// cancel-requested flag every cancelPollInterval. A set flag — written by any
+// process sharing the index — cancels the Transfer's context, as does finding
+// the lease lost, so a Transfer never runs unowned. It writes with writeCtx,
+// which outlives the Transfer's cancellation. The returned stop waits for the
+// heartbeat to exit.
 func (m *Manager) leaseHeartbeat(id string, writeCtx context.Context, cancel context.CancelFunc) (stop func()) {
 	ttl := m.app.LockTTL()
 	interval := ttl / 3
@@ -454,19 +461,24 @@ func (m *Manager) leaseHeartbeat(id string, writeCtx context.Context, cancel con
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		ticker := time.NewTicker(interval)
+		ticker := time.NewTicker(min(interval, cancelPollInterval))
 		defer ticker.Stop()
+		renewed := time.Now()
 		for {
 			select {
 			case <-stopCh:
 				return
-			case <-ticker.C:
-				ok, err := m.app.DB.RenewTransferLease(writeCtx, id, m.owner, formatTime(time.Now().UTC().Add(ttl)))
-				if err != nil || !ok {
-					cancel()
-					return
+			case now := <-ticker.C:
+				if now.Sub(renewed) >= interval {
+					ok, err := m.app.DB.RenewTransferLease(writeCtx, id, m.owner, formatTime(now.UTC().Add(ttl)))
+					if err != nil || !ok {
+						cancel()
+						return
+					}
+					renewed = now
 				}
-				if requested, err := m.app.DB.TransferCancelRequested(writeCtx, id); err == nil && requested {
+				owned, requested, err := m.app.DB.TransferOwnership(writeCtx, id, m.owner)
+				if err != nil || !owned || requested {
 					cancel()
 					return
 				}
@@ -769,6 +781,9 @@ type tracker struct {
 	// growItems counts each reported item into ItemsTotal.
 	growItems bool
 	written   time.Time
+	// lost cancels the run once a write finds this Manager no longer owns
+	// the Transfer, so a retry that took the row over is not written over.
+	lost context.CancelFunc
 }
 
 // observe is next with this Transfer's recording in front, so the index
@@ -906,11 +921,18 @@ func (tr *tracker) finish(err error) {
 }
 
 // write saves the Transfer's state. A failed write is not the call's
-// failure: the call goes on, and the next write catches the index up.
+// failure: the call goes on, and the next write catches the index up. A
+// write that finds the row no longer owned by this Manager means a retry
+// took it over after the lease expired, so the run is cancelled rather than
+// writing over the newer owner's state.
 func (tr *tracker) write(now time.Time) {
 	tr.t.UpdatedAt = now
 	tr.written = now
-	_ = tr.m.app.DB.UpdateTransferState(tr.ctx, tr.t.row())
+	row := tr.t.row()
+	row.OwnerToken = tr.m.owner
+	if ok, err := tr.m.app.DB.UpdateTransferState(tr.ctx, row); err == nil && !ok {
+		tr.lost()
+	}
 }
 
 func (tr *tracker) notify(fn func(Transfer)) {
