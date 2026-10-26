@@ -275,8 +275,9 @@ The workflow has two jobs with a strict security split (ADR 0036):
   200 MiB (no HTML, scripts, symlinks, nested paths, or anything outside
   the output directory), and reduces the manifest to known fields with
   one-line plain text, so no artifact value can inject markup, close the
-  preview block, or break a link. `publish.test.mjs` pins that boundary
-  and the publish job runs it before touching the branch or description.
+  preview block, or break a link. `publish.test.mjs` pins that boundary and
+  the `test` job in `ci.yml` runs it, so a change that weakens it fails CI
+  before it can reach `publish`.
 
 One-time setup: enable GitHub Pages on the repository (Settings → Pages →
 deploy from the `previews` branch, root). The Actions token cannot enable

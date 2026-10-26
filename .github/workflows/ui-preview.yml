@@ -87,10 +87,6 @@ jobs:
         with:
           name: ui-preview
           path: out
-      # The trust boundary over the untrusted artifact, checked before this
-      # job touches the previews branch or the PR description.
-      - name: Test the publish trust boundary
-        run: node --test ui-preview/publish.test.mjs
       - name: Publish the preview
         env:
           GITHUB_TOKEN: ${{ github.token }}
