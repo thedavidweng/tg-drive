@@ -60,7 +60,7 @@ GUI_TAGS=gui,gtk3
 GUI_BINDINGS=frontend/bindings
 # Pinned here rather than in mise.toml: mise's go backend drops the leading
 # v when it invokes go install, and that query fails on some platforms.
-WAILS3_VERSION=v3.0.0-beta.27
+WAILS3_VERSION=v3.0.0
 WAILS3=$(DIST_DIR)/bin/wails3
 
 gui-tools:
