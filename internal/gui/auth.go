@@ -59,6 +59,9 @@ func (a *Auth) close() {
 			cancel()
 		}
 		a.mu.Unlock()
+		a.state.lifecycle.Lock()
+		a.state.closing = true
+		a.state.lifecycle.Unlock()
 		if done != nil {
 			<-done
 		}
@@ -148,12 +151,18 @@ func (a *Auth) Setup(ctx context.Context, apiID, apiHash, phone string) (result 
 		return nil, toError(apperr.New(apperr.ErrConfigInvalid, "phone required"))
 	}
 	ask := func(f service.TelegramField) (string, error) { return answers[f], nil }
-	if _, _, err := service.ConfigureTelegram(service.Options{}, true, ask); err != nil {
-		return nil, toError(err)
-	}
-	// The online reopen creates the session directory and the database that
-	// service.SetupTelegram would, beside the GUI's own session file.
-	if err := a.state.reopen(); err != nil {
+	a.state.lifecycle.Lock()
+	err = func() error {
+		defer a.state.lifecycle.Unlock()
+		if err := a.state.canReopen(); err != nil {
+			return err
+		}
+		if _, _, err := service.ConfigureTelegram(service.Options{}, true, ask); err != nil {
+			return toError(err)
+		}
+		return a.state.reopenLocked()
+	}()
+	if err != nil {
 		return nil, err
 	}
 	return a.Status(ctx)
@@ -210,11 +219,21 @@ func (a *Auth) Login(ctx context.Context, phone string, forceNewCode bool) (resu
 			return nil, toError(apperr.New(apperr.ErrConfigMissing, "telegram.phone required"))
 		}
 		ask := func(service.TelegramField) (string, error) { return phone, nil }
-		if _, _, err := service.ConfigureTelegram(service.Options{}, true, ask); err != nil {
-			return nil, toError(err)
-		}
-		// The open App cached the config without the phone; reload it.
-		if err := a.state.reopen(); err != nil {
+		a.state.lifecycle.Lock()
+		err := func() error {
+			defer a.state.lifecycle.Unlock()
+			// Admit before persisting: a rejected reopen must not leave
+			// the phone on disk, as Setup already guarantees.
+			if err := a.state.canReopen(); err != nil {
+				return err
+			}
+			if _, _, err := service.ConfigureTelegram(service.Options{}, true, ask); err != nil {
+				return toError(err)
+			}
+			// The open App cached the config without the phone; reload it.
+			return a.state.reopenLocked()
+		}()
+		if err != nil {
 			return nil, err
 		}
 		app = a.state.current()

@@ -95,13 +95,6 @@ func (t *TrayTracker) removeLocked(id string) {
 	}
 }
 
-// ActiveCount is how many Transfers the tracker believes are running.
-func (t *TrayTracker) ActiveCount() int {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return len(t.order)
-}
-
 // Menu renders the tracked Transfers as the tray menu's rows: one status
 // row per active Transfer (or the idle row), then Show and Quit.
 func (t *TrayTracker) Menu() []TrayRow {
