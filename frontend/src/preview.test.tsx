@@ -1,10 +1,12 @@
 import { afterEach, expect, test } from "bun:test"
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, waitForElementToBeRemoved, within } from "@testing-library/react"
+import { StrictMode, useLayoutEffect, useRef, useState } from "react"
 
 import { App } from "@/App"
 import type { PreviewDescriptor } from "@/backend"
 import { previewProviders } from "@/preview/providers"
 import { choosePreview, fallbackPreview } from "@/preview/registry"
+import { Sheet } from "@/sheet"
 import { memoryBackend } from "@/testing/memory-backend"
 
 afterEach(cleanup)
@@ -45,6 +47,68 @@ async function openPhotos() {
   fireEvent.click(await screen.findByRole("button", { name: "photos" }))
   return screen.findByRole("list", { name: "Files in /photos" })
 }
+
+async function dismissDownloadSheet(sheet: HTMLElement) {
+  // Download has no autoFocus field. Sheet's effect moves focus before it
+  // registers Escape; seeing the dialog in the DOM alone is not readiness.
+  await waitFor(() => {
+    if (!sheet.contains(document.activeElement)) throw new Error("Download sheet has not taken focus")
+  })
+  const removed = waitForElementToBeRemoved(sheet)
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+  await removed
+}
+
+test("Escape waits for a newly mounted sheet to be ready", async () => {
+  let dismissal: Promise<void> | undefined
+  let closes = 0
+  function OnCommit() {
+    const started = useRef(false)
+    useLayoutEffect(() => {
+      if (started.current) return
+      started.current = true
+      const sheet = screen.getByRole("dialog", { name: "Download" })
+      dismissal = dismissDownloadSheet(sheet)
+    }, [])
+    return null
+  }
+  function Fixture() {
+    const [open, setOpen] = useState(false)
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open</button>
+        {open && (
+          <>
+            <Sheet
+              title="Download"
+              onClose={() => {
+                closes++
+                setOpen(false)
+              }}
+            >
+              <input aria-label="Option" />
+            </Sheet>
+            <OnCommit />
+          </>
+        )}
+      </>
+    )
+  }
+  render(
+    <StrictMode>
+      <Fixture />
+    </StrictMode>,
+  )
+  const opener = screen.getByRole("button", { name: "Open" })
+  opener.focus()
+  fireEvent.click(opener)
+  expect(dismissal).toBeDefined()
+  await dismissal
+  expect(screen.queryByRole("dialog", { name: "Download" })).toBeNull()
+  expect(document.activeElement).toBe(opener)
+  fireEvent.keyDown(opener, { key: "Escape" })
+  expect(closes).toBe(1)
+})
 
 test("the registry picks a provider by MIME first, then by extension, else the fallback", () => {
   const pick = (name: string, mime: string) => choosePreview(descriptor(name, mime), previewProviders).id
@@ -146,18 +210,15 @@ test("a failed preview call keeps Download, and Download opens the download shee
   const dialog = await screen.findByRole("dialog", { name: "cat.png" })
 
   expect((await within(dialog).findByRole("alert")).textContent).toContain("telegram rate limited this account")
-  fireEvent.click(within(dialog).getAllByRole("button", { name: "Download" })[0])
+  const download = within(dialog).getAllByRole("button", { name: "Download" })[0]
+  act(() => download.focus())
+  fireEvent.click(download)
   const sheet = await screen.findByRole("dialog", { name: "Download" })
 
   // Escape belongs to the topmost dialog: it closes the sheet, not the preview.
-  fireEvent.keyDown(document.activeElement!, { key: "Escape" })
-  expect(screen.queryByRole("dialog", { name: "Download" })).toBeNull()
-  // The sheet closes from a native document listener; some runners commit
-  // that state update after the event dispatch returns.
-  await waitFor(() => {
-    if (sheet.isConnected) throw new Error("Download sheet remains connected")
-  })
+  await dismissDownloadSheet(sheet)
   expect(screen.getByRole("dialog", { name: "cat.png" })).toBe(dialog)
+  expect(document.activeElement).toBe(download)
 })
 
 test("an image that fails to load falls back to file details and Download", async () => {
