@@ -220,6 +220,9 @@ func TestClosedServicesRejectTransferSubmission(t *testing.T) {
 	file := bigFile(t, "after-close.bin", 1024)
 	closeServices()
 	ctx := context.Background()
+	if _, err := svc.Settings.Set(ctx, "transfers.concurrency", "2"); err == nil {
+		t.Fatal("concurrency Set succeeded after close")
+	}
 	if _, err := svc.Transfers.Upload(ctx, []string{file}, "/", gui.UploadOptions{}); err == nil {
 		t.Fatal("Upload succeeded after close")
 	}

@@ -47,11 +47,14 @@ func TestSettingsPersistFailureKeepsRunningGeneration(t *testing.T) {
 	if _, err := svc.Settings.Set(ctx, "upload.threads", "5"); err == nil {
 		t.Fatal("Set succeeded despite write failure")
 	}
+	if _, err := svc.Settings.Set(ctx, "transfers.concurrency", "5"); err == nil {
+		t.Fatal("concurrency Set succeeded despite write failure")
+	}
 	after, err := os.ReadFile(os.Getenv("TD_CONFIG"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(before, after) || svc.state.current() != app || svc.state.currentManager() != manager || app.Cfg.Upload.Threads != 3 {
+	if !bytes.Equal(before, after) || svc.state.current() != app || svc.state.currentManager() != manager || app.Cfg.Upload.Threads != 3 || svc.state.limiter.Limit() != app.Cfg.Transfers.Concurrency {
 		t.Fatal("failed write changed disk or running generation")
 	}
 }

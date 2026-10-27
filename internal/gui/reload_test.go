@@ -25,7 +25,7 @@ type blockedUploadClient struct {
 }
 
 func (c *blockedUploadClient) UploadMedia(ctx context.Context, req telegram.UploadRequest) (*telegram.UploadResult, error) {
-	close(c.entered)
+	c.entered <- struct{}{}
 	select {
 	case <-c.release:
 		return c.Client.UploadMedia(ctx, req)
@@ -51,8 +51,11 @@ func TestSettingsLiveSaveKeepsRunningTransferVisible(t *testing.T) {
 	if _, err := svc.Settings.Set(ctx, "upload.threads", "3"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := svc.Settings.Set(ctx, "transfers.concurrency", "1"); err != nil {
+		t.Fatal(err)
+	}
 	app = svc.state.current()
-	client := &blockedUploadClient{Client: app.TG, entered: make(chan struct{}), release: make(chan struct{})}
+	client := &blockedUploadClient{Client: app.TG, entered: make(chan struct{}, 2), release: make(chan struct{})}
 	app.TG = client
 	svc.state.manager = svc.state.newManager(app)
 	file := filepath.Join(t.TempDir(), "upload.txt")
@@ -92,8 +95,37 @@ func TestSettingsLiveSaveKeepsRunningTransferVisible(t *testing.T) {
 	if n := svc.RunningTransfers(); n != 1 {
 		t.Fatalf("RunningTransfers during upload = %d, want 1", n)
 	}
+	secondFile := filepath.Join(t.TempDir(), "second.txt")
+	if err := os.WriteFile(secondFile, []byte("second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := oldManager.SubmitUpload(ctx, transfer.Upload{Source: secondFile, Dest: "/second.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		select {
+		case <-client.release:
+		default:
+			close(client.release)
+		}
+		_, _ = second.Wait()
+	})
+	if _, err := svc.Settings.Set(ctx, "transfers.concurrency", "2"); err != nil {
+		t.Fatal(err)
+	}
+	<-client.entered
+	if svc.state.currentManager() != oldManager || svc.RunningTransfers() != 2 {
+		t.Fatal("live concurrency change lost the running manager or transfer count")
+	}
+	if got := svc.state.current().Cfg.Transfers.Concurrency; got != 2 {
+		t.Fatalf("running concurrency = %d, want 2", got)
+	}
 	close(client.release)
 	if _, err := handle.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.Wait(); err != nil {
 		t.Fatal(err)
 	}
 	if n := svc.RunningTransfers(); n != 0 {

@@ -80,8 +80,8 @@ func (s *Settings) Reveal(ctx context.Context, key string, confirmed bool) (Conf
 // its Telegram client, Session lock, or database — cannot be reapplied to the
 // running App, so it is reported RestartRequired instead of being claimed as
 // live; the rest reach later calls at once.
-// Live changes return ERR_OPERATION_LOCKED while GUI transfers are running;
-// retry after they finish.
+// Live changes other than transfers.concurrency return ERR_OPERATION_LOCKED
+// while GUI transfers are running; retry after they finish.
 //
 // The order is prepare, persist, apply: the value is validated against the
 // running config before anything is written, and applying the prepared config
@@ -93,7 +93,8 @@ func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, err
 	if s.state.closing {
 		return ConfigEntry{}, toError(apperr.Cancelled())
 	}
-	if !appliesOnRestart(key) && s.state.currentManager().Running() != 0 {
+	concurrency := key == "transfers.concurrency"
+	if !concurrency && !appliesOnRestart(key) && s.state.currentManager().Running() != 0 {
 		return ConfigEntry{}, toError(apperr.New(apperr.ErrOperationLocked, "cannot change live settings while GUI transfers are running"))
 	}
 	cfg, shown, err := s.state.prepared(key, value)
@@ -127,10 +128,10 @@ func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, err
 		entry.RestartRequired = true
 		return entry, nil
 	}
-	if n, ok := shown.(int); ok && key == "transfers.concurrency" {
+	if n, ok := shown.(int); ok && concurrency {
 		s.state.limiter.SetLimit(n)
 	}
-	s.state.applyConfig(cfg)
+	s.state.applyConfig(cfg, !concurrency)
 	return entry, nil
 }
 

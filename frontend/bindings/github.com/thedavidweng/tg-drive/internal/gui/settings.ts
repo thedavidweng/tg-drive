@@ -44,8 +44,8 @@ export function Reveal(key: string, confirmed: boolean): $CancellablePromise<$mo
  * its Telegram client, Session lock, or database — cannot be reapplied to the
  * running App, so it is reported RestartRequired instead of being claimed as
  * live; the rest reach later calls at once.
- * Live changes return ERR_OPERATION_LOCKED while GUI transfers are running;
- * retry after they finish.
+ * Live changes other than transfers.concurrency return ERR_OPERATION_LOCKED
+ * while GUI transfers are running; retry after they finish.
  * 
  * The order is prepare, persist, apply: the value is validated against the
  * running config before anything is written, and applying the prepared config

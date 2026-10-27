@@ -180,8 +180,9 @@ func (s *appState) prepared(key, value string) (config.Config, any, error) {
 // could (validating the value) happened in prepared before the caller saved
 // anything, so a saved change is never reported as a failed one while the disk
 // and the App disagree. Calls and Transfers already running keep the App they
-// started with; a new Manager takes later submissions.
-func (s *appState) applyConfig(cfg config.Config) {
+// started with. A concurrency-only change keeps the Manager, which already
+// shares the updated Limiter, so its active Transfers remain visible.
+func (s *appState) applyConfig(cfg config.Config, replaceManager bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current := s.app
@@ -195,7 +196,9 @@ func (s *appState) applyConfig(cfg config.Config) {
 		Index:      current.Index,
 	}
 	s.app = app
-	s.manager = s.newManager(app)
+	if replaceManager {
+		s.manager = s.newManager(app)
+	}
 }
 
 // RunningTransfers is how many Transfers this GUI owns and has not finished:

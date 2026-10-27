@@ -75,8 +75,9 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   `storage.*`, `rate_limit.*`, and `locks.session_wait_seconds` — reports
   `restart_required` instead of claiming the change is live; every other key
   applies to later calls, and `transfers.concurrency` also resizes the queue.
-  Live saves return `ERR_OPERATION_LOCKED` before writing while GUI transfers
-  are running; retry after they finish. It also covers the About versions
+  Live saves other than `transfers.concurrency` return `ERR_OPERATION_LOCKED`
+  before writing while GUI transfers are running; retry after they finish.
+  It also covers the About versions
   (the GUI's own stamp, and the separately installed td CLI's version from
   running `td version --json` found on PATH, in `TD_INSTALL_DIR`, or in the
   installer's default directory), and Omarchy mode: on a detected
