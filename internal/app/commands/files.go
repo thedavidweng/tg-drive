@@ -230,7 +230,7 @@ func NewCpCmd(rt Runtime) *cobra.Command {
 }
 
 func NewGetCmd(rt Runtime) *cobra.Command {
-	var recursive, replace, skip, autoRename, continueOnError bool
+	var recursive, replace, skip, autoRename, continueOnError, events bool
 	c := &cobra.Command{
 		Use:   "get <remote-path> <local-dest>",
 		Short: "Download remote file or directory",
@@ -246,8 +246,12 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 			if err != nil {
 				return r.Error(err)
 			}
+			var observer transfer.Observer
+			if events {
+				observer = transferEvents(r)
+			}
+			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: observer})
 			if recursive {
-				manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
 				handle, err := manager.SubmitRecursiveDownload(cmd.Context(), transfer.RecursiveDownload{
 					Source: args[0], Dest: args[1], Policy: policy, ContinueOnError: continueOnError,
 				})
@@ -258,13 +262,15 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 				if err != nil {
 					return r.Error(err)
 				}
+				if events {
+					return r.Event("get", data)
+				}
 				if !rt.JSON() {
 					_ = r.SuccessLine("downloaded %s -> %s (%v files, %v skipped, %v failed)", args[0], args[1], data.Downloaded, data.Skipped, data.Failed)
 					return nil
 				}
 				return r.Success(data)
 			}
-			manager := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
 			handle, err := manager.SubmitDownload(cmd.Context(), transfer.Download{
 				Source: args[0], Dest: args[1], Policy: policy,
 			})
@@ -274,6 +280,9 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 			res, err := handle.Wait()
 			if err != nil {
 				return r.Error(err)
+			}
+			if events {
+				return r.Event("get", res)
 			}
 			if !rt.JSON() {
 				if res.Skipped {
@@ -289,6 +298,7 @@ func NewGetCmd(rt Runtime) *cobra.Command {
 	c.Flags().BoolVar(&skip, "skip-existing", false, "skip existing local file")
 	c.Flags().BoolVar(&autoRename, "auto-rename", false, "auto rename on conflict")
 	c.Flags().BoolVar(&continueOnError, "continue-on-error", false, "continue on download errors")
+	c.Flags().BoolVar(&events, "events", false, "emit NDJSON progress events during the download")
 	return c
 }
 

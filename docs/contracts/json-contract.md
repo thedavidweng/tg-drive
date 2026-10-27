@@ -390,12 +390,16 @@ group.
 Long-running commands such as `td cp --events` emit one JSON envelope per
 line (`td scan --events` is described under [Scan](#scan)). Every `td cp --events` form (single file, multi-file album, and
 `--recursive`) runs as a Transfer and emits `transfer.stage` and
-`transfer.progress` events, then the final `cp` line (or error envelope):
+`transfer.progress` events, then the final `cp` line (or error envelope).
+`td get --events` emits `transfer.stage` the same way, then the final `get`
+line: downloads have no confirmed parts to report, so there is no
+`transfer.progress`.
 
 - `transfer.stage`: one each time the Transfer enters a stage: `queued`,
-  then `hashing` (when the file is hashed), `uploading`, `publishing`, and
-  finally `completed`, `failed`, or `cancelled`. A multi-item Transfer
-  reports each stage once, the first time any of its items reaches it.
+  then `hashing` (when the file is hashed), `uploading`, `downloading`,
+  `publishing`, and finally `completed`, `failed`, or `cancelled`. A
+  multi-item Transfer reports each stage once, the first time any of its
+  items reaches it.
 - `transfer.progress`: one per confirmed upload part, in the order the
   parts confirm. A resumed upload reports only the parts it actually sends.
 

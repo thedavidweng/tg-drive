@@ -126,6 +126,68 @@ func assertProgressThenCp(t *testing.T, lines []eventLine, progress []string) {
 	}
 }
 
+// TestE2EGetEvents: td get runs as a Transfer too, so --events streams one
+// transfer.stage line per stage it enters and then the final get line. A
+// download confirms no upload parts, so the stream carries no
+// transfer.progress. Without --events the command keeps its single-result
+// output, so the flag is what turns the stream on rather than a change of the
+// default.
+func TestE2EGetEvents(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfgPath, dbPath, statePath, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfgPath, dbPath, statePath)
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "init", root, "--create-channel=Drive")
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "cp", e2eLocalFile(t, dir, "evt.txt", "events"), "/evt.txt")
+
+	t.Run("single", func(t *testing.T) {
+		dest := filepath.Join(dir, "single", "evt.txt")
+		lines := runE2EEventLines(t, bin, cfgPath, dbPath, statePath, "get", "/evt.txt", dest, "--events")
+		assertStagesThenFinal(t, lines, "get", "download")
+		if got, err := os.ReadFile(dest); err != nil || string(got) != "events" {
+			t.Fatalf("downloaded %q err=%v", got, err)
+		}
+	})
+
+	t.Run("recursive", func(t *testing.T) {
+		dest := filepath.Join(dir, "tree")
+		lines := runE2EEventLines(t, bin, cfgPath, dbPath, statePath, "get", "--recursive", "/evt.txt", dest, "--events")
+		assertStagesThenFinal(t, lines, "get", "recursive_download")
+	})
+}
+
+// assertStagesThenFinal pins one --events stream: every line before the last
+// is a transfer.stage of the given kind, and the last is the command's own
+// result.
+func assertStagesThenFinal(t *testing.T, lines []eventLine, command, kind string) {
+	t.Helper()
+	if len(lines) < 3 {
+		t.Fatalf("got %d event lines, want at least queued, downloading, completed, and %s", len(lines), command)
+	}
+	for i, ev := range lines[:len(lines)-1] {
+		if !ev.OK || ev.Meta["command"] != "transfer.stage" {
+			t.Fatalf("line %d envelope = ok:%v meta:%v, want a transfer.stage success", i, ev.OK, ev.Meta)
+		}
+		var data struct {
+			ID    string `json:"id"`
+			Kind  string `json:"kind"`
+			Stage string `json:"stage"`
+		}
+		if err := json.Unmarshal(ev.Data, &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.ID == "" || data.Kind != kind {
+			t.Fatalf("line %d data = %s, want a %s Transfer", i, ev.Data, kind)
+		}
+		if data.Stage == "" {
+			t.Fatalf("line %d data = %s, want a stage", i, ev.Data)
+		}
+	}
+	last := lines[len(lines)-1]
+	if !last.OK || last.Meta["command"] != command {
+		t.Fatalf("last line = ok:%v meta:%v, want the %s result", last.OK, last.Meta, command)
+	}
+}
+
 // e2eSizedFile writes size bytes of a repeating pattern to path, creating its
 // directory.
 func e2eSizedFile(t *testing.T, path string, size int) string {
