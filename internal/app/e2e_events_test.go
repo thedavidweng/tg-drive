@@ -155,6 +155,62 @@ func TestE2EGetEvents(t *testing.T) {
 	})
 }
 
+func TestE2EMultiGroupEventsFirstStageOnly(t *testing.T) {
+	dir := t.TempDir()
+	bin, cfg, db, state, root := e2eSetup(t, dir)
+	e2eLogin(t, bin, cfg, db, state)
+	runE2EJSON(t, bin, cfg, db, state, "init", root, "--create-channel=Drive")
+	tree := filepath.Join(dir, "tree")
+	for _, group := range []string{"a", "b"} {
+		if err := os.MkdirAll(filepath.Join(tree, group), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		e2eLocalFile(t, filepath.Join(tree, group), "file.bin", group)
+	}
+	upload := runE2EEventLines(t, bin, cfg, db, state, "cp", "--recursive", tree, "/tree", "--events")
+	assertUniqueStages(t, upload, "recursive_upload", "cp", []string{"queued", "hashing", "uploading", "publishing", "completed"})
+	download := runE2EEventLines(t, bin, cfg, db, state, "get", "--recursive", "/tree", filepath.Join(dir, "download"), "--events")
+	assertUniqueStages(t, download, "recursive_download", "get", []string{"queued", "downloading", "completed"})
+	for _, group := range []string{"a", "b"} {
+		data, err := os.ReadFile(filepath.Join(dir, "download", group, "file.bin"))
+		if err != nil || string(data) != group {
+			t.Fatalf("download %s = %q, err %v", group, data, err)
+		}
+	}
+	var albumArgs []string
+	for i := range 11 {
+		albumArgs = append(albumArgs, e2eLocalFile(t, dir, fmt.Sprintf("album-%02d.bin", i), "album"))
+	}
+	albumArgs = append(albumArgs, "/album/", "--events")
+	album := runE2EEventLines(t, bin, cfg, db, state, append([]string{"cp"}, albumArgs...)...)
+	assertUniqueStages(t, album, "album_upload", "cp", []string{"queued", "hashing", "uploading", "publishing", "completed"})
+}
+
+func assertUniqueStages(t *testing.T, lines []eventLine, kind, command string, want []string) {
+	t.Helper()
+	var stages []string
+	var id string
+	for _, line := range lines {
+		if line.Meta["command"] != "transfer.stage" {
+			continue
+		}
+		var data struct {
+			ID, Kind, Stage string
+		}
+		if err := json.Unmarshal(line.Data, &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.ID == "" || data.Kind != kind || (id != "" && id != data.ID) {
+			t.Fatalf("unexpected transfer: %s", line.Data)
+		}
+		id = data.ID
+		stages = append(stages, data.Stage)
+	}
+	if !slices.Equal(stages, want) || lines[len(lines)-1].Meta["command"] != command {
+		t.Fatalf("stages = %v, want %v and final %s", stages, want, command)
+	}
+}
+
 // assertStagesThenFinal pins one --events stream: every line before the last
 // is a transfer.stage of the given kind, and the last is the command's own
 // result.

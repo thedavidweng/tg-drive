@@ -351,10 +351,12 @@ them.
   `confirm_replace`, and `caption`; an album upload adds `sources`;
   recursive Transfers add `continue_on_error`, and a recursive upload
   `include_empty_dirs`. Unset and zero values are omitted.
-- `stage` moves forward only: `queued`, `hashing`, `uploading` /
+- A single-file Transfer's `stage` moves forward only: `queued`, `hashing`, `uploading` /
   `downloading`, `publishing`, then one terminal stage: `completed`,
   `failed`, `cancelled`, or `interrupted`. A Transfer visits the stages its
-  kind has. A Transfer cancelled by its owner — Ctrl-C on the owning
+  kind has. An album or recursive Transfer reports its current group's
+  work, so it can re-enter a working stage for a later group; terminal
+  stages cannot be re-entered. A Transfer cancelled by its owner — Ctrl-C on the owning
   command, or a cancel request from another process — ends `cancelled`.
   `interrupted` ends a Transfer whose owner vanished mid-run: see
   `owner_token` / `lease_expires_at` below.

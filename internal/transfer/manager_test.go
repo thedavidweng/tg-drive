@@ -568,6 +568,50 @@ func TestManagerRecursiveUploadShowsEachGroupsStage(t *testing.T) {
 	t.Fatalf("stages = %v, want the second directory's uploading after the first one published", stages)
 }
 
+func TestManagerAlbumShowsLaterGroupStage(t *testing.T) {
+	app, _ := newApp(t)
+	var sources []string
+	for i := range 11 {
+		sources = append(sources, localFile(t, fmt.Sprintf("item-%02d.bin", i), 4096))
+	}
+	var mu sync.Mutex
+	var stages []transfer.Stage
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: transfer.Observer{
+		OnStage: func(tr transfer.Transfer) {
+			mu.Lock()
+			defer mu.Unlock()
+			stages = append(stages, tr.Stage)
+		},
+	}})
+	h, err := m.SubmitAlbumUpload(context.Background(), transfer.AlbumUpload{
+		Sources: sources, Dest: "/album/", Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	published, reentered := false, false
+	for i, stage := range stages {
+		if i > 0 && stage == stages[i-1] {
+			t.Fatalf("adjacent duplicate stages: %v", stages)
+		}
+		if stage.Terminal() && i != len(stages)-1 {
+			t.Fatalf("stage after terminal: %v", stages)
+		}
+		if published && stage == transfer.StageUploading {
+			reentered = true
+		}
+		published = published || stage == transfer.StagePublishing
+	}
+	if !reentered || len(stages) == 0 || stages[len(stages)-1] != transfer.StageCompleted {
+		t.Fatalf("stages = %v, want a later group's upload and completed last", stages)
+	}
+}
+
 func TestManagerCancelFromAnotherProcessIsPrompt(t *testing.T) {
 	app, tg := newApp(t)
 	tg.SetTransferDelay(100 * time.Millisecond)
