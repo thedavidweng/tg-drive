@@ -384,6 +384,16 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	if err != nil {
 		return "", toError(err)
 	}
+	t.state.lifecycle.Lock()
+	defer t.state.lifecycle.Unlock()
+	if t.state.closing {
+		return "", toError(apperr.Cancelled())
+	}
+	// Resolve the App and list under the same lock as the submit below:
+	// resolving or listing outside it would hand ListDir an App whose
+	// database a concurrent Setup/close reopen already closed. ListDir is
+	// a local index read, not a network call, so holding the short
+	// admission lock here matches Upload.
 	app, scoped := t.state.use(ctx)
 	entries, err := app.ListDir(scoped, remotePath)
 	if err != nil {
@@ -393,11 +403,6 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	// else is a directory.
 	isFile := len(entries) == 1 && entries[0].Type == "file" &&
 		entries[0].Path == strings.TrimRight(remotePath, "/")
-	t.state.lifecycle.Lock()
-	defer t.state.lifecycle.Unlock()
-	if t.state.closing {
-		return "", toError(apperr.Cancelled())
-	}
 	m := t.manager()
 	run := context.WithoutCancel(scoped)
 	local := filepath.Join(destDir, path.Base(strings.TrimRight(remotePath, "/")))

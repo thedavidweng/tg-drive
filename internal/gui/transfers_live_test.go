@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,68 @@ import (
 	"github.com/thedavidweng/tg-drive/internal/service"
 	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
+
+func TestLoginKeepsPhoneOffDiskWhileTransferRuns(t *testing.T) {
+	seedDrive(t, nil)
+	// seedDrive sets TD_PHONE; clear it so Login takes the missing-phone
+	// persist path instead of skipping it.
+	t.Setenv("TD_PHONE", "")
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "200ms")
+	if _, err := service.SetConfig(service.Options{}, "upload.threads", "4"); err != nil {
+		t.Fatal(err)
+	}
+	svc := openGUI(t)
+	ctx := context.Background()
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "login-guard.bin", 12*1024*1024)}, "/", gui.UploadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStage(t, svc, ids[0], "uploading")
+	before, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Auth.Login(ctx, "+15550001", false); err == nil {
+		t.Fatal("Login succeeded while a GUI transfer was running")
+	} else {
+		var guiErr *gui.Error
+		if !errors.As(err, &guiErr) || guiErr.Code != "ERR_OPERATION_LOCKED" {
+			t.Fatalf("Login error = %v, want ERR_OPERATION_LOCKED", err)
+		}
+	}
+	after, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("rejected Login changed the config file")
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers = %d, want 1", n)
+	}
+	waitForStage(t, svc, ids[0], "completed")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers after completion = %d, want 0", n)
+	}
+	newPromptRecorder(svc, map[string]string{"code": "12345"})
+	res, err := svc.Auth.Login(ctx, "+15550001", false)
+	if err != nil {
+		t.Fatalf("idle Login: %v", err)
+	}
+	// The seeded fake already authenticated this account, so a fresh code
+	// is unnecessary; either path proves the idle phone fill works.
+	if res.User.DisplayName != "Test User" || res.User.UserID != 42 {
+		t.Fatalf("idle Login = %+v, want Test User (42)", res)
+	}
+	idle, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(idle, []byte("+15550001")) {
+		t.Fatal("idle Login did not persist the phone")
+	}
+}
 
 func TestSetupKeepsRunningTransferAndConfig(t *testing.T) {
 	seedDrive(t, nil)
@@ -54,6 +118,56 @@ func TestSetupKeepsRunningTransferAndConfig(t *testing.T) {
 	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err != nil {
 		t.Fatalf("idle Setup: %v", err)
 	}
+}
+
+// TestDownloadSetupInterleaveKeepsOneGeneration interleaves idle Downloads
+// with Setup-driven reopens: Download resolves the App under the same
+// lifecycle lock as the submit, so a listing never runs on an App whose
+// database a concurrent reopen already closed.
+func TestDownloadSetupInterleaveKeepsOneGeneration(t *testing.T) {
+	seedDrive(t, map[string]string{"/shared.txt": "shared-bytes"})
+	svc := openGUI(t)
+	ctx := context.Background()
+
+	const rounds = 10
+	var wg sync.WaitGroup
+	for i := 0; i < rounds; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			dest := t.TempDir()
+			id, err := svc.Transfers.Download(ctx, "/shared.txt", dest, gui.DownloadOptions{})
+			if err != nil {
+				var guiErr *gui.Error
+				if errors.As(err, &guiErr) && (guiErr.Code == "ERR_OPERATION_LOCKED" || guiErr.Code == "ERR_CANCELLED") {
+					return
+				}
+				t.Errorf("download call %T: %v", err, err)
+				return
+			}
+			waitForStage(t, svc, id, "completed")
+			got, err := os.ReadFile(filepath.Join(dest, "shared.txt"))
+			if err != nil {
+				t.Errorf("read result: %v", err)
+				return
+			}
+			if !bytes.Equal(got, []byte("shared-bytes")) {
+				t.Error("downloaded bytes mismatch")
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001")
+			if err != nil {
+				var guiErr *gui.Error
+				if errors.As(err, &guiErr) && (guiErr.Code == "ERR_OPERATION_LOCKED" || guiErr.Code == "ERR_CANCELLED") {
+					return
+				}
+				t.Errorf("setup: %T: %v", err, err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestSetupAndSubmitDoNotLoseRunningTransfer(t *testing.T) {
