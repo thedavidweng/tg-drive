@@ -91,10 +91,29 @@ func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, err
 	if err != nil {
 		return ConfigEntry{}, err
 	}
+	// Compute the value List will display before saving, including overrides,
+	// so reporting a successful save does not require another file read.
+	fileCfg, err := config.LoadFile(config.ConfigPath(s.opts.ConfigPath))
+	if err != nil {
+		return ConfigEntry{}, toError(err)
+	}
+	if err := config.SetValue(&fileCfg, key, value); err != nil {
+		return ConfigEntry{}, toError(err)
+	}
+	effective, err := config.ApplyOverrides(fileCfg, config.Overrides{
+		ConfigPath: s.opts.ConfigPath, DBPath: s.opts.DBPath, SessionPath: s.opts.SessionPath, Channel: s.opts.Channel,
+	})
+	if err != nil {
+		return ConfigEntry{}, toError(err)
+	}
+	display, err := config.GetValue(effective, key)
+	if err != nil {
+		return ConfigEntry{}, toError(err)
+	}
 	if _, err := service.SetConfig(s.opts, key, value); err != nil {
 		return ConfigEntry{}, toError(err)
 	}
-	entry := ConfigEntry{Key: key, Value: shown, Secret: config.IsSecret(key)}
+	entry := ConfigEntry{Key: key, Value: config.RedactValue(key, display, false), Secret: config.IsSecret(key)}
 	if appliesOnRestart(key) {
 		entry.RestartRequired = true
 		return entry, nil

@@ -3,6 +3,7 @@
 package gui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -13,6 +14,52 @@ import (
 
 	"github.com/thedavidweng/tg-drive/internal/service"
 )
+
+func TestSettingsSetDisplaysEffectiveOverrides(t *testing.T) {
+	svc := openTestGUI(t)
+	t.Setenv("TD_API_ID", "123")
+	for _, change := range []struct{ key, value string }{
+		{"telegram.api_id", "999"},
+		{"storage.db_path", filepath.Join(t.TempDir(), "pending.db")},
+		{"storage.session_path", filepath.Join(t.TempDir(), "pending.session")},
+	} {
+		entry, err := svc.Settings.Set(context.Background(), change.key, change.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, err := service.GetConfig(svc.Settings.opts, service.ConfigGetOptions{Key: change.key})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.Value != view.Entries[0].Value {
+			t.Fatalf("Set %s displays %v, List displays %v", change.key, entry.Value, view.Entries[0].Value)
+		}
+	}
+}
+
+func TestSettingsSetDoesNotPublishWhenConfigReadFails(t *testing.T) {
+	svc := openTestGUI(t)
+	if _, err := svc.Settings.Set(context.Background(), "upload.threads", "3"); err != nil {
+		t.Fatal(err)
+	}
+	path := os.Getenv("TD_CONFIG")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := svc.state.current()
+	svc.Settings.opts.ConfigPath = t.TempDir()
+	if _, err := svc.Settings.Set(context.Background(), "upload.threads", "5"); err == nil {
+		t.Fatal("Set succeeded with a directory as config path")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || svc.state.current() != running {
+		t.Fatal("failed Set changed the saved or running configuration")
+	}
+}
 
 // openTestGUI seeds every path into a temp dir and opens the facade, the way
 // cmd/td-gui does on a fresh machine.
