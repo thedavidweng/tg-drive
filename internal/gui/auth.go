@@ -152,7 +152,7 @@ func (a *Auth) Setup(ctx context.Context, apiID, apiHash, phone string) (result 
 	}
 	ask := func(f service.TelegramField) (string, error) { return answers[f], nil }
 	a.state.lifecycle.Lock()
-	err := func() error {
+	err = func() error {
 		defer a.state.lifecycle.Unlock()
 		if err := a.state.canReopen(); err != nil {
 			return err
