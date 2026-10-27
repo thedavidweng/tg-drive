@@ -300,7 +300,7 @@ func Save(path string, cfg Config) error {
 		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	if err := fileperm.Restrict(tmpPath); err != nil {
 		_ = tmp.Close()
 		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
