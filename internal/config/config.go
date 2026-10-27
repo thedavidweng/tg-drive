@@ -216,6 +216,25 @@ func ResolvePaths(ov Overrides) (configPath, sessionPath, dbPath string) {
 	return configPath, sessionPath, dbPath
 }
 
+// LoadFile reads the config file at path on its own: defaults overlaid with
+// what the file holds, with no TD_* environment values and no resolved
+// paths. Saving a key writes this back, so a save never freezes a value the
+// environment or a front end's own path supplied into the shared file.
+func LoadFile(path string) (Config, error) {
+	cfg := Defaults()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return cfg, apperr.Wrap(apperr.ErrConfigInvalid, "read config", err)
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return cfg, apperr.Wrap(apperr.ErrConfigInvalid, "parse config", err)
+	}
+	return cfg, nil
+}
+
 // Load reads configuration applying overrides.
 func Load(ov Overrides) (Config, string, error) {
 	cfg := Defaults()

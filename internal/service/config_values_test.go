@@ -2,7 +2,9 @@ package service
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
@@ -94,5 +96,40 @@ func TestSetConfigPersists(t *testing.T) {
 	}
 	if v := view.Entries[0].Value; v != 3 {
 		t.Fatalf("upload.threads = %v, want 3", v)
+	}
+}
+
+// TestSetConfigWritesOnlyFileLevelValues: a save must not freeze an
+// environment override or a front end's own resolved path into the shared
+// config file. The GUI passes its own session path and the CLI resolves
+// storage.session_path from TD_SESSION / the defaults; either would become a
+// permanent value for the other front end if SetConfig saved the loaded
+// config instead of the file.
+func TestSetConfigWritesOnlyFileLevelValues(t *testing.T) {
+	opts := configuredOptions(t)
+	t.Setenv("TD_SESSION", filepath.Join(t.TempDir(), "gui-session.json"))
+	t.Setenv("TD_API_ID", "777")
+	t.Setenv("TD_PHONE", "+15551234567")
+
+	if _, err := SetConfig(opts, "upload.threads", "5"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Contains(text, "gui-session.json") {
+		t.Fatalf("config file froze the front end's session path:\n%s", text)
+	}
+	if strings.Contains(text, "api_id = 777") {
+		t.Fatalf("config file froze the TD_API_ID override:\n%s", text)
+	}
+	if !strings.Contains(text, "api_id = 12345") {
+		t.Fatalf("config file lost the value it held:\n%s", text)
+	}
+	if !strings.Contains(text, "threads = 5") {
+		t.Fatalf("config file did not save the key:\n%s", text)
 	}
 }

@@ -63,9 +63,15 @@ type ConfigSetResult struct {
 	Status string `json:"status"`
 }
 
-// SetConfig validates and saves one dotted config key.
+// SetConfig validates and saves one dotted config key in the config file
+// itself. It reads and writes only file-level values: environment overrides
+// and a front end's own resolved paths never freeze into the shared file.
 func SetConfig(opts Options, key, value string) (*ConfigSetResult, error) {
-	cfg, path, err := LoadConfig(opts)
+	_, path, err := LoadConfig(opts)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := config.LoadFile(path)
 	if err != nil {
 		return nil, err
 	}
