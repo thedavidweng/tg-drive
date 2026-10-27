@@ -820,10 +820,20 @@ var stageOf = map[service.Stage]Stage{
 	service.StagePublishing:  StagePublishing,
 }
 
+// enter moves the Transfer to stage s. A single-file Transfer only moves
+// forward through the lifecycle. A multi-item one runs one upload or
+// download per item or directory group, so it shows the stage of the work in
+// progress: after a group publishes, the next group's hashing or uploading is
+// entered again rather than the Transfer sitting at publishing while it
+// still sends bytes.
 func (tr *tracker) enter(s Stage) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if s.rank() <= tr.t.Stage.rank() {
+	if tr.t.Kind.tracksBytes() {
+		if s.rank() <= tr.t.Stage.rank() {
+			return
+		}
+	} else if s == tr.t.Stage || tr.t.Stage.Terminal() {
 		return
 	}
 	tr.t.Stage = s

@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"sync"
+
 	"github.com/spf13/cobra"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/internal/output"
@@ -193,8 +195,21 @@ type transferProgress struct {
 // each time a Transfer enters a stage and a transfer.progress line for each
 // confirmed upload part.
 func transferEvents(r *output.Renderer) transfer.Observer {
+	var mu sync.Mutex
+	seen := make(map[string]map[transfer.Stage]bool)
 	return transfer.Observer{
-		OnStage: func(t transfer.Transfer) { _ = r.Event("transfer.stage", t) },
+		OnStage: func(t transfer.Transfer) {
+			mu.Lock()
+			defer mu.Unlock()
+			if seen[t.ID] == nil {
+				seen[t.ID] = make(map[transfer.Stage]bool)
+			}
+			if seen[t.ID][t.Stage] {
+				return
+			}
+			seen[t.ID][t.Stage] = true
+			_ = r.Event("transfer.stage", t)
+		},
 		OnPart: func(t transfer.Transfer, p service.Progress) {
 			_ = r.Event("transfer.progress", transferProgress{Transfer: t, Part: transferPart{
 				FileName: p.Part.FileName,
