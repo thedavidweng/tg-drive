@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/thedavidweng/tg-drive/adapters/native/sessionlock"
 	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/core/telegram"
@@ -127,4 +129,41 @@ func TestMapTGErrLoginErrorCodes(t *testing.T) {
 			t.Fatalf("%T: code = %s, want %s", tc.err, ae.Code, tc.code)
 		}
 	}
+}
+
+// TestStatusReportsABusySessionWithoutWaiting: td status reports the index,
+// so a Session lock another process holds must not stall it. It fails at
+// once under WithoutWait and says the session is busy instead of claiming
+// Telegram was unreachable.
+func TestStatusReportsABusySessionWithoutWaiting(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	app.TG = sessionlock.Wrap(tg, sessionlock.New(heldSessionLock(t), time.Minute, nil))
+
+	start := time.Now()
+	st, err := app.Status(context.Background())
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Status took %s with the session locked elsewhere, want it to report at once", elapsed)
+	}
+	if !st.SessionBusy || st.Authenticated != nil {
+		t.Fatalf("Status = %+v, want a busy session and unknown auth", st)
+	}
+}
+
+// heldSessionLock returns the path of a session file another process holds
+// the Session lock on, and releases it when the test ends. The holder is a
+// separate Lock, so a second Lock on the same path has to contend for it.
+func heldSessionLock(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "session")
+	holder := sessionlock.New(path, time.Minute, nil)
+	if err := holder.Acquire(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = holder.Release() })
+	return path
 }

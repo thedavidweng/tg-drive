@@ -62,6 +62,8 @@ td init <local-root>
   # select forum drives with --root, not their ambiguous shared peer ID
 td status
   # succeeds before init (data.initialized=false); lists bound channels
+  # never waits for another process's Session lock: while one holds it,
+  # the account line reads unknown and the rest comes from the index
 td doctor
   td doctor path-codec
 td scan [remote-root]

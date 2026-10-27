@@ -52,6 +52,21 @@ func TestE2ESessionLock(t *testing.T) {
 		t.Fatalf("ls / while session locked = %v", ls)
 	}
 
+	// td status reports the index whatever Telegram's state: with a long
+	// wait bound it still answers at once, leaving auth unknown.
+	runE2EJSON(t, bin, cfgPath, dbPath, statePath, "config", "set", "locks.session_wait_seconds", "30")
+	start = time.Now()
+	st := runE2EJSON(t, bin, cfgPath, dbPath, statePath, "status")
+	if waited := time.Since(start); waited > 10*time.Second {
+		t.Fatalf("status while session locked took %s, want it not to wait for the lock", waited)
+	}
+	if st["initialized"] != true {
+		t.Fatalf("status while session locked = %v, want the index reported", st)
+	}
+	if _, ok := st["authenticated"]; ok {
+		t.Fatalf("status while session locked = %v, want authenticated omitted (unknown)", st)
+	}
+
 	if _, err := io.WriteString(codeIn, "12345\n"); err != nil {
 		t.Fatal(err)
 	}

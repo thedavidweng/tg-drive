@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thedavidweng/tg-drive/adapters/native/sessionlock"
 	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/core/fsmodel"
@@ -226,10 +227,17 @@ type StatusResult struct {
 	UploadLimitBytes     *int64         `json:"upload_limit_bytes,omitempty"`
 	UploadStates         *int           `json:"upload_states,omitempty"`
 	UserID               int64          `json:"user_id,omitempty"`
+	// SessionBusy reports that auth is unknown because another process holds
+	// the Session lock, for human output; JSON keeps the contract's
+	// "authenticated omitted" shape.
+	SessionBusy bool `json:"-"`
 }
 
-// Status returns index statistics.
+// Status returns index statistics. Its Telegram part (auth, the upload limit)
+// never waits for another process's Session lock: status reports the index,
+// and a busy session only leaves auth unknown.
 func (a *App) Status(ctx context.Context) (*StatusResult, error) {
+	tgCtx := sessionlock.WithoutWait(ctx)
 	channels, err := a.boundChannels(ctx)
 	if err != nil {
 		return nil, err
@@ -245,7 +253,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 				Channels:    channels,
 				DBPath:      a.Cfg.Storage.DBPath,
 			}
-			a.statusAuth(ctx, out)
+			a.statusAuth(tgCtx, out)
 			return out, nil
 		}
 		return nil, err
@@ -276,7 +284,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 			out.Channel = &bound
 		}
 	}
-	a.statusAuth(ctx, out)
+	a.statusAuth(tgCtx, out)
 	var lastScan, lastFull string
 	var lastMsgID int
 	_ = a.DB.Raw().QueryRowContext(ctx, `
@@ -301,7 +309,7 @@ func (a *App) Status(ctx context.Context) (*StatusResult, error) {
 	var staleLocks int
 	_ = a.DB.Raw().QueryRowContext(ctx, `select count(*) from operation_locks where expires_at < ?`, nowT.Format(time.RFC3339)).Scan(&staleLocks)
 	orphaned := counts["orphaned"]
-	uploadLimit := a.uploadLimit(ctx)
+	uploadLimit := a.uploadLimit(tgCtx)
 	out.StaleLocks = &staleLocks
 	out.Orphaned = &orphaned
 	out.UploadLimitBytes = &uploadLimit
@@ -336,6 +344,9 @@ func (a *App) boundChannels(ctx context.Context) ([]BoundChannel, error) {
 func (a *App) statusAuth(ctx context.Context, out *StatusResult) {
 	user, ok, err := a.TG.Status(ctx)
 	if err != nil {
+		if ae, isApp := apperr.As(err); isApp && ae.Code == apperr.ErrSessionLocked {
+			out.SessionBusy = true
+		}
 		return
 	}
 	out.Authenticated = &ok
