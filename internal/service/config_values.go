@@ -67,10 +67,7 @@ type ConfigSetResult struct {
 // itself. It reads and writes only file-level values: environment overrides
 // and a front end's own resolved paths never freeze into the shared file.
 func SetConfig(opts Options, key, value string) (*ConfigSetResult, error) {
-	_, path, err := LoadConfig(opts)
-	if err != nil {
-		return nil, err
-	}
+	path := config.ConfigPath(opts.ConfigPath)
 	cfg, err := config.LoadFile(path)
 	if err != nil {
 		return nil, err
