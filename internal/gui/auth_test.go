@@ -322,6 +322,81 @@ func TestLoginAgainReplacesAStuckLogin(t *testing.T) {
 	}
 }
 
+func TestClosingServicesCancelsReplacementLogin(t *testing.T) {
+	freshMachine(t)
+	svc, closeServices, err := gui.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err != nil {
+		t.Fatal(err)
+	}
+	prompts := make(chan gui.AuthPrompt, 2)
+	svc.SetPromptEmitter(func(p gui.AuthPrompt) { prompts <- p })
+	first := make(chan error, 1)
+	go func() { _, err := svc.Auth.Login(ctx, "", false); first <- err }()
+	old := <-prompts
+	second := make(chan error, 1)
+	go func() { _, err := svc.Auth.Login(ctx, "", false); second <- err }()
+	prompt := <-prompts
+	if err := <-first; err == nil {
+		t.Fatal("replaced login succeeded")
+	}
+	if err := svc.Auth.AnswerPrompt(ctx, old.ID, "12345"); err == nil {
+		t.Fatal("old prompt still accepts an answer")
+	}
+	closeServices()
+	if err := svc.Auth.AnswerPrompt(ctx, prompt.ID, "12345"); err == nil {
+		t.Error("prompt accepted an answer after close")
+	}
+	select {
+	case err := <-second:
+		if err == nil {
+			t.Error("login succeeded after close")
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("login remained pending after close")
+	}
+	if _, err := svc.Auth.Login(ctx, "", false); err == nil {
+		t.Error("new login succeeded after close")
+	}
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err == nil {
+		t.Error("setup succeeded after close")
+	}
+	closeServices()
+}
+
+func TestClosingServicesUnwindsUnansweredLogin(t *testing.T) {
+	freshMachine(t)
+	svc, closeServices, err := gui.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err != nil {
+		t.Fatal(err)
+	}
+	prompts := make(chan gui.AuthPrompt, 1)
+	svc.SetPromptEmitter(func(p gui.AuthPrompt) { prompts <- p })
+	login := make(chan error, 1)
+	go func() { _, err := svc.Auth.Login(ctx, "", false); login <- err }()
+	prompt := <-prompts
+	closed := make(chan struct{})
+	go func() { closeServices(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("close did not unwind the unanswered login")
+	}
+	if err := <-login; err == nil {
+		t.Fatal("unanswered login succeeded")
+	}
+	if err := svc.Auth.AnswerPrompt(ctx, prompt.ID, "12345"); err == nil {
+		t.Fatal("closed prompt accepted an answer")
+	}
+}
+
 func TestGUIAndCLIHoldSeparateSessions(t *testing.T) { // The CLI's own environment: credentials present, its own session path.
 	dir := t.TempDir()
 	t.Setenv("TD_FAKE_TELEGRAM", "1")

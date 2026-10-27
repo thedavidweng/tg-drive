@@ -26,6 +26,36 @@ type Auth struct {
 	// loginCancel and loginDone belong to the login in progress, if any.
 	loginCancel context.CancelFunc
 	loginDone   chan struct{}
+	closed      bool
+	closeOnce   sync.Once
+	active      sync.WaitGroup
+}
+
+func (a *Auth) begin() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
+		return toError(apperr.Cancelled())
+	}
+	a.active.Add(1)
+	return nil
+}
+
+func (a *Auth) close() {
+	a.closeOnce.Do(func() {
+		a.mu.Lock()
+		a.closed = true
+		cancel, done := a.loginCancel, a.loginDone
+		if cancel != nil {
+			cancel()
+		}
+		a.mu.Unlock()
+		if done != nil {
+			<-done
+		}
+		a.active.Wait()
+		a.state.close()
+	})
 }
 
 // Prompt kinds emitted on the auth.prompt event.
@@ -84,6 +114,10 @@ type AuthStatus struct {
 // the new status, so the frontend can move straight to login. All three
 // fields are required.
 func (a *Auth) Setup(ctx context.Context, apiID, apiHash, phone string) (*AuthStatus, error) {
+	if err := a.begin(); err != nil {
+		return nil, err
+	}
+	defer a.active.Done()
 	answers := map[service.TelegramField]string{
 		service.TelegramAPIID:   strings.TrimSpace(apiID),
 		service.TelegramAPIHash: strings.TrimSpace(apiHash),
@@ -126,7 +160,7 @@ type LoginResult struct {
 // ERR_CANCELLED first. Its prompt may never get an answer — a webview reload
 // loses the prompt event, and a bound call's context is never cancelled on its
 // own — so it must not block logging in for the rest of the session.
-func (a *Auth) Login(ctx context.Context, phone string, forceNewCode bool) (*LoginResult, error) {
+func (a *Auth) Login(ctx context.Context, phone string, forceNewCode bool) (result *LoginResult, resultErr error) {
 	a.mu.Lock()
 	for a.loginCancel != nil {
 		cancel, done := a.loginCancel, a.loginDone
@@ -135,16 +169,23 @@ func (a *Auth) Login(ctx context.Context, phone string, forceNewCode bool) (*Log
 		<-done
 		a.mu.Lock()
 	}
+	if a.closed {
+		a.mu.Unlock()
+		return nil, toError(apperr.Cancelled())
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	a.loginCancel, a.loginDone = cancel, done
 	a.mu.Unlock()
 	defer func() {
 		a.mu.Lock()
+		if a.closed || ctx.Err() != nil {
+			result, resultErr = nil, toError(apperr.Cancelled())
+		}
 		a.loginCancel, a.loginDone = nil, nil
+		close(done)
 		a.mu.Unlock()
 		cancel()
-		close(done)
 	}()
 
 	app := a.state.current()
@@ -206,6 +247,10 @@ func (a *Auth) Login(ctx context.Context, phone string, forceNewCode bool) (*Log
 // Logout logs the GUI session out. The saved credentials stay, so logging
 // in again only needs a new code.
 func (a *Auth) Logout(ctx context.Context) error {
+	if err := a.begin(); err != nil {
+		return err
+	}
+	defer a.active.Done()
 	app := a.state.current()
 	if app.TG == nil {
 		return toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
@@ -227,6 +272,9 @@ func (a *Auth) CancelPrompt(_ context.Context, id string) error {
 func (a *Auth) resolve(id string, answer promptAnswer) error {
 	a.mu.Lock()
 	ch, ok := a.prompts[id]
+	if a.closed {
+		ok = false
+	}
 	a.mu.Unlock()
 	if !ok {
 		return toError(apperr.New(apperr.ErrUsage, "no pending prompt with that id"))
@@ -244,6 +292,10 @@ func (a *Auth) resolve(id string, answer promptAnswer) error {
 // frontend's answer.
 func (a *Auth) ask(ctx context.Context, prompt AuthPrompt) (string, error) {
 	a.mu.Lock()
+	if a.closed || ctx.Err() != nil {
+		a.mu.Unlock()
+		return "", apperr.Cancelled()
+	}
 	a.promptSeq++
 	prompt.ID = fmt.Sprintf("prompt-%d", a.promptSeq)
 	ch := make(chan promptAnswer, 1)
@@ -270,6 +322,10 @@ func (a *Auth) ask(ctx context.Context, prompt AuthPrompt) (string, error) {
 // Status reports the GUI session's setup and login state. An offline app
 // (no credentials yet) is simply unauthenticated.
 func (a *Auth) Status(ctx context.Context) (*AuthStatus, error) {
+	if err := a.begin(); err != nil {
+		return nil, err
+	}
+	defer a.active.Done()
 	app := a.state.current()
 	st := &AuthStatus{
 		Configured: app.Cfg.Telegram.APIID != 0 && app.Cfg.Telegram.APIHash != "",
