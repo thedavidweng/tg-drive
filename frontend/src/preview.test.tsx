@@ -134,30 +134,69 @@ test("an unsupported file shows the fallback with its details and Download", asy
 })
 
 test("a failed preview call keeps Download, and Download opens the download sheet above the preview", async () => {
-  const backend = backendWithPhoto()
-  backend.failPreviewForTest("/photos/cat.png", {
-    code: "ERR_TELEGRAM_RATE_LIMITED",
-    category: "telegram",
-    message: "telegram rate limited this account",
-  })
-  render(<App backend={backend} languages={["en"]} />)
-  const list = await openPhotos()
-  fireEvent.click(within(list).getByRole("button", { name: "cat.png" }))
-  const dialog = await screen.findByRole("dialog", { name: "cat.png" })
+  const T0 = performance.now()
+  const mark = (label: string) => {
+    const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]').length
+    console.log(
+      `[windiag +${(performance.now() - T0).toFixed(0)}ms] ${label} | dialogs=${dialogs} | active=${document.activeElement?.tagName ?? "none"}`,
+    )
+  }
+  let last = performance.now()
+  let maxGap = 0
+  let gapAt = 0
+  const heartbeat = setInterval(() => {
+    const now = performance.now()
+    const gap = now - last
+    if (gap > maxGap) {
+      maxGap = gap
+      gapAt = now - T0
+    }
+    if (gap > 400) console.log(`[windiag +${(now - T0).toFixed(0)}ms] HEARTBEAT GAP ${gap.toFixed(0)}ms`)
+    last = now
+  }, 200)
 
-  expect((await within(dialog).findByRole("alert")).textContent).toContain("telegram rate limited this account")
-  fireEvent.click(within(dialog).getAllByRole("button", { name: "Download" })[0])
-  const sheet = await screen.findByRole("dialog", { name: "Download" })
+  try {
+    const backend = backendWithPhoto()
+    backend.failPreviewForTest("/photos/cat.png", {
+      code: "ERR_TELEGRAM_RATE_LIMITED",
+      category: "telegram",
+      message: "telegram rate limited this account",
+    })
+    mark("before render")
+    render(<App backend={backend} languages={["en"]} />)
+    const list = await openPhotos()
+    mark("listing open")
+    fireEvent.click(within(list).getByRole("button", { name: "cat.png" }))
+    const dialog = await screen.findByRole("dialog", { name: "cat.png" })
+    mark("preview open")
 
-  // Escape belongs to the topmost dialog: it closes the sheet, not the preview.
-  fireEvent.keyDown(document.activeElement!, { key: "Escape" })
-  expect(screen.queryByRole("dialog", { name: "Download" })).toBeNull()
-  // The sheet closes from a native document listener; some runners commit
-  // that state update after the event dispatch returns.
-  await waitFor(() => {
-    if (sheet.isConnected) throw new Error("Download sheet remains connected")
-  })
-  expect(screen.getByRole("dialog", { name: "cat.png" })).toBe(dialog)
+    expect((await within(dialog).findByRole("alert")).textContent).toContain("telegram rate limited this account")
+    mark("alert shown")
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Download" })[0])
+    mark("download clicked")
+    const sheet = await screen.findByRole("dialog", { name: "Download" })
+    mark("download sheet open")
+
+    // Escape belongs to the topmost dialog: it closes the sheet, not the preview.
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" })
+    mark("escape dispatched")
+    console.log(
+      `[windiag] post-escape: sheetConnected=${sheet.isConnected} previewPresent=${!!document.querySelector('[role="dialog"][aria-label="cat.png"]')}`,
+    )
+    expect(screen.queryByRole("dialog", { name: "Download" })).toBeNull()
+    mark("download dialog query null")
+    // The sheet closes from a native document listener; some runners commit
+    // that state update after the event dispatch returns.
+    await waitFor(() => {
+      if (sheet.isConnected) throw new Error("Download sheet remains connected")
+    })
+    mark("sheet detached")
+    expect(screen.getByRole("dialog", { name: "cat.png" })).toBe(dialog)
+    mark("preview identity asserted")
+  } finally {
+    clearInterval(heartbeat)
+    console.log(`[windiag] maxGap=${maxGap.toFixed(0)}ms at +${gapAt.toFixed(0)}ms; total=${(performance.now() - T0).toFixed(0)}ms`)
+  }
 })
 
 test("an image that fails to load falls back to file details and Download", async () => {
