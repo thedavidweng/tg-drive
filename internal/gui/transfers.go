@@ -442,21 +442,11 @@ func (t *Transfers) Retry(ctx context.Context, id string) (*Transfer, error) {
 
 // ClearFinished removes every terminal Transfer from the index and reports
 // each removal as a transfer-removed event. It returns how many cleared.
+// The manager selects and deletes in one conditional statement, so a
+// Transfer a concurrent retry just claimed is never removed.
 func (t *Transfers) ClearFinished(ctx context.Context) (int, error) {
-	list, err := t.manager().List(ctx, transfer.Filter{All: true})
+	ids, err := t.manager().ClearFinished(ctx)
 	if err != nil {
-		return 0, toError(err)
-	}
-	var ids []string
-	for _, tr := range list {
-		if tr.Stage.Terminal() {
-			ids = append(ids, tr.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	if err := t.state.current().DB.DeleteTransfers(ctx, ids); err != nil {
 		return 0, toError(err)
 	}
 	for _, id := range ids {

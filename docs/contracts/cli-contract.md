@@ -62,6 +62,8 @@ td init <local-root>
   # select forum drives with --root, not their ambiguous shared peer ID
 td status
   # succeeds before init (data.initialized=false); lists bound channels
+  # never waits for another process's Session lock: while one holds it,
+  # the account line reads unknown and the rest comes from the index
 td doctor
   td doctor path-codec
 td scan [remote-root]
@@ -140,6 +142,9 @@ forms.
 ```text
 td get <remote-path> <local-dest>
   [-r|--recursive] [--replace] [--skip-existing] [--auto-rename] [--continue-on-error]
+  [--events]
+  # --events streams one transfer.stage event per stage the Transfer enters,
+  # then the final get line (see the JSON contract)
 td transfers list
   [--active | --all] [--stage <stage>]
   # reads the index only: never waits for another process's Session lock

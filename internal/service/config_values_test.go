@@ -2,10 +2,13 @@ package service
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/config"
 )
 
 func configuredOptions(t *testing.T) Options {
@@ -17,6 +20,50 @@ func configuredOptions(t *testing.T) Options {
 		t.Fatal(err)
 	}
 	return opts
+}
+
+func TestSetConfigKeepsFilePathsAndEffectiveOverrides(t *testing.T) {
+	opts := configuredOptions(t)
+	opts.DBPath, opts.SessionPath = "", ""
+	content := "[storage]\ndb_path = \"relative/db.sqlite\"\nsession_path = \"relative/session.json\"\n[telegram]\napi_id = 12345\n"
+	if err := os.WriteFile(opts.ConfigPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TD_DB", filepath.Join(t.TempDir(), "effective.db"))
+	t.Setenv("TD_SESSION", filepath.Join(t.TempDir(), "effective.json"))
+	t.Setenv("TD_API_ID", "777")
+	if _, err := SetConfig(opts, "upload.threads", "5"); err != nil {
+		t.Fatal(err)
+	}
+	fileCfg, err := config.LoadFile(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fileCfg.Storage.DBPath != "relative/db.sqlite" || fileCfg.Storage.SessionPath != "relative/session.json" ||
+		fileCfg.Telegram.APIID != 12345 || fileCfg.Upload.Threads != 5 {
+		t.Fatalf("file config: %+v", fileCfg)
+	}
+	effective, _, err := LoadConfig(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective.Storage.DBPath != os.Getenv("TD_DB") || effective.Storage.SessionPath != os.Getenv("TD_SESSION") || effective.Telegram.APIID != 777 {
+		t.Fatalf("effective overrides: %+v", effective)
+	}
+	before, err := os.ReadFile(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetConfig(opts, "upload.threads", "0"); err == nil {
+		t.Fatal("invalid value accepted")
+	}
+	after, err := os.ReadFile(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("invalid value changed the file")
+	}
 }
 
 func entryByKey(t *testing.T, view *ConfigView, key string) ConfigEntry {
@@ -94,5 +141,40 @@ func TestSetConfigPersists(t *testing.T) {
 	}
 	if v := view.Entries[0].Value; v != 3 {
 		t.Fatalf("upload.threads = %v, want 3", v)
+	}
+}
+
+// TestSetConfigWritesOnlyFileLevelValues: a save must not freeze an
+// environment override or a front end's own resolved path into the shared
+// config file. The GUI passes its own session path and the CLI resolves
+// storage.session_path from TD_SESSION / the defaults; either would become a
+// permanent value for the other front end if SetConfig saved the loaded
+// config instead of the file.
+func TestSetConfigWritesOnlyFileLevelValues(t *testing.T) {
+	opts := configuredOptions(t)
+	t.Setenv("TD_SESSION", filepath.Join(t.TempDir(), "gui-session.json"))
+	t.Setenv("TD_API_ID", "777")
+	t.Setenv("TD_PHONE", "+15551234567")
+
+	if _, err := SetConfig(opts, "upload.threads", "5"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if strings.Contains(text, "gui-session.json") {
+		t.Fatalf("config file froze the front end's session path:\n%s", text)
+	}
+	if strings.Contains(text, "api_id = 777") {
+		t.Fatalf("config file froze the TD_API_ID override:\n%s", text)
+	}
+	if !strings.Contains(text, "api_id = 12345") {
+		t.Fatalf("config file lost the value it held:\n%s", text)
+	}
+	if !strings.Contains(text, "threads = 5") {
+		t.Fatalf("config file did not save the key:\n%s", text)
 	}
 }

@@ -30,6 +30,8 @@ export function Cancel(id: string): $CancellablePromise<$models.Transfer | null>
 /**
  * ClearFinished removes every terminal Transfer from the index and reports
  * each removal as a transfer-removed event. It returns how many cleared.
+ * The manager selects and deletes in one conditional statement, so a
+ * Transfer a concurrent retry just claimed is never removed.
  */
 export function ClearFinished(): $CancellablePromise<number> {
     return $Call.ByID(100009502);
