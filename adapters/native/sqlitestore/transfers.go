@@ -91,16 +91,53 @@ func (d *DB) InsertTransfer(ctx context.Context, r TransferRow) error {
 // UpdateTransferState writes a Transfer's progress: its destination, stage,
 // byte and item counts, error, and update and finish times. The identity,
 // request, and ownership columns are left as they are.
-func (d *DB) UpdateTransferState(ctx context.Context, r TransferRow) error {
-	_, err := d.sql.ExecContext(ctx, `update transfers set dest=?, stage=?, bytes_done=?, bytes_total=?,
+//
+// The write is conditional on r.OwnerToken still owning the row and on the
+// Transfer not having ended. It reports whether it wrote: false means the
+// row moved on — a retry claimed it after its lease expired, or it already
+// finished — so this owner must not write over the newer state.
+func (d *DB) UpdateTransferState(ctx context.Context, r TransferRow) (bool, error) {
+	res, err := d.sql.ExecContext(ctx, `update transfers set dest=?, stage=?, bytes_done=?, bytes_total=?,
 		items_done=?, items_total=?, items_failed=?, error_code=?, error_message=?, updated_at=?, finished_at=?
-		where id=?`,
+		where id=? and owner_token=? and finished_at=''`,
 		r.Dest, r.Stage, r.BytesDone, r.BytesTotal, r.ItemsDone, r.ItemsTotal, r.ItemsFailed, r.ErrorCode, r.ErrorMessage,
-		r.UpdatedAt, r.FinishedAt, r.ID)
+		r.UpdatedAt, r.FinishedAt, r.ID, r.OwnerToken)
 	if err != nil {
-		return apperr.Wrap(apperr.ErrDB, "update transfer", err)
+		return false, apperr.Wrap(apperr.ErrDB, "update transfer", err)
 	}
-	return nil
+	n, err := res.RowsAffected()
+	return err == nil && n > 0, nil
+}
+
+// DeleteFinishedTransfers removes every ended Transfer, or only those that
+// ended before the given time when before is set, in one conditional
+// delete, and returns their ids. Selecting and deleting in one statement is
+// what makes it safe against a concurrent retry: a row a retry has just
+// claimed has no finish time, so it is never selected.
+func (d *DB) DeleteFinishedTransfers(ctx context.Context, before string) ([]string, error) {
+	q := `delete from transfers where finished_at != ''`
+	var args []any
+	if before != "" {
+		q += ` and finished_at < ?`
+		args = append(args, before)
+	}
+	rows, err := d.sql.QueryContext(ctx, q+` returning id`, args...)
+	if err != nil {
+		return nil, apperr.Wrap(apperr.ErrDB, "delete transfers", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, apperr.Wrap(apperr.ErrDB, "delete transfers", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperr.Wrap(apperr.ErrDB, "delete transfers", err)
+	}
+	return ids, nil
 }
 
 // DeleteTransfers removes the Transfers with the given ids.
@@ -172,6 +209,21 @@ func (d *DB) TransferCancelRequested(ctx context.Context, id string) (bool, erro
 		return false, apperr.Wrap(apperr.ErrDB, "read transfer cancel flag", err)
 	}
 	return requested, nil
+}
+
+// TransferOwnership reports whether owner still owns the Transfer and
+// whether its cancellation was requested, in one read. An owner polls this
+// instead of TransferCancelRequested so a lost row — a retry claimed it
+// after this owner's lease expired — is noticed at the same time, and an
+// unknown id reads as not owned rather than as an error.
+func (d *DB) TransferOwnership(ctx context.Context, id, owner string) (owned, cancelRequested bool, err error) {
+	err = d.sql.QueryRowContext(ctx,
+		`select owner_token=? and finished_at='', cancel_requested from transfers where id=?`, owner, id).
+		Scan(&owned, &cancelRequested)
+	if err != nil {
+		return false, false, apperr.Wrap(apperr.ErrDB, "read transfer ownership", err)
+	}
+	return owned, cancelRequested, nil
 }
 
 // SetTransferCancelRequested marks a Transfer's cancellation requested. It
