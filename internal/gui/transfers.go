@@ -255,6 +255,11 @@ func (t *Transfers) Upload(ctx context.Context, paths []string, dest string, opt
 		return nil, toError(apperr.New(apperr.ErrUsage,
 			"album uploads cannot replace existing files; upload them one at a time or remove the existing file first"))
 	}
+	t.state.lifecycle.Lock()
+	defer t.state.lifecycle.Unlock()
+	if t.state.closing {
+		return nil, toError(apperr.Cancelled())
+	}
 	m := t.manager()
 	run := context.WithoutCancel(t.state.scoped(ctx))
 	var ids []string
@@ -379,6 +384,16 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	if err != nil {
 		return "", toError(err)
 	}
+	t.state.lifecycle.Lock()
+	defer t.state.lifecycle.Unlock()
+	if t.state.closing {
+		return "", toError(apperr.Cancelled())
+	}
+	// Resolve the App and list under the same lock as the submit below:
+	// resolving or listing outside it would hand ListDir an App whose
+	// database a concurrent Setup/close reopen already closed. ListDir is
+	// a local index read, not a network call, so holding the short
+	// admission lock here matches Upload.
 	app, scoped := t.state.use(ctx)
 	entries, err := app.ListDir(scoped, remotePath)
 	if err != nil {
@@ -428,6 +443,11 @@ func (t *Transfers) Cancel(ctx context.Context, id string) (*Transfer, error) {
 // index and rejects active and completed Transfers with ERR_USAGE, as
 // td transfers retry does.
 func (t *Transfers) Retry(ctx context.Context, id string) (*Transfer, error) {
+	t.state.lifecycle.Lock()
+	defer t.state.lifecycle.Unlock()
+	if t.state.closing {
+		return nil, toError(apperr.Cancelled())
+	}
 	if _, err := t.manager().Retry(context.WithoutCancel(ctx), id, service.Observer{}); err != nil {
 		return nil, toError(err)
 	}
