@@ -140,6 +140,9 @@ forms.
 ```text
 td get <remote-path> <local-dest>
   [-r|--recursive] [--replace] [--skip-existing] [--auto-rename] [--continue-on-error]
+  [--events]
+  # --events streams one transfer.stage event per stage the Transfer enters,
+  # then the final get line (see the JSON contract)
 td transfers list
   [--active | --all] [--stage <stage>]
   # reads the index only: never waits for another process's Session lock
