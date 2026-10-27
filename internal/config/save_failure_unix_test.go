@@ -15,7 +15,18 @@ import (
 func TestSavePreservesFileOnWriteFailure(t *testing.T) {
 	if path := os.Getenv("TD_TEST_CONFIG_WRITE_FAILURE"); path != "" {
 		signal.Ignore(syscall.SIGXFSZ)
-		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 1, Max: 1}); err != nil {
+		var prev syscall.Rlimit
+		if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &prev); err != nil {
+			t.Fatal(err)
+		}
+		// Only the soft limit moves: Max stays untouched so restoring Cur
+		// afterwards is always permitted for an unprivileged process.
+		t.Cleanup(func() {
+			if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &prev); err != nil {
+				t.Error(err)
+			}
+		})
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: 1, Max: prev.Max}); err != nil {
 			t.Fatal(err)
 		}
 		if err := Save(path, Defaults()); err == nil {
