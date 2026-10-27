@@ -255,6 +255,11 @@ func (t *Transfers) Upload(ctx context.Context, paths []string, dest string, opt
 		return nil, toError(apperr.New(apperr.ErrUsage,
 			"album uploads cannot replace existing files; upload them one at a time or remove the existing file first"))
 	}
+	t.state.lifecycle.Lock()
+	defer t.state.lifecycle.Unlock()
+	if t.state.closing {
+		return nil, toError(apperr.Cancelled())
+	}
 	m := t.manager()
 	run := context.WithoutCancel(t.state.scoped(ctx))
 	var ids []string
@@ -388,6 +393,11 @@ func (t *Transfers) Download(ctx context.Context, remotePath, destDir string, op
 	// else is a directory.
 	isFile := len(entries) == 1 && entries[0].Type == "file" &&
 		entries[0].Path == strings.TrimRight(remotePath, "/")
+	t.state.lifecycle.Lock()
+	defer t.state.lifecycle.Unlock()
+	if t.state.closing {
+		return "", toError(apperr.Cancelled())
+	}
 	m := t.manager()
 	run := context.WithoutCancel(scoped)
 	local := filepath.Join(destDir, path.Base(strings.TrimRight(remotePath, "/")))
@@ -428,6 +438,11 @@ func (t *Transfers) Cancel(ctx context.Context, id string) (*Transfer, error) {
 // index and rejects active and completed Transfers with ERR_USAGE, as
 // td transfers retry does.
 func (t *Transfers) Retry(ctx context.Context, id string) (*Transfer, error) {
+	t.state.lifecycle.Lock()
+	defer t.state.lifecycle.Unlock()
+	if t.state.closing {
+		return nil, toError(apperr.Cancelled())
+	}
 	if _, err := t.manager().Retry(context.WithoutCancel(ctx), id, service.Observer{}); err != nil {
 		return nil, toError(err)
 	}

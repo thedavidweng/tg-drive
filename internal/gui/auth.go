@@ -50,6 +50,9 @@ func (a *Auth) close() {
 			cancel()
 		}
 		a.mu.Unlock()
+		a.state.lifecycle.Lock()
+		a.state.closing = true
+		a.state.lifecycle.Unlock()
 		if done != nil {
 			<-done
 		}
@@ -133,12 +136,18 @@ func (a *Auth) Setup(ctx context.Context, apiID, apiHash, phone string) (*AuthSt
 		return nil, toError(apperr.New(apperr.ErrConfigInvalid, "phone required"))
 	}
 	ask := func(f service.TelegramField) (string, error) { return answers[f], nil }
-	if _, _, err := service.ConfigureTelegram(service.Options{}, true, ask); err != nil {
-		return nil, toError(err)
-	}
-	// The online reopen creates the session directory and the database that
-	// service.SetupTelegram would, beside the GUI's own session file.
-	if err := a.state.reopen(); err != nil {
+	a.state.lifecycle.Lock()
+	err := func() error {
+		defer a.state.lifecycle.Unlock()
+		if err := a.state.canReopen(); err != nil {
+			return err
+		}
+		if _, _, err := service.ConfigureTelegram(service.Options{}, true, ask); err != nil {
+			return toError(err)
+		}
+		return a.state.reopenLocked()
+	}()
+	if err != nil {
 		return nil, err
 	}
 	return a.Status(ctx)

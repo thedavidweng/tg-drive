@@ -3,7 +3,10 @@
 package gui_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -12,6 +15,104 @@ import (
 	"github.com/thedavidweng/tg-drive/internal/service"
 	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
+
+func TestSetupKeepsRunningTransferAndConfig(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "200ms")
+	if _, err := service.SetConfig(service.Options{}, "upload.threads", "4"); err != nil {
+		t.Fatal(err)
+	}
+	svc := openGUI(t)
+	ctx := context.Background()
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "running.bin", 12*1024*1024)}, "/", gui.UploadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStage(t, svc, ids[0], "uploading")
+	before, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err == nil {
+		t.Fatal("Setup succeeded while a GUI transfer was running")
+	}
+	after, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("rejected Setup changed the config file")
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers = %d, want 1", n)
+	}
+	waitForStage(t, svc, ids[0], "completed")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers after completion = %d, want 0", n)
+	}
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err != nil {
+		t.Fatalf("idle Setup: %v", err)
+	}
+}
+
+func TestSetupAndSubmitDoNotLoseRunningTransfer(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "200ms")
+	svc := openGUI(t)
+	ctx := context.Background()
+	file := bigFile(t, "concurrent.bin", 12*1024*1024)
+	start := make(chan struct{})
+	type submitted struct {
+		ids []string
+		err error
+	}
+	uploaded := make(chan submitted, 1)
+	setup := make(chan error, 1)
+	go func() {
+		<-start
+		ids, err := svc.Transfers.Upload(ctx, []string{file}, "/", gui.UploadOptions{})
+		uploaded <- submitted{ids, err}
+	}()
+	go func() {
+		<-start
+		_, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001")
+		setup <- err
+	}()
+	close(start)
+	result := <-uploaded
+	if result.err != nil {
+		t.Fatalf("Upload: %v", result.err)
+	}
+	if err := <-setup; err != nil {
+		var guiErr *gui.Error
+		if !errors.As(err, &guiErr) || guiErr.Code != "ERR_OPERATION_LOCKED" {
+			t.Fatalf("Setup: %v", err)
+		}
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers after concurrent setup and submission = %d, want 1", n)
+	}
+	waitForStage(t, svc, result.ids[0], "completed")
+}
+
+func TestClosedServicesRejectTransferSubmission(t *testing.T) {
+	seedDrive(t, nil)
+	svc, closeServices, err := gui.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := bigFile(t, "after-close.bin", 1024)
+	closeServices()
+	ctx := context.Background()
+	if _, err := svc.Transfers.Upload(ctx, []string{file}, "/", gui.UploadOptions{}); err == nil {
+		t.Fatal("Upload succeeded after close")
+	}
+	if _, err := svc.Transfers.Retry(ctx, "missing"); err == nil {
+		t.Fatal("Retry succeeded after close")
+	}
+}
 
 // TestTransfersSurviveAChannelSwitch switches the browsed channel while an
 // upload runs on another one: the upload keeps running to completion on the

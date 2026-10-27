@@ -614,7 +614,6 @@ func TestManagerRunningCountsOnlyItsOwnTransfers(t *testing.T) {
 	}
 }
 
-
 func TestManagerAlbumShowsLaterGroupStage(t *testing.T) {
 	app, _ := newApp(t)
 	var sources []string
