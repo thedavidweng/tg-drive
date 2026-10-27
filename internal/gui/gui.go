@@ -216,7 +216,8 @@ func Open() (*Services, func(), error) {
 		OnProgress: transfers.observeProgress,
 	}
 	state.manager = state.newManager(app)
-	auth := &Auth{state: state, prompts: map[string]chan promptAnswer{}}
+	authContext, cancelAuth := context.WithCancel(context.Background())
+	auth := &Auth{state: state, prompts: map[string]chan promptAnswer{}, lifetime: authContext, stop: cancelAuth}
 	closeServices := auth.close
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())

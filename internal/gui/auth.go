@@ -29,22 +29,31 @@ type Auth struct {
 	closed      bool
 	closeOnce   sync.Once
 	active      sync.WaitGroup
+	lifetime    context.Context
+	stop        context.CancelFunc
 }
 
-func (a *Auth) begin() error {
+func (a *Auth) begin(ctx context.Context) (context.Context, func(), error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.closed {
-		return toError(apperr.Cancelled())
+		return nil, nil, toError(apperr.Cancelled())
 	}
 	a.active.Add(1)
-	return nil
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(a.lifetime, cancel)
+	return ctx, func() {
+		stop()
+		cancel()
+		a.active.Done()
+	}, nil
 }
 
 func (a *Auth) close() {
 	a.closeOnce.Do(func() {
 		a.mu.Lock()
 		a.closed = true
+		a.stop()
 		cancel, done := a.loginCancel, a.loginDone
 		if cancel != nil {
 			cancel()
@@ -116,11 +125,17 @@ type AuthStatus struct {
 // service's Telegram config setup, then reopens the App online and returns
 // the new status, so the frontend can move straight to login. All three
 // fields are required.
-func (a *Auth) Setup(ctx context.Context, apiID, apiHash, phone string) (*AuthStatus, error) {
-	if err := a.begin(); err != nil {
+func (a *Auth) Setup(ctx context.Context, apiID, apiHash, phone string) (result *AuthStatus, resultErr error) {
+	ctx, finish, err := a.begin(ctx)
+	if err != nil {
 		return nil, err
 	}
-	defer a.active.Done()
+	defer func() {
+		if ctx.Err() != nil || a.lifetime.Err() != nil {
+			result, resultErr = nil, toError(apperr.Cancelled())
+		}
+		finish()
+	}()
 	answers := map[service.TelegramField]string{
 		service.TelegramAPIID:   strings.TrimSpace(apiID),
 		service.TelegramAPIHash: strings.TrimSpace(apiHash),
@@ -265,11 +280,17 @@ func (a *Auth) Login(ctx context.Context, phone string, forceNewCode bool) (resu
 
 // Logout logs the GUI session out. The saved credentials stay, so logging
 // in again only needs a new code.
-func (a *Auth) Logout(ctx context.Context) error {
-	if err := a.begin(); err != nil {
+func (a *Auth) Logout(ctx context.Context) (resultErr error) {
+	ctx, finish, err := a.begin(ctx)
+	if err != nil {
 		return err
 	}
-	defer a.active.Done()
+	defer func() {
+		if ctx.Err() != nil || a.lifetime.Err() != nil {
+			resultErr = toError(apperr.Cancelled())
+		}
+		finish()
+	}()
 	app := a.state.current()
 	if app.TG == nil {
 		return toError(apperr.New(apperr.ErrAuthRequired, "not logged in"))
@@ -340,11 +361,17 @@ func (a *Auth) ask(ctx context.Context, prompt AuthPrompt) (string, error) {
 
 // Status reports the GUI session's setup and login state. An offline app
 // (no credentials yet) is simply unauthenticated.
-func (a *Auth) Status(ctx context.Context) (*AuthStatus, error) {
-	if err := a.begin(); err != nil {
+func (a *Auth) Status(ctx context.Context) (result *AuthStatus, resultErr error) {
+	ctx, finish, err := a.begin(ctx)
+	if err != nil {
 		return nil, err
 	}
-	defer a.active.Done()
+	defer func() {
+		if ctx.Err() != nil || a.lifetime.Err() != nil {
+			result, resultErr = nil, toError(apperr.Cancelled())
+		}
+		finish()
+	}()
 	app := a.state.current()
 	st := &AuthStatus{
 		Configured: app.Cfg.Telegram.APIID != 0 && app.Cfg.Telegram.APIHash != "",
