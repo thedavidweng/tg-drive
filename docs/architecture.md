@@ -74,8 +74,9 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   with — its Telegram client, Session lock, or database, so `telegram.*`,
   `storage.*`, `rate_limit.*`, and `locks.session_wait_seconds` — reports
   `restart_required` instead of claiming the change is live; every other key
-  re-reads the config for later calls at once, and `transfers.concurrency`
-  also resizes the running queue. It also covers the About versions
+  applies to later calls, and `transfers.concurrency` also resizes the queue.
+  Live saves return `ERR_OPERATION_LOCKED` before writing while GUI transfers
+  are running; retry after they finish. It also covers the About versions
   (the GUI's own stamp, and the separately installed td CLI's version from
   running `td version --json` found on PATH, in `TD_INSTALL_DIR`, or in the
   installer's default directory), and Omarchy mode: on a detected
@@ -183,8 +184,9 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   is the process's. The tray menu lists the active Transfers, fed from
   the same typed transfer events the Transfers tab consumes, plus Show and
   Quit; Quit (and every OS quit path, via Wails' `ShouldQuit` option)
-  asks for confirmation while Transfers are running, with the index as
-  the authority on what counts as running. The app is single-instance: a
+  asks for confirmation while this GUI's own Transfers are running; a CLI
+  Transfer keeps running when the GUI quits, so it does not count. The app
+  is single-instance: a
   second launch focuses the running window, because the GUI holds one
   Telegram session. macOS gets the inset hidden title bar (the frontend's
   header is the drag region, padded for the traffic lights) and Windows a

@@ -5,6 +5,7 @@ package gui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,8 +13,99 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/thedavidweng/tg-drive/core/telegram"
 	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
+
+type blockedUploadClient struct {
+	telegram.Client
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (c *blockedUploadClient) UploadMedia(ctx context.Context, req telegram.UploadRequest) (*telegram.UploadResult, error) {
+	close(c.entered)
+	select {
+	case <-c.release:
+		return c.Client.UploadMedia(ctx, req)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func TestSettingsLiveSaveKeepsRunningTransferVisible(t *testing.T) {
+	t.Setenv("TD_API_ID", "1")
+	t.Setenv("TD_API_HASH", "hash")
+	t.Setenv("TD_PHONE", "+1000")
+	svc := openTestGUI(t)
+	ctx := context.Background()
+	app := svc.state.current()
+	if _, err := app.AuthLogin(ctx, func(telegram.CodePrompt) (string, error) { return "12345", nil },
+		func() (string, error) { return "", nil }, telegram.LoginOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.InitRoot(ctx, t.TempDir(), "", "Drive", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Settings.Set(ctx, "upload.threads", "3"); err != nil {
+		t.Fatal(err)
+	}
+	app = svc.state.current()
+	client := &blockedUploadClient{Client: app.TG, entered: make(chan struct{}), release: make(chan struct{})}
+	app.TG = client
+	svc.state.manager = svc.state.newManager(app)
+	file := filepath.Join(t.TempDir(), "upload.txt")
+	if err := os.WriteFile(file, []byte("content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	handle, err := svc.state.manager.SubmitUpload(ctx, transfer.Upload{Source: file, Dest: "/upload.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		select {
+		case <-client.release:
+		default:
+			close(client.release)
+		}
+		_, _ = handle.Wait()
+	})
+	<-client.entered
+	before, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldManager := svc.state.currentManager()
+	_, err = svc.Settings.Set(ctx, "upload.threads", "5")
+	var guiErr *Error
+	if !errors.As(err, &guiErr) || guiErr.Code != "ERR_OPERATION_LOCKED" {
+		t.Fatalf("active Set error = %v, want ERR_OPERATION_LOCKED", err)
+	}
+	after, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || svc.state.current() != app || svc.state.currentManager() != oldManager {
+		t.Fatal("rejected Set changed disk or running generation")
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers during upload = %d, want 1", n)
+	}
+	close(client.release)
+	if _, err := handle.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers after upload = %d, want 0", n)
+	}
+	if _, err := svc.Settings.Set(ctx, "upload.threads", "5"); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.state.current().Cfg.Upload.Threads; got != 5 {
+		t.Fatalf("idle running upload threads = %d, want 5", got)
+	}
+}
 
 func TestSettingsSetDisplaysEffectiveOverrides(t *testing.T) {
 	svc := openTestGUI(t)

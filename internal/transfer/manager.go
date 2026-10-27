@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -61,7 +62,15 @@ type Manager struct {
 	opts  Options
 	owner string
 	slots *Limiter
+	// running counts the Transfers this Manager submitted and has not
+	// finished, queued ones included.
+	running atomic.Int64
 }
+
+// Running is how many Transfers this Manager owns and has not finished.
+// Another front end's Transfers keep running when this process ends, so they
+// do not count.
+func (m *Manager) Running() int { return int(m.running.Load()) }
 
 // New returns a Manager running Transfers on app.
 func New(app *service.App, opts Options) *Manager {
@@ -413,10 +422,12 @@ func start[T any](ctx context.Context, m *Manager, t Transfer,
 	stop := m.leaseHeartbeat(t.ID, tr.ctx, cancel)
 	tr.notify(m.opts.Observer.OnStage)
 	h := &Handle[T]{id: t.ID, done: make(chan struct{})}
+	m.running.Add(1)
 	go func() {
 		// finish records the ending before the heartbeat stops and Wait
 		// unblocks, so a finished Transfer's lease never advances again.
 		defer close(h.done)
+		defer m.running.Add(-1)
 		defer stop()
 		defer cancel()
 		if err := m.slots.acquire(tctx); err != nil {

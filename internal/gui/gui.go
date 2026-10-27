@@ -48,10 +48,11 @@ type Services struct {
 // but every Manager shares one Limiter, so the concurrency budget is global
 // and follows the saved transfers.concurrency live.
 type appState struct {
-	mu       sync.Mutex
-	configMu sync.Mutex
-	app      *service.App
-	closeApp func()
+	mu        sync.Mutex
+	lifecycle sync.Mutex
+	closing   bool
+	app       *service.App
+	closeApp  func()
 	// channel is the active selector (Telegram ID, or root:<path> for a
 	// forum topic); "" selects the first binding. Switching it never reopens
 	// the App: use pins it on each call's ctx, and a Transfer pins the
@@ -114,10 +115,27 @@ func (s *appState) currentManager() *transfer.Manager {
 // reopen replaces the App with a freshly opened one, after Auth changed the
 // Telegram config, and a Transfer Manager for it. The old App closes only
 // after the new one opened, so a failed reopen keeps the previous state.
-// Auth reopens only while logged out, when no Transfer can run.
 func (s *appState) reopen() error {
-	s.configMu.Lock()
-	defer s.configMu.Unlock()
+	s.lifecycle.Lock()
+	defer s.lifecycle.Unlock()
+	if err := s.canReopen(); err != nil {
+		return err
+	}
+	return s.reopenLocked()
+}
+
+// canReopen runs with lifecycle held, before config is changed.
+func (s *appState) canReopen() error {
+	if s.closing {
+		return toError(apperr.Cancelled())
+	}
+	if s.currentManager().Running() != 0 {
+		return toError(apperr.New(apperr.ErrOperationLocked, "cannot change setup while GUI transfers are running"))
+	}
+	return nil
+}
+
+func (s *appState) reopenLocked() error {
 	app, closeApp, err := service.Open(openOptions())
 	if err != nil {
 		return toError(err)
@@ -180,6 +198,19 @@ func (s *appState) applyConfig(cfg config.Config) {
 	s.manager = s.newManager(app)
 }
 
+// RunningTransfers is how many Transfers this GUI owns and has not finished:
+// the ones quitting would interrupt. Another front end's Transfers keep
+// running when the GUI quits, so they do not count.
+func (s *Services) RunningTransfers() int {
+	s.state.mu.Lock()
+	m := s.state.manager
+	s.state.mu.Unlock()
+	if m == nil {
+		return 0
+	}
+	return m.Running()
+}
+
 // switchChannel makes channel the active one for every later call.
 func (s *appState) switchChannel(channel string) {
 	s.mu.Lock()
@@ -188,6 +219,8 @@ func (s *appState) switchChannel(channel string) {
 }
 
 func (s *appState) close() {
+	s.lifecycle.Lock()
+	defer s.lifecycle.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closeApp()
@@ -228,19 +261,21 @@ func Open() (*Services, func(), error) {
 		OnProgress: transfers.observeProgress,
 	}
 	state.manager = state.newManager(app)
-	closeServices := state.close
+	authContext, cancelAuth := context.WithCancel(context.Background())
+	auth := &Auth{state: state, prompts: map[string]chan promptAnswer{}, lifetime: authContext, stop: cancelAuth}
+	closeServices := auth.close
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())
 		settings.ThemeChanges = watchOmarchy(ctx, omarchyPollInterval())
 		closeServices = func() {
 			cancel()
-			state.close()
+			auth.close()
 		}
 	}
 	drive := &Drive{state: state, media: newMedia(state)}
 	return &Services{
 		Drive:       drive,
-		Auth:        &Auth{state: state, prompts: map[string]chan promptAnswer{}},
+		Auth:        auth,
 		Channels:    &Channels{state: state, drive: drive},
 		Transfers:   transfers,
 		Settings:    settings,

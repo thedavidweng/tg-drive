@@ -568,6 +568,52 @@ func TestManagerRecursiveUploadShowsEachGroupsStage(t *testing.T) {
 	t.Fatalf("stages = %v, want the second directory's uploading after the first one published", stages)
 }
 
+// TestManagerRunningCountsOnlyItsOwnTransfers: Running is how many Transfers
+// quitting would interrupt, so a Manager counts the ones it submitted and
+// another Manager's do not count.
+func TestManagerRunningCountsOnlyItsOwnTransfers(t *testing.T) {
+	app, tg := newApp(t)
+	tg.SetTransferDelay(50 * time.Millisecond)
+	ctx := context.Background()
+
+	mine := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI})
+	other := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+	if n := mine.Running(); n != 0 {
+		t.Fatalf("Running before submitting = %d, want 0", n)
+	}
+	h, err := mine.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "own.bin", 4*1024),
+		Dest:   "/own.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStage(t, mine, h.ID(), transfer.StageUploading)
+	otherHandle, err := other.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "theirs.bin", 4*1024),
+		Dest:   "/theirs.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStage(t, other, otherHandle.ID(), transfer.StageUploading)
+	if n := mine.Running(); n != 1 {
+		t.Fatalf("Running with one own and one other Manager's Transfer = %d, want 1", n)
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	// The other Manager's Transfer is still running; this one is done.
+	if n := mine.Running(); n != 0 {
+		t.Fatalf("Running after own Transfer ended = %d, want 0", n)
+	}
+	if _, err := otherHandle.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestManagerAlbumShowsLaterGroupStage(t *testing.T) {
 	app, _ := newApp(t)
 	var sources []string

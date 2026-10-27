@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
 	"github.com/thedavidweng/tg-drive/internal/config"
 	"github.com/thedavidweng/tg-drive/internal/service"
 	"github.com/thedavidweng/tg-drive/internal/version"
@@ -79,14 +80,22 @@ func (s *Settings) Reveal(ctx context.Context, key string, confirmed bool) (Conf
 // its Telegram client, Session lock, or database — cannot be reapplied to the
 // running App, so it is reported RestartRequired instead of being claimed as
 // live; the rest reach later calls at once.
+// Live changes return ERR_OPERATION_LOCKED while GUI transfers are running;
+// retry after they finish.
 //
 // The order is prepare, persist, apply: the value is validated against the
 // running config before anything is written, and applying the prepared config
 // cannot fail. A save that succeeded is never reported as a failed one while
 // the disk and the App disagree.
 func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, error) {
-	s.state.configMu.Lock()
-	defer s.state.configMu.Unlock()
+	s.state.lifecycle.Lock()
+	defer s.state.lifecycle.Unlock()
+	if s.state.closing {
+		return ConfigEntry{}, toError(apperr.Cancelled())
+	}
+	if !appliesOnRestart(key) && s.state.currentManager().Running() != 0 {
+		return ConfigEntry{}, toError(apperr.New(apperr.ErrOperationLocked, "cannot change live settings while GUI transfers are running"))
+	}
 	cfg, shown, err := s.state.prepared(key, value)
 	if err != nil {
 		return ConfigEntry{}, err
