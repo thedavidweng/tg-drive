@@ -211,7 +211,10 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   and `TD_FAKE_LOGIN_FLOOD_WAIT=<seconds>` fails login with a flood wait
   before any code is sent. The Settings facade is covered by a config
   round-trip with secrets redacted until a confirmed reveal (the service's
-  `ERR_CONFIRMATION_REQUIRED` reaches the frontend), the About versions
+  `ERR_CONFIRMATION_REQUIRED` reaches the frontend), the restart-required
+  split (a startup-only key reports it and leaves the running App on the
+  value it opened with, while a live key reaches later calls at once), the
+  About versions
   (the stamped GUI version, the probed td CLI version, and empty when no
   td answers), and by Omarchy
   detection against a seeded theme and `hyprland.conf`, with a theme

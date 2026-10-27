@@ -647,7 +647,11 @@ export class MemoryBackend implements Backend {
   private entryOf(key: string): ConfigEntry {
     const secret = this.secrets.has(key)
     const value = this.store.get(key) ?? ""
-    return { key, value: secret ? "redacted" : value, secret }
+    // The keys td-gui reads only when it opens its Telegram client and
+    // database, as the Settings facade marks them.
+    const restart =
+      /^(telegram|storage|rate_limit)\./.test(key) || key === "locks.session_wait_seconds"
+    return { key, value: secret ? "redacted" : value, secret, ...(restart ? { restart_required: true } : {}) }
   }
 
   readonly drive: Backend["drive"] = {

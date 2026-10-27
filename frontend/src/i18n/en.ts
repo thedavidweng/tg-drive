@@ -233,6 +233,7 @@ export const en = {
   "settings.hide": "Hide {key}",
   "settings.save": "Save {key}",
   "settings.saveShort": "Save",
+  "settings.restartRequired": "Saved. This takes effect after restarting td-gui.",
   "settings.loading": "Loading…",
   "settings.cliMissing": "Not installed",
   "language.system": "System",

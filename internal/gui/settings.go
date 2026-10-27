@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/thedavidweng/tg-drive/internal/service"
@@ -30,6 +31,18 @@ type ConfigEntry struct {
 	// Value is redacted unless the caller revealed the secret.
 	Value  any  `json:"value"`
 	Secret bool `json:"secret"`
+	// RestartRequired marks a saved key the running GUI cannot apply: one
+	// its Telegram client or database was opened with. It takes effect
+	// when td-gui next starts; every other key applies at once.
+	RestartRequired bool `json:"restart_required,omitempty"`
+}
+
+// appliesOnRestart reports whether key configures what the GUI opened once
+// at start (the Telegram client, the Session lock, the database), so a
+// change to it cannot reach the running App.
+func appliesOnRestart(key string) bool {
+	return strings.HasPrefix(key, "telegram.") || strings.HasPrefix(key, "storage.") ||
+		strings.HasPrefix(key, "rate_limit.") || key == "locks.session_wait_seconds"
 }
 
 func configEntryOf(e service.ConfigEntry) ConfigEntry {
@@ -62,8 +75,10 @@ func (s *Settings) Reveal(ctx context.Context, key string, confirmed bool) (Conf
 
 // Set validates and saves one config key, returning the entry as it now
 // displays (a secret stays redacted). transfers.concurrency applies to the
-// running Transfer queue at once; every other key applies the next time the
-// GUI starts, as it does for the next td command.
+// running Transfer queue at once. A key the GUI opened at start with — its
+// Telegram client, Session lock, or database — cannot be reapplied to the
+// running App, so it is reported RestartRequired instead of being claimed as
+// live; the rest are read per call and so take effect at once.
 func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, error) {
 	if _, err := service.SetConfig(s.opts, key, value); err != nil {
 		return ConfigEntry{}, toError(err)
@@ -72,10 +87,20 @@ func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, err
 	if err != nil {
 		return ConfigEntry{}, toError(err)
 	}
-	if n, ok := view.Entries[0].Value.(int); ok && key == "transfers.concurrency" && s.state != nil {
+	entry := configEntryOf(view.Entries[0])
+	if appliesOnRestart(key) {
+		entry.RestartRequired = true
+		return entry, nil
+	}
+	if n, ok := entry.Value.(int); ok && key == "transfers.concurrency" && s.state != nil {
 		s.state.limiter.SetLimit(n)
 	}
-	return configEntryOf(view.Entries[0]), nil
+	if s.state != nil {
+		if err := s.state.reloadConfig(); err != nil {
+			return ConfigEntry{}, err
+		}
+	}
+	return entry, nil
 }
 
 // Versions are the versions the About rows show.

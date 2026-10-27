@@ -41,8 +41,10 @@ export function Reveal(key: string, confirmed: boolean): $CancellablePromise<$mo
 /**
  * Set validates and saves one config key, returning the entry as it now
  * displays (a secret stays redacted). transfers.concurrency applies to the
- * running Transfer queue at once; every other key applies the next time the
- * GUI starts, as it does for the next td command.
+ * running Transfer queue at once. A key the GUI opened at start with — its
+ * Telegram client, Session lock, or database — cannot be reapplied to the
+ * running App, so it is reported RestartRequired instead of being claimed as
+ * live; the rest are read per call and so take effect at once.
  */
 export function Set(key: string, value: string): $CancellablePromise<$models.ConfigEntry> {
     return $Call.ByID(596867238, key, value);

@@ -132,6 +132,27 @@ func (s *appState) reopen() error {
 	return nil
 }
 
+// reloadConfig applies a saved config change that does not need a restart:
+// it reads the file again and gives later calls an App carrying the new
+// config, sharing the open database, Telegram client, and run-slot budget.
+// Calls and Transfers already running keep the App they started with; a new
+// Manager takes later submissions, so a changed transfers.concurrency and
+// every per-call key (captions, hashing, upload threads and part size,
+// limits, delete mode, lock TTL) reach them.
+func (s *appState) reloadConfig() error {
+	cfg, path, err := service.LoadConfig(openOptions())
+	if err != nil {
+		return toError(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := s.app
+	app := &service.App{Cfg: cfg, ConfigPath: path, DB: current.DB, TG: current.TG, Render: current.Render, Index: current.Index}
+	s.app = app
+	s.manager = s.newManager(app)
+	return nil
+}
+
 // switchChannel makes channel the active one for every later call.
 func (s *appState) switchChannel(channel string) {
 	s.mu.Lock()
