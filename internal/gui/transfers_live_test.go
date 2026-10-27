@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
 
 // TestTransfersSurviveAChannelSwitch switches the browsed channel while an
@@ -69,6 +71,53 @@ func TestTransfersSurviveAChannelSwitch(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name != "big.bin" {
 		t.Fatalf("List(/uploads) on Drive = %+v, want big.bin", entries)
+	}
+}
+
+// TestRunningTransfersCountOnlyThisGUI: the quit prompt warns about the
+// Transfers quitting would interrupt, which are this GUI's own; a td
+// process's upload keeps running when the GUI quits, so it does not count.
+func TestRunningTransfersCountOnlyThisGUI(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "100ms")
+	svc := openGUI(t)
+	ctx := context.Background()
+
+	cli, closeCLI, err := service.Open(service.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeCLI()
+	h, err := transfer.New(cli, transfer.Options{FrontEnd: transfer.FrontEndCLI}).SubmitUpload(ctx, transfer.Upload{
+		Source: bigFile(t, "cli.bin", 12*1024*1024), Dest: "/cli.bin", Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStage(t, svc, h.ID(), "uploading")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers with only a CLI upload = %d, want 0", n)
+	}
+	// Two in-process fakes over one state file would hand out the same
+	// message IDs, so the CLI upload is cancelled (from the GUI) before it
+	// publishes, and only then does the GUI upload start.
+	if _, err := svc.Transfers.Cancel(ctx, h.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Wait(); err == nil {
+		t.Fatal("the CLI upload cancelled from the GUI must end cancelled")
+	}
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "gui.bin", 12*1024*1024)}, "/", gui.UploadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers with one GUI upload = %d, want 1", n)
+	}
+	waitForStage(t, svc, ids[0], "completed")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers after the GUI upload finished = %d, want 0", n)
 	}
 }
 

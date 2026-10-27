@@ -132,6 +132,19 @@ func (s *appState) reopen() error {
 	return nil
 }
 
+// RunningTransfers is how many Transfers this GUI owns and has not finished:
+// the ones quitting would interrupt. Another front end's Transfers keep
+// running when the GUI quits, so they do not count.
+func (s *Services) RunningTransfers() int {
+	s.state.mu.Lock()
+	m := s.state.manager
+	s.state.mu.Unlock()
+	if m == nil {
+		return 0
+	}
+	return m.Running()
+}
+
 // switchChannel makes channel the active one for every later call.
 func (s *appState) switchChannel(channel string) {
 	s.mu.Lock()
