@@ -180,19 +180,20 @@ func Open() (*Services, func(), error) {
 		OnProgress: transfers.observeProgress,
 	}
 	state.manager = state.newManager(app)
-	closeServices := state.close
+	auth := &Auth{state: state, prompts: map[string]chan promptAnswer{}}
+	closeServices := auth.close
 	if omarchyDetect() && omarchyThemeDir() != "" {
 		ctx, cancel := context.WithCancel(context.Background())
 		settings.ThemeChanges = watchOmarchy(ctx, omarchyPollInterval())
 		closeServices = func() {
 			cancel()
-			state.close()
+			auth.close()
 		}
 	}
 	drive := &Drive{state: state, media: newMedia(state)}
 	return &Services{
 		Drive:       drive,
-		Auth:        &Auth{state: state, prompts: map[string]chan promptAnswer{}},
+		Auth:        auth,
 		Channels:    &Channels{state: state, drive: drive},
 		Transfers:   transfers,
 		Settings:    settings,
