@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/thedavidweng/tg-drive/core/telegram"
 	"github.com/thedavidweng/tg-drive/internal/gui"
@@ -278,8 +279,50 @@ func TestAuthLogoutReturnsToLoginState(t *testing.T) {
 	}
 }
 
-func TestGUIAndCLIHoldSeparateSessions(t *testing.T) {
-	// The CLI's own environment: credentials present, its own session path.
+// TestLoginAgainReplacesAStuckLogin: a login whose prompt never got an answer
+// (the webview reloaded and lost it) must not block every later login;
+// logging in again takes over and the replaced one ends with an error.
+func TestLoginAgainReplacesAStuckLogin(t *testing.T) {
+	freshMachine(t)
+	svc := openGUI(t)
+	ctx := context.Background()
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err != nil {
+		t.Fatal(err)
+	}
+	prompted := make(chan struct{}, 1)
+	svc.SetPromptEmitter(func(gui.AuthPrompt) { prompted <- struct{}{} })
+	stuck := make(chan error, 1)
+	go func() {
+		_, err := svc.Auth.Login(ctx, "", false)
+		stuck <- err
+	}()
+	select {
+	case <-prompted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first login never prompted")
+	}
+
+	// The first login is still waiting for its answer; a second one must take
+	// over rather than being refused.
+	newPromptRecorder(svc, map[string]string{"code": "12345"})
+	res, err := svc.Auth.Login(ctx, "", false)
+	if err != nil {
+		t.Fatalf("second login: %v", err)
+	}
+	if res.User.UserID != 42 {
+		t.Fatalf("second login = %+v, want Test User (42)", res)
+	}
+	select {
+	case err := <-stuck:
+		if err == nil {
+			t.Fatal("the replaced login must end with an error, not succeed")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the replaced login never returned")
+	}
+}
+
+func TestGUIAndCLIHoldSeparateSessions(t *testing.T) { // The CLI's own environment: credentials present, its own session path.
 	dir := t.TempDir()
 	t.Setenv("TD_FAKE_TELEGRAM", "1")
 	t.Setenv("TD_FAKE_TELEGRAM_STATE", filepath.Join(dir, "fake.json"))
