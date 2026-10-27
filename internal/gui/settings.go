@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thedavidweng/tg-drive/internal/config"
 	"github.com/thedavidweng/tg-drive/internal/service"
 	"github.com/thedavidweng/tg-drive/internal/version"
 )
@@ -74,32 +75,34 @@ func (s *Settings) Reveal(ctx context.Context, key string, confirmed bool) (Conf
 }
 
 // Set validates and saves one config key, returning the entry as it now
-// displays (a secret stays redacted). transfers.concurrency applies to the
-// running Transfer queue at once. A key the GUI opened at start with — its
-// Telegram client, Session lock, or database — cannot be reapplied to the
+// displays (a secret stays redacted). A key the GUI opened at start with —
+// its Telegram client, Session lock, or database — cannot be reapplied to the
 // running App, so it is reported RestartRequired instead of being claimed as
-// live; the rest are read per call and so take effect at once.
+// live; the rest reach later calls at once.
+//
+// The order is prepare, persist, apply: the value is validated against the
+// running config before anything is written, and applying the prepared config
+// cannot fail. A save that succeeded is never reported as a failed one while
+// the disk and the App disagree.
 func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, error) {
+	s.state.configMu.Lock()
+	defer s.state.configMu.Unlock()
+	cfg, shown, err := s.state.prepared(key, value)
+	if err != nil {
+		return ConfigEntry{}, err
+	}
 	if _, err := service.SetConfig(s.opts, key, value); err != nil {
 		return ConfigEntry{}, toError(err)
 	}
-	view, err := service.GetConfig(s.opts, service.ConfigGetOptions{Key: key})
-	if err != nil {
-		return ConfigEntry{}, toError(err)
-	}
-	entry := configEntryOf(view.Entries[0])
+	entry := ConfigEntry{Key: key, Value: shown, Secret: config.IsSecret(key)}
 	if appliesOnRestart(key) {
 		entry.RestartRequired = true
 		return entry, nil
 	}
-	if n, ok := entry.Value.(int); ok && key == "transfers.concurrency" && s.state != nil {
+	if n, ok := shown.(int); ok && key == "transfers.concurrency" {
 		s.state.limiter.SetLimit(n)
 	}
-	if s.state != nil {
-		if err := s.state.reloadConfig(); err != nil {
-			return ConfigEntry{}, err
-		}
-	}
+	s.state.applyConfig(cfg)
 	return entry, nil
 }
 
