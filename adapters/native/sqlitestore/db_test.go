@@ -267,7 +267,7 @@ func TestPragmasOnEveryPooledConnection(t *testing.T) {
 	const conns = 4
 	var wg sync.WaitGroup
 	errs := make([]error, conns)
-	for i := 0; i < conns; i++ {
+	for i := range conns {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -316,7 +316,7 @@ func TestForeignKeyEnforcedOnFreshConnection(t *testing.T) {
 	_, _ = d.Raw().Exec(`insert into accounts(id,tg_user_id,created_at,updated_at) values(1,'u1',?,?)`, now, now)
 	// A path_tags row referencing a nonexistent file must fail no matter
 	// which pooled connection serves the statement.
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		if _, err := d.Raw().Exec(`insert into path_tags(file_id,tag,depth) values(999,'t',0)`); err == nil {
 			t.Fatalf("iteration %d: foreign key not enforced", i)
 		}
@@ -393,7 +393,7 @@ func TestLockAcquisitionRaceYieldsTypedError(t *testing.T) {
 	const racers = 8
 	winners := make(chan string, racers)
 	var wg sync.WaitGroup
-	for i := 0; i < racers; i++ {
+	for i := range racers {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

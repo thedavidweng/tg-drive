@@ -83,7 +83,7 @@ func runE2EEventLines(t *testing.T, bin, cfgPath, dbPath, statePath string, args
 		t.Fatalf("%v: stdout=%s stderr=%s", args, stdout, stderr)
 	}
 	var out []eventLine
-	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stdout), "\n") {
 		var ev eventLine
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			t.Fatalf("bad event line %q: %v", line, err)

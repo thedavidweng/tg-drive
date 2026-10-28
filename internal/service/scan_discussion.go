@@ -62,8 +62,7 @@ func (a *App) collectDiscussionComments(ctx context.Context, r *scanRun) (int, e
 		return nil
 	})
 	if threadErr != nil {
-		var missing *telegram.DiscussionMissingError
-		if !errors.As(threadErr, &missing) {
+		if _, ok := errors.AsType[*telegram.DiscussionMissingError](threadErr); !ok {
 			return 0, telegram.MapError(threadErr)
 		}
 		// The group vanished between the DB read and the walk; treat the

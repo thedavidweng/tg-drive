@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func assertObserved(t *testing.T, got *observed, want []string) {
 	t.Helper()
 	if !slices.Equal(got.all(), want) {
@@ -76,7 +74,7 @@ func TestRepairPathObserver(t *testing.T) {
 	}
 
 	var got observed
-	if _, err := app.Repair(ctx, RepairOptions{Path: ptr("/a.bin"), Observer: got.observer()}); err != nil {
+	if _, err := app.Repair(ctx, RepairOptions{Path: new("/a.bin"), Observer: got.observer()}); err != nil {
 		t.Fatal(err)
 	}
 	assertObserved(t, &got, []string{"stage /a.bin publishing", "item /a.bin completed"})
@@ -142,13 +140,13 @@ func TestRepairCaptionsObserver(t *testing.T) {
 	}
 
 	var dry observed
-	if _, err := app.Repair(ctx, RepairOptions{Captions: true, Path: ptr("/c"), DryRun: true, Observer: dry.observer()}); err != nil {
+	if _, err := app.Repair(ctx, RepairOptions{Captions: true, Path: new("/c"), DryRun: true, Observer: dry.observer()}); err != nil {
 		t.Fatal(err)
 	}
 	assertObserved(t, &dry, nil)
 
 	var got observed
-	if _, err := app.Repair(ctx, RepairOptions{Captions: true, Path: ptr("/c"), Observer: got.observer()}); err != nil {
+	if _, err := app.Repair(ctx, RepairOptions{Captions: true, Path: new("/c"), Observer: got.observer()}); err != nil {
 		t.Fatal(err)
 	}
 	assertObserved(t, &got, []string{

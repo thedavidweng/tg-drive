@@ -58,7 +58,9 @@ func NewWebDAVCmd(rt Runtime) *cobra.Command {
 			if err := server.Shutdown(shutdown); err != nil {
 				return r.Error(err)
 			}
-			<-done
+			if err := <-done; err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return r.Error(err)
+			}
 			return r.Error(apperr.New(apperr.ErrCancelled, "WebDAV stopped"))
 		}
 	}}

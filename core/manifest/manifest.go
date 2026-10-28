@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf16"
 
@@ -352,7 +353,7 @@ func ParseManifestReply(text string) (ParsedMeta, error) {
 		return ParsedMeta{}, apperr.New(apperr.ErrManifestInvalid, "missing td-manifest:v1")
 	}
 	kvs := map[string]string{}
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "td-manifest:") {
 			continue
@@ -436,12 +437,7 @@ func lineHasMachineMeta(line string) bool {
 
 // HasMachineMeta reports whether s contains a machine metadata line.
 func HasMachineMeta(s string) bool {
-	for _, line := range strings.Split(s, "\n") {
-		if lineHasMachineMeta(line) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(strings.Split(s, "\n"), lineHasMachineMeta)
 }
 
 // StripAdoptScaffold removes the filename + parent/ lines import used to
@@ -457,8 +453,8 @@ func StripAdoptScaffold(human, display, parentHuman string) string {
 			return ""
 		}
 		for _, sep := range []string{"\n\n" + scaffold, "\n" + scaffold} {
-			if strings.HasSuffix(human, sep) {
-				return strings.TrimRight(strings.TrimSuffix(human, sep), "\n")
+			if before, ok := strings.CutSuffix(human, sep); ok {
+				return strings.TrimRight(before, "\n")
 			}
 		}
 	}
@@ -493,8 +489,8 @@ func StripRenderedScaffold(caption, display, parentHuman string, tags []string) 
 			return clean, clean != caption
 		}
 		separator := "\n\n" + suffix
-		if strings.HasSuffix(caption, separator) {
-			prefix := strings.TrimRight(strings.TrimSuffix(caption, separator), "\n")
+		if before, ok := strings.CutSuffix(caption, separator); ok {
+			prefix := strings.TrimRight(before, "\n")
 			if prefix != "" {
 				return prefix, true
 			}
@@ -516,7 +512,7 @@ func HumanVisibleCaption(body, display, parentHuman string) string {
 
 // ParseCaption extracts td:v1 from a full caption.
 func ParseCaption(caption string) (ParsedMeta, error) {
-	for _, line := range strings.Split(caption, "\n") {
+	for line := range strings.SplitSeq(caption, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "td:v1") {
 			return ParseCompact(strings.TrimSpace(line))
 		}

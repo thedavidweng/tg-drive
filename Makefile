@@ -30,7 +30,7 @@ vet:
 	go vet ./...
 
 lint: fmt-check vet
-	@command -v golangci-lint >/dev/null 2>&1 || (echo "golangci-lint not installed; run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2" && exit 1)
+	@command -v golangci-lint >/dev/null 2>&1 || (echo "golangci-lint not installed; run: mise install golangci-lint" && exit 1)
 	golangci-lint run
 
 ci-local: fmt-check vet test test-race

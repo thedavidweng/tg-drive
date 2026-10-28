@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -216,7 +217,7 @@ func (r *scanRun) recordMissingAlbumInventories(ctx context.Context) {
 		}
 		gids = append(gids, gid)
 	}
-	sort.Slice(gids, func(i, j int) bool { return gids[i] < gids[j] })
+	slices.Sort(gids)
 	for _, gid := range gids {
 		members := r.albumGroups[gid]
 		indexed := false

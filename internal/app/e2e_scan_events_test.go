@@ -31,7 +31,7 @@ func TestE2EScanEvents(t *testing.T) {
 				t.Fatalf("%v: %v stdout=%s stderr=%s", args, err, stdout, stderr)
 			}
 			var lines []eventLine
-			for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+			for line := range strings.SplitSeq(strings.TrimSpace(stdout), "\n") {
 				var ev eventLine
 				if err := json.Unmarshal([]byte(line), &ev); err != nil {
 					t.Fatalf("bad event line %q: %v", line, err)

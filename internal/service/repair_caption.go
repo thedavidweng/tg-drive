@@ -143,8 +143,7 @@ func (a *App) RepairCaptions(ctx context.Context, remotePath string, dryRun, con
 			}
 			obs.stage(it, StagePublishing)
 			if err := a.TG.EditCaption(ctx, tgChannelID, target.messageID, clean); err != nil {
-				var notEditable *telegram.MessageNotEditableError
-				if errors.As(err, &notEditable) {
+				if _, ok := errors.AsType[*telegram.MessageNotEditableError](err); ok {
 					item.Action = "skipped"
 					item.Reason = "message not editable"
 					return nil

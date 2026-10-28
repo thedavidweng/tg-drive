@@ -19,7 +19,7 @@ func writeLocals(t *testing.T, n int) []string {
 	t.Helper()
 	dir := t.TempDir()
 	out := make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		p := filepath.Join(dir, string(rune('a'+i))+".bin")
 		if err := os.WriteFile(p, []byte("payload "+string(rune('a'+i))), 0o644); err != nil {
 			t.Fatal(err)
@@ -200,7 +200,7 @@ func TestAlbumUploadSplitsLargeSets(t *testing.T) {
 	dir := t.TempDir()
 	var locals []string
 	wantContent := map[string]string{}
-	for i := 0; i < 13; i++ {
+	for i := range 13 {
 		name := "f" + string(rune('0'+i/10)) + string(rune('0'+i%10)) + ".bin"
 		content := strings.Repeat("x", i+1)
 		p := filepath.Join(dir, name)
