@@ -34,3 +34,9 @@ target is not planned.
 - Core packages may use `os` and `path/filepath`, so `core/...` is no longer
   guaranteed to compile for `js/wasm`.
 - Reintroducing a browser target would need a new ADR and its own adapters.
+
+## 2026-10-28 update
+
+The core import guard was removed: it checked a source import allowlist
+rather than product behavior. The layering remains an architecture decision
+for review, without a test that duplicates the source tree.
