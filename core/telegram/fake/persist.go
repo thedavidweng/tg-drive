@@ -94,13 +94,13 @@ func NewPersistent(path string) *Client {
 	}
 	if v := os.Getenv("TD_FAKE_DENY_CAPABILITIES"); v != "" {
 		c.deniedCaps = map[string]bool{}
-		for _, name := range strings.Split(v, ",") {
+		for name := range strings.SplitSeq(v, ",") {
 			c.deniedCaps[strings.TrimSpace(name)] = true
 		}
 	}
 	c.failDoctor = os.Getenv("TD_FAKE_FAIL_DOCTOR") == "1"
 	c.rangeLogPath = os.Getenv("TD_FAKE_RANGE_LOG")
-	for _, name := range strings.Split(os.Getenv("TD_FAKE_FAIL_COMMENTS"), ",") {
+	for name := range strings.SplitSeq(os.Getenv("TD_FAKE_FAIL_COMMENTS"), ",") {
 		switch strings.TrimSpace(name) {
 		case "edit":
 			c.failCommentEdit = true

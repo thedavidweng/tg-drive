@@ -200,8 +200,7 @@ func AfterCancel(err error) error {
 
 // As extracts an AppError from err.
 func As(err error) (*AppError, bool) {
-	var ae *AppError
-	if errors.As(err, &ae) {
+	if ae, ok := errors.AsType[*AppError](err); ok {
 		return ae, true
 	}
 	return nil, false

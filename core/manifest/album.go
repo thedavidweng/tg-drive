@@ -82,8 +82,8 @@ func ParseAlbumReply(text string) (AlbumMeta, error) {
 		if line == "" || line == AlbumMagic {
 			continue
 		}
-		if strings.HasPrefix(line, "g=") {
-			id, err := strconv.ParseInt(strings.TrimPrefix(line, "g="), 10, 64)
+		if after, ok := strings.CutPrefix(line, "g="); ok {
+			id, err := strconv.ParseInt(after, 10, 64)
 			if err != nil {
 				return AlbumMeta{}, apperr.New(apperr.ErrManifestInvalid, "invalid grouped id")
 			}

@@ -117,8 +117,7 @@ func (a *App) RepairHash(ctx context.Context, remotePath string, obs Observer) (
 		obs.done(Item{Path: r.path, MessageID: r.msgID}, lockErr)
 		switch {
 		case lockErr != nil:
-			var nf *telegram.MessageNotFoundError
-			if errors.As(lockErr, &nf) {
+			if _, ok := errors.AsType[*telegram.MessageNotFoundError](lockErr); ok {
 				item.Action = "failed"
 				item.Reason = "media message not found on Telegram"
 			} else {

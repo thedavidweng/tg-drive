@@ -29,7 +29,7 @@ func TestHistoryNewestFirst(t *testing.T) {
 	c := New()
 	loginFake(t, c)
 	const ch = int64(1)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		c.AddMessage(ch, telegram.Message{Kind: telegram.KindDocument, FileName: "f"})
 	}
 	msgs, err := c.History(context.Background(), ch, 0, 0)
@@ -58,7 +58,7 @@ func TestStreamHistoryCompleteAndTruncated(t *testing.T) {
 	c := New()
 	loginFake(t, c)
 	const ch = int64(1)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		c.AddMessage(ch, telegram.Message{Kind: telegram.KindDocument})
 	}
 	var seen []int

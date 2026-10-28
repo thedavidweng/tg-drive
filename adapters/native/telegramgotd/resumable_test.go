@@ -32,10 +32,10 @@ func (s *ackFlakySender) UploadSaveBigFilePart(ctx context.Context, req *tg.Uplo
 }
 
 // ackNeverOkSender always answers ok=false.
-type ackNeverOkSender struct{ calls int32 }
+type ackNeverOkSender struct{ calls atomic.Int32 }
 
 func (s *ackNeverOkSender) UploadSaveBigFilePart(ctx context.Context, req *tg.UploadSaveBigFilePartRequest) (bool, error) {
-	atomic.AddInt32(&s.calls, 1)
+	s.calls.Add(1)
 	return false, nil
 }
 
@@ -55,7 +55,7 @@ func TestUploadBigFilePartBoundedWhenAlwaysOkFalse(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected bounded failure on persistent ok=false")
 	}
-	if got := atomic.LoadInt32(&sender.calls); got != int32(partAckMaxRetries+1) {
+	if got := sender.calls.Load(); got != int32(partAckMaxRetries+1) {
 		t.Fatalf("calls = %d, want %d", got, partAckMaxRetries+1)
 	}
 }

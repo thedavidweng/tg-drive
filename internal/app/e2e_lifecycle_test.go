@@ -492,7 +492,7 @@ func runE2EEvents(t *testing.T, bin, cfgPath, dbPath, statePath string, args ...
 		t.Fatalf("%v: stdout=%s stderr=%s", args, stdout, stderr)
 	}
 	var out []map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(stdout), "\n") {
 		if line == "" {
 			continue
 		}
