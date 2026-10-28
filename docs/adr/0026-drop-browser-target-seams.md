@@ -34,3 +34,10 @@ target is not planned.
 - Core packages may use `os` and `path/filepath`, so `core/...` is no longer
   guaranteed to compile for `js/wasm`.
 - Reintroducing a browser target would need a new ADR and its own adapters.
+
+## 2026-10-28 update
+
+The core import guard moved from `core/core_test.go` to golangci-lint's
+`depguard` rule `core` in `.golangci.yml`. The forbidden imports are unchanged:
+`database/sql`, `net/http`, `github.com/gotd/td`, `modernc.org/sqlite`,
+`github.com/spf13/cobra`, and this module's `adapters` and `internal` packages.
