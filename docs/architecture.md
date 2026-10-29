@@ -179,8 +179,9 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   is the process's. The tray menu lists the active Transfers, fed from
   the same typed transfer events the Transfers tab consumes, plus Show and
   Quit; Quit (and every OS quit path, via Wails' `ShouldQuit` option)
-  asks for confirmation while Transfers are running, with the index as
-  the authority on what counts as running. The app is single-instance: a
+  asks for confirmation while this GUI's own Transfers are running; a CLI
+  Transfer keeps running when the GUI quits, so it does not count. The app
+  is single-instance: a
   second launch focuses the running window, because the GUI holds one
   Telegram session. macOS gets the inset hidden title bar (the frontend's
   header is the drag region, padded for the traffic lights) and Windows a

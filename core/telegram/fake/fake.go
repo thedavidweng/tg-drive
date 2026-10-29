@@ -499,7 +499,7 @@ func (c *Client) uploadResumable(ctx context.Context, req telegram.UploadRequest
 		confirmed[p] = true
 	}
 	confirmedCount := len(confirmed)
-	for i := 0; i < totalParts; i++ {
+	for i := range totalParts {
 		if confirmed[i] {
 			continue
 		}

@@ -571,7 +571,7 @@ func TestFullScanResumesFromCheckpoint(t *testing.T) {
 	ctx := context.Background()
 	local := writeLocal(t, "x")
 	const total = scanIndexChunk + 5
-	for i := 0; i < total; i++ {
+	for i := range total {
 		dest := fmt.Sprintf("/bulk/f%03d.txt", i)
 		if _, err := app.UploadFile(ctx, local, dest, ConflictFail, false, UploadOptions{}); err != nil {
 			t.Fatalf("upload %s: %v", dest, err)
@@ -655,8 +655,7 @@ func TestIncrementalScanPicksUpNewMessage(t *testing.T) {
 func TestHeartbeatKeepsLockDuringLongOp(t *testing.T) {
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	app.Cfg.Locks.TTLSeconds = 12
 	key := "path:1:/slow.txt"
 	started := make(chan struct{})
@@ -708,10 +707,7 @@ func TestScanScaleSmoke(t *testing.T) {
 		timeBound = 120 * time.Second
 	}
 	for i := 0; i < n; i += 1000 {
-		end := i + 1000
-		if end > n {
-			end = n
-		}
+		end := min(i+1000, n)
 		// The fake is the source; inject messages directly.
 		for j := i; j < end; j++ {
 			path := fmt.Sprintf("/scale/dir%02d/file%05d.txt", j%50, j)

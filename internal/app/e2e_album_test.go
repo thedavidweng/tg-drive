@@ -22,7 +22,7 @@ func TestE2EAlbumLifecycle(t *testing.T) {
 	const total = 12
 	var locals []string
 	want := map[string]string{}
-	for i := 0; i < total; i++ {
+	for i := range total {
 		name := "scene" + string(rune('0'+i/10)) + string(rune('0'+i%10)) + ".bin"
 		content := bytes.Repeat([]byte{byte('A' + i)}, i+1)
 		p := filepath.Join(dir, name)

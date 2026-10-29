@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -739,9 +740,7 @@ func (a *App) moveDirectory(ctx context.Context, ch *channelContext, src, to str
 	})
 	if ae, ok := apperr.As(err); ok && started {
 		details := map[string]any{}
-		for key, value := range ae.Details {
-			details[key] = value
-		}
+		maps.Copy(details, ae.Details)
 		details["operation_id"] = operationID
 		details["from"] = src
 		details["to"] = to
@@ -951,9 +950,7 @@ func withDeleteProgress(err error, result *DeleteResult) error {
 	}
 	if ae, ok := apperr.As(err); ok {
 		details := map[string]any{}
-		for key, value := range ae.Details {
-			details[key] = value
-		}
+		maps.Copy(details, ae.Details)
 		details["path"] = result.Path
 		details["operation_id"] = result.OperationID
 		details["deleted"] = result.Deleted

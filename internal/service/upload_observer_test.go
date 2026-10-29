@@ -244,11 +244,9 @@ func TestUploadPerCallStateIsolated(t *testing.T) {
 		local := writeSized(t, t.TempDir(), c.name, 4096)
 		opts := c.opts
 		opts.Observer = seen[i].observer()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, errs[i] = app.UploadFileAs(WithChannel(ctx, c.channel), local, "/"+c.name, ConflictFail, false, Presentation{}, opts)
-		}()
+		})
 	}
 	wg.Wait()
 

@@ -149,7 +149,7 @@ func Serve(ctx context.Context, mountpoint string, files func(context.Context) f
 	if err != nil {
 		return err
 	}
-	server, err := fusefs.Mount(mountpoint, NewRoot(files), &fusefs.Options{MountOptions: fuse.MountOptions{Name: "tg-drive", FsName: "tg-drive", Options: []string{"ro"}}})
+	server, err := fusefs.Mount(mountpoint, NewRoot(files), &fusefs.Options{Name: "tg-drive", FsName: "tg-drive", Options: []string{"ro"}})
 	if err != nil {
 		return err
 	}

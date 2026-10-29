@@ -180,8 +180,7 @@ func (c *Client) SendThreadReply(ctx context.Context, channelID int64, postMsgID
 		groupPeer := channelPeer(p.id, p.accessHash)
 		rootID, err := c.threadRoot(ctx, api, drive, postMsgID)
 		if err != nil {
-			var nf *tgtelegram.MessageNotFoundError
-			if !errors.As(err, &nf) {
+			if _, ok := errors.AsType[*tgtelegram.MessageNotFoundError](err); !ok {
 				return err
 			}
 			// Posts published before the group was linked have no
@@ -272,7 +271,7 @@ func (c *Client) StreamThreadHistory(ctx context.Context, channelID int64, after
 func (c *Client) threadMessageFromTG(msg *tg.Message) tgtelegram.ThreadMessage {
 	if hdr, ok := msg.GetFwdFrom(); ok && hdr.ChannelPost != 0 {
 		return tgtelegram.ThreadMessage{
-			Message:   tgtelegram.Message{ID: msg.ID},
+			ID:        msg.ID,
 			RootMsgID: msg.ID,
 			PostID:    int(hdr.ChannelPost),
 		}

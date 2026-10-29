@@ -272,10 +272,7 @@ func (a *App) Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 		if err := cancelled(ctx); err != nil {
 			return nil, err
 		}
-		end := start + scanIndexChunk
-		if end > len(pendingOps) {
-			end = len(pendingOps)
-		}
+		end := min(start+scanIndexChunk, len(pendingOps))
 		chunk := pendingOps[start:end]
 		if err := r.commitChunk(ctx, chunk, pendingOps[end:]); err != nil {
 			return nil, err

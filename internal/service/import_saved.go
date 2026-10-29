@@ -965,7 +965,7 @@ func duplicateCaptionAlreadyPreserved(existing, caption string) bool {
 	if existing == caption || strings.HasPrefix(existing, caption+"\n\n") {
 		return true
 	}
-	for _, block := range strings.Split(existing, "\n"+manifest.MergeCaptionSeparator+"\n") {
+	for block := range strings.SplitSeq(existing, "\n"+manifest.MergeCaptionSeparator+"\n") {
 		if strings.TrimSpace(block) == caption {
 			return true
 		}

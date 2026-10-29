@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -84,7 +85,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, ch *channelContext, h
 	for gid := range albums {
 		gids = append(gids, gid)
 	}
-	sort.Slice(gids, func(i, j int) bool { return gids[i] < gids[j] })
+	slices.Sort(gids)
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, gid := range gids {
@@ -144,8 +145,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, ch *channelContext, h
 		lockErr := a.operate(ctx, ch, memberPaths, func(ctx context.Context) error {
 			id, err := comment.Send(ctx, tgChID, members[0].ID, body)
 			if err != nil {
-				var nf *telegram.MessageNotFoundError
-				if !errors.As(err, &nf) {
+				if _, ok := errors.AsType[*telegram.MessageNotFoundError](err); !ok {
 					sendErr = err
 					return nil
 				}
@@ -244,8 +244,7 @@ func (a *App) ensureTelegramManifests(ctx context.Context, ch *channelContext, h
 		lockErr := a.operate(ctx, ch, []string{r.path}, func(ctx context.Context) error {
 			id, err := comment.Send(ctx, tgChID, msg.ID, reply)
 			if err != nil {
-				var nf *telegram.MessageNotFoundError
-				if !errors.As(err, &nf) {
+				if _, ok := errors.AsType[*telegram.MessageNotFoundError](err); !ok {
 					sendErr = err
 					return nil
 				}

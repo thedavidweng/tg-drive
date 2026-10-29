@@ -67,8 +67,7 @@ func TestReadMediaRangeRejectsUnservableIntervals(t *testing.T) {
 	}{{msg.ID, 9000, 1001, true}, {msg.ID, -1, 1, true}, {photo.ID, 0, 2, false}} {
 		var out bytes.Buffer
 		info, err := c.ReadMediaRange(ctx, ch, r.id, r.off, r.n, &out)
-		var re *telegram.MediaRangeError
-		if !errors.As(err, &re) {
+		if _, ok := errors.AsType[*telegram.MediaRangeError](err); !ok {
 			t.Fatalf("range %d+%d: err = %v, want *MediaRangeError", r.off, r.n, err)
 		}
 		if info.Seekable != r.seekable || out.Len() != 0 {
@@ -88,12 +87,10 @@ func TestReadMediaRangeDelayDoesNotSerializeReads(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 4)
 	for i := range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := c.ReadMediaRange(context.Background(), ch, msg.ID, int64(i*100), 100, &bytes.Buffer{})
 			errs <- err
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

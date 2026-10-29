@@ -137,8 +137,7 @@ func (a *App) ReadPreviewRange(ctx context.Context, f PreviewFile, offset, lengt
 	ctx = telegram.WithForumTopic(ctx, f.channelTGID, f.topicID)
 	info, err := tg.ReadMediaRange(ctx, f.channelTGID, f.messageID, offset, length, w)
 	if err != nil {
-		var re *telegram.MediaRangeError
-		if errors.As(err, &re) {
+		if re, ok := errors.AsType[*telegram.MediaRangeError](err); ok {
 			return info, re
 		}
 		return info, telegram.MapError(err)

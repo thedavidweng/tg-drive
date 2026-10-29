@@ -206,27 +206,50 @@ func DefaultDBPath() string {
 
 // ResolvePaths determines effective paths with precedence: CLI > env > config > defaults.
 func ResolvePaths(ov Overrides) (configPath, sessionPath, dbPath string) {
-	cfg := Defaults()
-	configPath = firstNonEmpty(ov.ConfigPath, os.Getenv("TD_CONFIG"), DefaultConfigPath())
-	if data, err := os.ReadFile(configPath); err == nil {
-		_ = toml.Unmarshal(data, &cfg)
-	}
+	configPath = ConfigPath(ov.ConfigPath)
+	cfg, _ := LoadFile(configPath)
+	sessionPath, dbPath = resolveDataPaths(ov, cfg)
+	return configPath, sessionPath, dbPath
+}
+
+// ConfigPath selects the config file without reading it.
+func ConfigPath(override string) string {
+	return firstNonEmpty(override, os.Getenv("TD_CONFIG"), DefaultConfigPath())
+}
+
+func resolveDataPaths(ov Overrides, cfg Config) (sessionPath, dbPath string) {
 	sessionPath = firstNonEmpty(ov.SessionPath, os.Getenv("TD_SESSION"), expandHome(cfg.Storage.SessionPath), DefaultSessionPath())
 	dbPath = firstNonEmpty(ov.DBPath, os.Getenv("TD_DB"), expandHome(cfg.Storage.DBPath), DefaultDBPath())
-	return configPath, sessionPath, dbPath
+	return sessionPath, dbPath
+}
+
+// LoadFile reads the config file at path on its own: defaults overlaid with
+// what the file holds, with no TD_* environment values and no resolved
+// paths. Saving a key writes this back, so a save never freezes a value the
+// environment or a front end's own path supplied into the shared file.
+func LoadFile(path string) (Config, error) {
+	cfg := Defaults()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return cfg, apperr.Wrap(apperr.ErrConfigInvalid, "read config", err)
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return cfg, apperr.Wrap(apperr.ErrConfigInvalid, "parse config", err)
+	}
+	return cfg, nil
 }
 
 // Load reads configuration applying overrides.
 func Load(ov Overrides) (Config, string, error) {
-	cfg := Defaults()
-	configPath, sessionPath, dbPath := ResolvePaths(ov)
-	if data, err := os.ReadFile(configPath); err != nil {
-		if !os.IsNotExist(err) {
-			return cfg, configPath, apperr.Wrap(apperr.ErrConfigInvalid, "read config", err)
-		}
-	} else if err := toml.Unmarshal(data, &cfg); err != nil {
-		return cfg, configPath, apperr.Wrap(apperr.ErrConfigInvalid, "parse config", err)
+	configPath := ConfigPath(ov.ConfigPath)
+	cfg, err := LoadFile(configPath)
+	if err != nil {
+		return cfg, configPath, err
 	}
+	sessionPath, dbPath := resolveDataPaths(ov, cfg)
 	cfg.Storage.SessionPath = sessionPath
 	cfg.Storage.DBPath = dbPath
 
@@ -264,11 +287,38 @@ func Save(path string, cfg Config) error {
 	if err != nil {
 		return apperr.Wrap(apperr.ErrConfigInvalid, "marshal config", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		path, err = filepath.EvalSymlinks(path)
+		if err != nil {
+			return apperr.Wrap(apperr.ErrConfigInvalid, "resolve config", err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return apperr.Wrap(apperr.ErrConfigInvalid, "resolve config", err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
 		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
 	}
-	// WriteFile keeps the mode of an existing file.
-	_ = fileperm.Restrict(path)
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := fileperm.Restrict(tmpPath); err != nil {
+		_ = tmp.Close()
+		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return apperr.Wrap(apperr.ErrConfigInvalid, "write config", err)
+	}
 	return nil
 }
 

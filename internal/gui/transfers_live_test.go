@@ -3,13 +3,230 @@
 package gui_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/thedavidweng/tg-drive/internal/gui"
+	"github.com/thedavidweng/tg-drive/internal/service"
+	"github.com/thedavidweng/tg-drive/internal/transfer"
 )
+
+func TestLoginKeepsPhoneOffDiskWhileTransferRuns(t *testing.T) {
+	seedDrive(t, nil)
+	// seedDrive sets TD_PHONE; clear it so Login takes the missing-phone
+	// persist path instead of skipping it.
+	t.Setenv("TD_PHONE", "")
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "200ms")
+	if _, err := service.SetConfig(service.Options{}, "upload.threads", "4"); err != nil {
+		t.Fatal(err)
+	}
+	svc := openGUI(t)
+	ctx := context.Background()
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "login-guard.bin", 12*1024*1024)}, "/", gui.UploadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStage(t, svc, ids[0], "uploading")
+	before, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Auth.Login(ctx, "+15550001", false); err == nil {
+		t.Fatal("Login succeeded while a GUI transfer was running")
+	} else {
+		var guiErr *gui.Error
+		if !errors.As(err, &guiErr) || guiErr.Code != "ERR_OPERATION_LOCKED" {
+			t.Fatalf("Login error = %v, want ERR_OPERATION_LOCKED", err)
+		}
+	}
+	after, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("rejected Login changed the config file")
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers = %d, want 1", n)
+	}
+	waitForStage(t, svc, ids[0], "completed")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers after completion = %d, want 0", n)
+	}
+	newPromptRecorder(svc, map[string]string{"code": "12345"})
+	res, err := svc.Auth.Login(ctx, "+15550001", false)
+	if err != nil {
+		t.Fatalf("idle Login: %v", err)
+	}
+	// The seeded fake already authenticated this account, so a fresh code
+	// is unnecessary; either path proves the idle phone fill works.
+	if res.User.DisplayName != "Test User" || res.User.UserID != 42 {
+		t.Fatalf("idle Login = %+v, want Test User (42)", res)
+	}
+	idle, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(idle, []byte("+15550001")) {
+		t.Fatal("idle Login did not persist the phone")
+	}
+}
+
+func TestSetupKeepsRunningTransferAndConfig(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "200ms")
+	if _, err := service.SetConfig(service.Options{}, "upload.threads", "4"); err != nil {
+		t.Fatal(err)
+	}
+	svc := openGUI(t)
+	ctx := context.Background()
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "running.bin", 12*1024*1024)}, "/", gui.UploadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStage(t, svc, ids[0], "uploading")
+	before, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err == nil {
+		t.Fatal("Setup succeeded while a GUI transfer was running")
+	}
+	after, err := os.ReadFile(os.Getenv("TD_CONFIG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("rejected Setup changed the config file")
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers = %d, want 1", n)
+	}
+	waitForStage(t, svc, ids[0], "completed")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers after completion = %d, want 0", n)
+	}
+	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err != nil {
+		t.Fatalf("idle Setup: %v", err)
+	}
+}
+
+// TestDownloadSetupInterleaveKeepsOneGeneration interleaves idle Downloads
+// with Setup-driven reopens: Download resolves the App under the same
+// lifecycle lock as the submit, so a listing never runs on an App whose
+// database a concurrent reopen already closed.
+func TestDownloadSetupInterleaveKeepsOneGeneration(t *testing.T) {
+	seedDrive(t, map[string]string{"/shared.txt": "shared-bytes"})
+	svc := openGUI(t)
+	ctx := context.Background()
+
+	const rounds = 10
+	var wg sync.WaitGroup
+	for i := 0; i < rounds; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			dest := t.TempDir()
+			id, err := svc.Transfers.Download(ctx, "/shared.txt", dest, gui.DownloadOptions{})
+			if err != nil {
+				var guiErr *gui.Error
+				if errors.As(err, &guiErr) && (guiErr.Code == "ERR_OPERATION_LOCKED" || guiErr.Code == "ERR_CANCELLED") {
+					return
+				}
+				t.Errorf("download call %T: %v", err, err)
+				return
+			}
+			waitForStage(t, svc, id, "completed")
+			got, err := os.ReadFile(filepath.Join(dest, "shared.txt"))
+			if err != nil {
+				t.Errorf("read result: %v", err)
+				return
+			}
+			if !bytes.Equal(got, []byte("shared-bytes")) {
+				t.Error("downloaded bytes mismatch")
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001")
+			if err != nil {
+				var guiErr *gui.Error
+				if errors.As(err, &guiErr) && (guiErr.Code == "ERR_OPERATION_LOCKED" || guiErr.Code == "ERR_CANCELLED") {
+					return
+				}
+				t.Errorf("setup: %T: %v", err, err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestSetupAndSubmitDoNotLoseRunningTransfer(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "200ms")
+	svc := openGUI(t)
+	ctx := context.Background()
+	file := bigFile(t, "concurrent.bin", 12*1024*1024)
+	start := make(chan struct{})
+	type submitted struct {
+		ids []string
+		err error
+	}
+	uploaded := make(chan submitted, 1)
+	setup := make(chan error, 1)
+	go func() {
+		<-start
+		ids, err := svc.Transfers.Upload(ctx, []string{file}, "/", gui.UploadOptions{})
+		uploaded <- submitted{ids, err}
+	}()
+	go func() {
+		<-start
+		_, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001")
+		setup <- err
+	}()
+	close(start)
+	result := <-uploaded
+	if result.err != nil {
+		t.Fatalf("Upload: %v", result.err)
+	}
+	if err := <-setup; err != nil {
+		var guiErr *gui.Error
+		if !errors.As(err, &guiErr) || guiErr.Code != "ERR_OPERATION_LOCKED" {
+			t.Fatalf("Setup: %v", err)
+		}
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers after concurrent setup and submission = %d, want 1", n)
+	}
+	waitForStage(t, svc, result.ids[0], "completed")
+}
+
+func TestClosedServicesRejectTransferSubmission(t *testing.T) {
+	seedDrive(t, nil)
+	svc, closeServices, err := gui.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := bigFile(t, "after-close.bin", 1024)
+	closeServices()
+	ctx := context.Background()
+	if _, err := svc.Transfers.Upload(ctx, []string{file}, "/", gui.UploadOptions{}); err == nil {
+		t.Fatal("Upload succeeded after close")
+	}
+	if _, err := svc.Transfers.Retry(ctx, "missing"); err == nil {
+		t.Fatal("Retry succeeded after close")
+	}
+}
 
 // TestTransfersSurviveAChannelSwitch switches the browsed channel while an
 // upload runs on another one: the upload keeps running to completion on the
@@ -69,6 +286,53 @@ func TestTransfersSurviveAChannelSwitch(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name != "big.bin" {
 		t.Fatalf("List(/uploads) on Drive = %+v, want big.bin", entries)
+	}
+}
+
+// TestRunningTransfersCountOnlyThisGUI: the quit prompt warns about the
+// Transfers quitting would interrupt, which are this GUI's own; a td
+// process's upload keeps running when the GUI quits, so it does not count.
+func TestRunningTransfersCountOnlyThisGUI(t *testing.T) {
+	seedDrive(t, nil)
+	t.Setenv("TD_FAKE_PART_SIZE", "1048576")
+	t.Setenv("TD_FAKE_TRANSFER_DELAY", "100ms")
+	svc := openGUI(t)
+	ctx := context.Background()
+
+	cli, closeCLI, err := service.Open(service.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeCLI()
+	h, err := transfer.New(cli, transfer.Options{FrontEnd: transfer.FrontEndCLI}).SubmitUpload(ctx, transfer.Upload{
+		Source: bigFile(t, "cli.bin", 12*1024*1024), Dest: "/cli.bin", Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStage(t, svc, h.ID(), "uploading")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers with only a CLI upload = %d, want 0", n)
+	}
+	// Two in-process fakes over one state file would hand out the same
+	// message IDs, so the CLI upload is cancelled (from the GUI) before it
+	// publishes, and only then does the GUI upload start.
+	if _, err := svc.Transfers.Cancel(ctx, h.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Wait(); err == nil {
+		t.Fatal("the CLI upload cancelled from the GUI must end cancelled")
+	}
+	ids, err := svc.Transfers.Upload(ctx, []string{bigFile(t, "gui.bin", 12*1024*1024)}, "/", gui.UploadOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := svc.RunningTransfers(); n != 1 {
+		t.Fatalf("RunningTransfers with one GUI upload = %d, want 1", n)
+	}
+	waitForStage(t, svc, ids[0], "completed")
+	if n := svc.RunningTransfers(); n != 0 {
+		t.Fatalf("RunningTransfers after the GUI upload finished = %d, want 0", n)
 	}
 }
 

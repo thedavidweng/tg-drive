@@ -113,7 +113,6 @@ func resumableUploadBig(ctx context.Context, api bigFilePartSender, req tgtelegr
 	}
 
 	for _, p := range parts {
-		p := p
 		g.Go(func() error {
 			f, err := os.Open(req.Path)
 			if err != nil {
