@@ -105,6 +105,22 @@ func waitForStage(t *testing.T, svc *gui.Services, id string, stages ...string) 
 	return gui.Transfer{}
 }
 
+// waitForRunningTransfers polls RunningTransfers until it reaches want, or
+// fails after a deadline.
+func waitForRunningTransfers(t *testing.T, svc *gui.Services, want int) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.RunningTransfers() == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := svc.RunningTransfers(); n != want {
+		t.Fatalf("RunningTransfers = %d, want %d", n, want)
+	}
+}
+
 func lastSeen(t *testing.T, svc *gui.Services, id string) gui.Transfer {
 	t.Helper()
 	list, err := svc.Transfers.List(context.Background())

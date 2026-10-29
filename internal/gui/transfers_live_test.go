@@ -58,9 +58,7 @@ func TestLoginKeepsPhoneOffDiskWhileTransferRuns(t *testing.T) {
 		t.Fatalf("RunningTransfers = %d, want 1", n)
 	}
 	waitForStage(t, svc, ids[0], "completed")
-	if n := svc.RunningTransfers(); n != 0 {
-		t.Fatalf("RunningTransfers after completion = %d, want 0", n)
-	}
+	waitForRunningTransfers(t, svc, 0)
 	newPromptRecorder(svc, map[string]string{"code": "12345"})
 	res, err := svc.Auth.Login(ctx, "+15550001", false)
 	if err != nil {
@@ -112,9 +110,7 @@ func TestSetupKeepsRunningTransferAndConfig(t *testing.T) {
 		t.Fatalf("RunningTransfers = %d, want 1", n)
 	}
 	waitForStage(t, svc, ids[0], "completed")
-	if n := svc.RunningTransfers(); n != 0 {
-		t.Fatalf("RunningTransfers after completion = %d, want 0", n)
-	}
+	waitForRunningTransfers(t, svc, 0)
 	if _, err := svc.Auth.Setup(ctx, "1234", "hash", "+15550001"); err != nil {
 		t.Fatalf("idle Setup: %v", err)
 	}
@@ -334,9 +330,7 @@ func TestRunningTransfersCountOnlyThisGUI(t *testing.T) {
 		t.Fatalf("RunningTransfers with one GUI upload = %d, want 1", n)
 	}
 	waitForStage(t, svc, ids[0], "completed")
-	if n := svc.RunningTransfers(); n != 0 {
-		t.Fatalf("RunningTransfers after the GUI upload finished = %d, want 0", n)
-	}
+	waitForRunningTransfers(t, svc, 0)
 }
 
 // TestTransfersConcurrencySettingAppliesLive lowers and raises
