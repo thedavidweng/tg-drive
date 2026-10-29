@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/thedavidweng/tg-drive/compare/v1.2.0...v1.2.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* port remaining spec 53 acceptance gaps ([#217](https://github.com/thedavidweng/tg-drive/issues/217)) ([6c4a2c2](https://github.com/thedavidweng/tg-drive/commit/6c4a2c2e16d192deb64e0c45d90967296f1d6cd1))
+
 ## [1.2.0](https://github.com/thedavidweng/tg-drive/compare/v1.1.1...v1.2.0) (2026-10-29)
 
 
