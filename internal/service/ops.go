@@ -371,6 +371,13 @@ type DownloadOptions struct {
 	// Observer receives this call's stages, byte progress, and per-file
 	// results.
 	Observer Observer
+	// Resume counts a destination that already holds the remote file's
+	// content (same size and indexed blake3 hash) as done, skipped, instead
+	// of a conflict. Without an indexed hash, or for a native photo whose
+	// served bytes never match the index, the conflict policy applies as
+	// before. A retried download
+	// sets it, so the files its earlier run landed do not stop the re-run.
+	Resume bool
 }
 
 // DownloadFile downloads a remote file to local path, streaming through a
@@ -394,7 +401,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 	}
 	obs := opts.Observer
 	it := Item{Source: localDest, Path: p}
-	res, err := a.downloadRow(ctx, ch, row, &it, policy, obs)
+	res, err := a.downloadRow(ctx, ch, row, &it, policy, opts.Resume, obs)
 	switch {
 	case err != nil:
 		obs.done(it, err)
@@ -408,7 +415,7 @@ func (a *App) DownloadFile(ctx context.Context, remotePath, localDest string, po
 
 // downloadRow downloads one resolved active row to it.Source, which it
 // rewrites to the local file the download actually targets.
-func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitestore.FileRow, it *Item, policy ConflictPolicy, obs Observer) (*DownloadResult, error) {
+func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitestore.FileRow, it *Item, policy ConflictPolicy, resume bool, obs Observer) (*DownloadResult, error) {
 	p := it.Path
 	if !row.MessageID.Valid {
 		return nil, apperr.New(apperr.ErrDB, fmt.Sprintf("lookup file: active row for %q has no message", p))
@@ -424,6 +431,9 @@ func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitesto
 	}
 	it.Source = localDest
 	if _, err := a.files().Stat(ctx, localDest); err == nil {
+		if resume && a.localHolds(ctx, localDest, size, hash) {
+			return &DownloadResult{Path: p, Dest: localDest, Size: size, Skipped: true}, nil
+		}
 		switch policy {
 		case ConflictSkip:
 			return &DownloadResult{Path: p, Dest: localDest, Size: size, Skipped: true}, nil
@@ -491,6 +501,27 @@ func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitesto
 		return nil, err
 	}
 	return &DownloadResult{Path: p, Dest: localDest, Size: size}, nil
+}
+
+// localHolds reports whether the local file at path provably has the
+// content a download would write: the indexed size and the indexed blake3
+// hash. A size match alone proves nothing, so without a hash it reports
+// false and the caller's conflict policy decides.
+func (a *App) localHolds(ctx context.Context, path string, size int64, hash string) bool {
+	info, err := a.files().Stat(ctx, path)
+	if err != nil || info.IsDir || size <= 0 || info.Size != size || !strings.HasPrefix(hash, "blake3:") {
+		return false
+	}
+	f, err := a.files().Open(ctx, path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	h := blake3.New(32, nil)
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return "blake3:"+hex.EncodeToString(h.Sum(nil)) == hash
 }
 
 // downloadTo streams the message's downloadable body. It reports whether the
