@@ -140,22 +140,6 @@ func (d *DB) DeleteFinishedTransfers(ctx context.Context, before string) ([]stri
 	return ids, nil
 }
 
-// DeleteTransfers removes the Transfers with the given ids.
-func (d *DB) DeleteTransfers(ctx context.Context, ids []string) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
-	}
-	_, err := d.sql.ExecContext(ctx, `delete from transfers where id in (?`+strings.Repeat(",?", len(ids)-1)+`)`, args...)
-	if err != nil {
-		return apperr.Wrap(apperr.ErrDB, "delete transfers", err)
-	}
-	return nil
-}
-
 // GetTransfer reads one Transfer; nil when no row has id.
 func (d *DB) GetTransfer(ctx context.Context, id string) (*TransferRow, error) {
 	rows, err := d.queryTransfers(ctx, `where id=?`, id)
@@ -200,22 +184,13 @@ func (d *DB) RenewTransferLease(ctx context.Context, id, owner, expiresAt string
 	return err == nil && n > 0, nil
 }
 
-// TransferCancelRequested reports whether a Transfer's cancellation was
-// requested.
-func (d *DB) TransferCancelRequested(ctx context.Context, id string) (bool, error) {
-	var requested bool
-	err := d.sql.QueryRowContext(ctx, `select cancel_requested from transfers where id=?`, id).Scan(&requested)
-	if err != nil {
-		return false, apperr.Wrap(apperr.ErrDB, "read transfer cancel flag", err)
-	}
-	return requested, nil
-}
-
 // TransferOwnership reports whether owner still owns the Transfer and
 // whether its cancellation was requested, in one read. An owner polls this
-// instead of TransferCancelRequested so a lost row — a retry claimed it
-// after this owner's lease expired — is noticed at the same time, and an
-// unknown id reads as not owned rather than as an error.
+// instead of reading the cancel flag alone, so a lost row — a retry claimed
+// it after this owner's lease expired — is noticed at the same time. An
+// unknown id leaves no row to scan and so returns ERR_DB like any other read
+// failure: ownership of a Transfer the index does not have cannot be
+// confirmed, and the caller treats that as not owned.
 func (d *DB) TransferOwnership(ctx context.Context, id, owner string) (owned, cancelRequested bool, err error) {
 	err = d.sql.QueryRowContext(ctx,
 		`select owner_token=? and finished_at='', cancel_requested from transfers where id=?`, owner, id).
