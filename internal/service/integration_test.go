@@ -613,6 +613,14 @@ func TestDownloadResume(t *testing.T) {
 	if code := appErrCode(t, err); code != apperr.ErrLocalPathExists {
 		t.Fatalf("code = %s, want ERR_LOCAL_PATH_EXISTS on size mismatch", code)
 	}
+
+	// Without an indexed hash a size match proves nothing.
+	if err := os.WriteFile(dest, []byte("remote-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if app.localHolds(ctx, dest, int64(len("remote-content")), "") {
+		t.Fatal("localHolds = true without an indexed hash")
+	}
 }
 
 func TestUploadPermissionDeniedCleansPending(t *testing.T) {

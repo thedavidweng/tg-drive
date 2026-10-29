@@ -372,8 +372,10 @@ type DownloadOptions struct {
 	// results.
 	Observer Observer
 	// Resume counts a destination that already holds the remote file's
-	// content (same size, and same hash when the index has one and hashing
-	// is on) as done, skipped, instead of a conflict. A retried download
+	// content (same size and indexed blake3 hash) as done, skipped, instead
+	// of a conflict. Without an indexed hash, or for a native photo whose
+	// served bytes never match the index, the conflict policy applies as
+	// before. A retried download
 	// sets it, so the files its earlier run landed do not stop the re-run.
 	Resume bool
 }
@@ -501,17 +503,14 @@ func (a *App) downloadRow(ctx context.Context, ch *channelContext, row sqlitesto
 	return &DownloadResult{Path: p, Dest: localDest, Size: size}, nil
 }
 
-// localHolds reports whether the local file at path already has the
-// content a download would write: the indexed size, and the indexed blake3
-// hash when there is one and hashing is on. Without an indexed size it
-// proves nothing and reports false.
+// localHolds reports whether the local file at path provably has the
+// content a download would write: the indexed size and the indexed blake3
+// hash. A size match alone proves nothing, so without a hash it reports
+// false and the caller's conflict policy decides.
 func (a *App) localHolds(ctx context.Context, path string, size int64, hash string) bool {
 	info, err := a.files().Stat(ctx, path)
-	if err != nil || info.IsDir || size <= 0 || info.Size != size {
+	if err != nil || info.IsDir || size <= 0 || info.Size != size || !strings.HasPrefix(hash, "blake3:") {
 		return false
-	}
-	if hash == "" || !a.Cfg.Hash.Enabled || !strings.HasPrefix(hash, "blake3:") {
-		return true
 	}
 	f, err := a.files().Open(ctx, path)
 	if err != nil {
