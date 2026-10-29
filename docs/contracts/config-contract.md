@@ -59,11 +59,17 @@ and writable with `td config set`, except `hash.algorithm` (always `blake3`). In
 `transfers.concurrency` bounds how many Transfers one process runs at once;
 the rest wait `queued`.
 
-A running desktop GUI applies a `transfers.concurrency` change made from its
-Settings tab to its Transfer queue at once: raising it starts queued
-Transfers, lowering it lets running ones finish and holds the queue until
-fewer run. Every other key, and any key changed with `td config set`,
-applies the next time the GUI starts, as it does for the next td command.
+A running desktop GUI applies live keys changed from its Settings tab at once:
+`transfers.concurrency`, `upload.threads`, `upload.part_size_kb`, `delete.mode`,
+`hash.enabled`, `caption.*`, `limits.*`, and `locks.ttl_seconds`. A
+`transfers.concurrency` change resizes its Transfer queue immediately:
+raising it starts queued Transfers, lowering it lets running ones finish and
+holds the queue until fewer run. Any other live change while GUI transfers run
+is rejected with `ERR_OPERATION_LOCKED`. For startup-only keys
+(`telegram.*`, `storage.*`, `rate_limit.*`, and `locks.session_wait_seconds`),
+the Settings tab reports `restart_required: true`; they take effect at the next
+GUI start. Changes made with `td config set` apply the next time the GUI
+starts, as they do for the next td command.
 
 `locks.ttl_seconds` is the lease time of Operation locks and of the Transfer
 owner's lease on each Transfer; both renew on a heartbeat at one third of
