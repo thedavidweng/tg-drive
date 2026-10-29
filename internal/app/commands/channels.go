@@ -123,13 +123,14 @@ func printStatus(w io.Writer, data *service.StatusResult) {
 		row("other drives", "%d more; select with --channel <title-or-id>", len(data.Channels)-1)
 	}
 	counts := data.Files
-	files := fmt.Sprintf("%d active", counts["active"])
+	var files strings.Builder
+	fmt.Fprintf(&files, "%d active", counts["active"])
 	for _, st := range []string{"deleted", "missing", "pending", "orphaned"} {
 		if counts[st] > 0 {
-			files += fmt.Sprintf(", %d %s", counts[st], st)
+			fmt.Fprintf(&files, ", %d %s", counts[st], st)
 		}
 	}
-	row("files", "%s", files)
+	row("files", "%s", files.String())
 	if last := deref(data.LastScanAt); last != "" {
 		row("last scan", "%s (last full: %v)", last, orNever(deref(data.LastFullScanAt)))
 	} else {

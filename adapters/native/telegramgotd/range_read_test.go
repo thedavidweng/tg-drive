@@ -408,8 +408,7 @@ func TestRangeReadRejectsUnservableIntervals(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			inv := &fileInvoker{data: patterned(5000)}
 			got, err := readRange(t, inv, tc.msg, tc.offset, tc.length)
-			var re *tgtelegram.MediaRangeError
-			if !errors.As(err, &re) {
+			if _, ok := errors.AsType[*tgtelegram.MediaRangeError](err); !ok {
 				t.Fatalf("err = %v, want *MediaRangeError", err)
 			}
 			if len(got) != 0 || len(inv.recorded()) != 0 {

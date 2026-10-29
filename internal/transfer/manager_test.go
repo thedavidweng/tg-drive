@@ -518,6 +518,146 @@ func waitStage(t *testing.T, m *transfer.Manager, id string, stage transfer.Stag
 // TestManagerCancelFromAnotherProcessIsPrompt: at the default lock TTL (15
 // minutes, a 5-minute lease heartbeat) a cancel requested from another
 // process still stops the running Transfer within seconds.
+// TestManagerRecursiveUploadShowsEachGroupsStage: a recursive upload runs
+// one upload per directory, so after the first directory publishes, the next
+// one's uploading is reported again rather than the Transfer sitting at
+// publishing while it still sends bytes.
+func TestManagerRecursiveUploadShowsEachGroupsStage(t *testing.T) {
+	app, _ := newApp(t)
+	root := t.TempDir()
+	for _, d := range []string{"a", "b"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, d, "f.bin"), make([]byte, 4*1024), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	var stages []transfer.Stage
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI, Observer: transfer.Observer{
+		OnStage: func(tr transfer.Transfer) {
+			mu.Lock()
+			defer mu.Unlock()
+			stages = append(stages, tr.Stage)
+		},
+	}})
+	h, err := m.SubmitRecursiveUpload(context.Background(), transfer.RecursiveUpload{
+		Source: root, Dest: "/tree", Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	published := false
+	for _, s := range stages {
+		if s == transfer.StagePublishing {
+			published = true
+		}
+		if published && s == transfer.StageUploading {
+			if stages[len(stages)-1] != transfer.StageCompleted {
+				t.Fatalf("stages = %v, want completed last", stages)
+			}
+			return
+		}
+	}
+	t.Fatalf("stages = %v, want the second directory's uploading after the first one published", stages)
+}
+
+// TestManagerRunningCountsOnlyItsOwnTransfers: Running is how many Transfers
+// quitting would interrupt, so a Manager counts the ones it submitted and
+// another Manager's do not count.
+func TestManagerRunningCountsOnlyItsOwnTransfers(t *testing.T) {
+	app, tg := newApp(t)
+	tg.SetTransferDelay(50 * time.Millisecond)
+	ctx := context.Background()
+
+	mine := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI})
+	other := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndCLI})
+	if n := mine.Running(); n != 0 {
+		t.Fatalf("Running before submitting = %d, want 0", n)
+	}
+	h, err := mine.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "own.bin", 4*1024),
+		Dest:   "/own.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStage(t, mine, h.ID(), transfer.StageUploading)
+	otherHandle, err := other.SubmitUpload(ctx, transfer.Upload{
+		Source: localFile(t, "theirs.bin", 4*1024),
+		Dest:   "/theirs.bin",
+		Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStage(t, other, otherHandle.ID(), transfer.StageUploading)
+	if n := mine.Running(); n != 1 {
+		t.Fatalf("Running with one own and one other Manager's Transfer = %d, want 1", n)
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	// The other Manager's Transfer is still running; this one is done.
+	if n := mine.Running(); n != 0 {
+		t.Fatalf("Running after own Transfer ended = %d, want 0", n)
+	}
+	if _, err := otherHandle.Wait(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManagerAlbumShowsLaterGroupStage(t *testing.T) {
+	app, _ := newApp(t)
+	var sources []string
+	for i := range 11 {
+		sources = append(sources, localFile(t, fmt.Sprintf("item-%02d.bin", i), 4096))
+	}
+	var mu sync.Mutex
+	var stages []transfer.Stage
+	m := transfer.New(app, transfer.Options{FrontEnd: transfer.FrontEndGUI, Observer: transfer.Observer{
+		OnStage: func(tr transfer.Transfer) {
+			mu.Lock()
+			defer mu.Unlock()
+			stages = append(stages, tr.Stage)
+		},
+	}})
+	h, err := m.SubmitAlbumUpload(context.Background(), transfer.AlbumUpload{
+		Sources: sources, Dest: "/album/", Policy: service.ConflictFail,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	published, reentered := false, false
+	for i, stage := range stages {
+		if i > 0 && stage == stages[i-1] {
+			t.Fatalf("adjacent duplicate stages: %v", stages)
+		}
+		if stage.Terminal() && i != len(stages)-1 {
+			t.Fatalf("stage after terminal: %v", stages)
+		}
+		if published && stage == transfer.StageUploading {
+			reentered = true
+		}
+		published = published || stage == transfer.StagePublishing
+	}
+	if !reentered || len(stages) == 0 || stages[len(stages)-1] != transfer.StageCompleted {
+		t.Fatalf("stages = %v, want a later group's upload and completed last", stages)
+	}
+}
+
 func TestManagerCancelFromAnotherProcessIsPrompt(t *testing.T) {
 	app, tg := newApp(t)
 	tg.SetTransferDelay(100 * time.Millisecond)

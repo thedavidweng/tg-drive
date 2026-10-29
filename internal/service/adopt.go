@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -588,7 +589,7 @@ func (a *App) rewriteAdoptCaptions(ctx context.Context, opts AdoptOptions) (*Ado
 	for id := range albums {
 		albumIDs = append(albumIDs, id)
 	}
-	sort.Slice(albumIDs, func(i, j int) bool { return albumIDs[i] < albumIDs[j] })
+	slices.Sort(albumIDs)
 
 	for _, gid := range albumIDs {
 		if err := cancelled(ctx); err != nil {
@@ -901,7 +902,7 @@ func previewNewManifests(msgs []telegram.Message, out *AdoptResult) {
 	for gid := range albums {
 		gids = append(gids, gid)
 	}
-	sort.Slice(gids, func(i, j int) bool { return gids[i] < gids[j] })
+	slices.Sort(gids)
 	for _, gid := range gids {
 		members := albums[gid]
 		out.Items = append(out.Items, AdoptPlanItem{

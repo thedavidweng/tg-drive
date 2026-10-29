@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/thedavidweng/tg-drive/adapters/native/sqlitestore"
@@ -228,9 +229,7 @@ func withDedupeProgress(err error, result *DedupeDeleteResult) error {
 		}
 	}
 	details := map[string]any{}
-	for key, value := range ae.Details {
-		details[key] = value
-	}
+	maps.Copy(details, ae.Details)
 	details["dedupe_path"] = result.Path
 	details["groups"] = result.Groups
 	details["retained"] = result.Retained

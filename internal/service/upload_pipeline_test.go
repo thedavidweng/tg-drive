@@ -239,7 +239,7 @@ func TestBatchFailureDiscardsUnsentMembers(t *testing.T) {
 
 	dir := t.TempDir()
 	var locals, dests []string
-	for i := 0; i < telegram.MaxMediaGroupMembers+2; i++ {
+	for i := range telegram.MaxMediaGroupMembers + 2 {
 		name := fmt.Sprintf("f%02d.bin", i)
 		p := filepath.Join(dir, name)
 		if err := os.WriteFile(p, []byte("payload "+name), 0o644); err != nil {
@@ -399,7 +399,7 @@ func TestRepairOrphanedIndexFailureKeepsOneRecord(t *testing.T) {
 	}
 
 	app.Index = failIndex{err: errors.New("index boom")}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		res, err := runOrphanRepair(ctx, app, RepairOptions{Orphaned: true})
 		if err != nil {
 			t.Fatal(err)

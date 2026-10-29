@@ -225,10 +225,7 @@ func (s *methodState) recordSuccess(base time.Duration) {
 		return
 	}
 	// Exponential decay toward the base: halve the excess each success.
-	s.interval = (s.interval + base) / 2
-	if s.interval < base {
-		s.interval = base
-	}
+	s.interval = max((s.interval+base)/2, base)
 }
 
 func (s *methodState) recordFlood(wait, maxInterval time.Duration) {

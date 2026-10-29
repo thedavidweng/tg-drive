@@ -23,8 +23,7 @@ func MapError(err error) error {
 		return apperr.Cancelled()
 	}
 
-	var fw *FloodWaitError
-	if errors.As(err, &fw) {
+	if fw, ok := errors.AsType[*FloodWaitError](err); ok {
 		wait := time.Duration(fw.Seconds) * time.Second
 		retryAt := time.Now().Add(wait)
 		return apperr.New(apperr.ErrTelegramRateLimited,
