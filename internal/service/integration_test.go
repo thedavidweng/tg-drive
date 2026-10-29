@@ -573,6 +573,48 @@ func TestDownloadConflictFlags(t *testing.T) {
 	}
 }
 
+func TestDownloadResume(t *testing.T) {
+	app, tg := testApp(t)
+	loginAndInit(t, app, tg)
+	ctx := context.Background()
+	local := writeLocal(t, "remote-content")
+	if _, err := app.UploadFile(ctx, local, "/dl.txt", ConflictFail, false, UploadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	destDir := t.TempDir()
+	dest := filepath.Join(destDir, "dl.txt")
+
+	// Local file matches size and hash: Resume counts it as done (skipped) under ConflictFail.
+	if err := os.WriteFile(dest, []byte("remote-content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := app.DownloadFile(ctx, "/dl.txt", dest, ConflictFail, DownloadOptions{Resume: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Skipped {
+		t.Fatalf("expected skipped result on resume, got %+v", res)
+	}
+
+	// Local file has different content (same size): Resume does not count it as done, fails with ConflictFail.
+	if err := os.WriteFile(dest, []byte("diff-content12"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = app.DownloadFile(ctx, "/dl.txt", dest, ConflictFail, DownloadOptions{Resume: true})
+	if code := appErrCode(t, err); code != apperr.ErrLocalPathExists {
+		t.Fatalf("code = %s, want ERR_LOCAL_PATH_EXISTS on hash mismatch", code)
+	}
+
+	// Local file has different size: Resume fails with ConflictFail.
+	if err := os.WriteFile(dest, []byte("short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = app.DownloadFile(ctx, "/dl.txt", dest, ConflictFail, DownloadOptions{Resume: true})
+	if code := appErrCode(t, err); code != apperr.ErrLocalPathExists {
+		t.Fatalf("code = %s, want ERR_LOCAL_PATH_EXISTS on size mismatch", code)
+	}
+}
+
 func TestUploadPermissionDeniedCleansPending(t *testing.T) {
 	app, tg := testApp(t)
 	loginAndInit(t, app, tg)

@@ -709,7 +709,9 @@ func (m *Manager) retryRun(t *Transfer, options string, obs service.Observer) (f
 		}
 		t.BytesTotal, t.ItemsTotal = 0, 1
 		return func(ctx context.Context, tr *tracker) (any, error) {
-			opts := service.DownloadOptions{}
+			// Resume: what the earlier run already landed is done, not a
+			// conflict with the recorded policy.
+			opts := service.DownloadOptions{Resume: true}
 			opts.Observer = tr.observe(obs)
 			res, err := m.app.DownloadFile(ctx, t.Source, t.Dest, o.Policy, opts)
 			if err == nil {
@@ -724,7 +726,7 @@ func (m *Manager) retryRun(t *Transfer, options string, obs service.Observer) (f
 		}
 		t.BytesTotal, t.ItemsTotal = 0, 0
 		return func(ctx context.Context, tr *tracker) (any, error) {
-			opts := service.DownloadOptions{}
+			opts := service.DownloadOptions{Resume: true}
 			opts.Observer = tr.observe(obs)
 			return m.app.DownloadRecursive(ctx, t.Source, t.Dest, o.Policy, o.ContinueOnError, opts)
 		}, nil
