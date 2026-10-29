@@ -189,7 +189,7 @@ func parseRecordKVs(text, magic string) (map[string]string, error) {
 		return nil, apperr.New(apperr.ErrManifestInvalid, "missing "+magic)
 	}
 	kvs := map[string]string{}
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || line == magic {
 			continue
@@ -316,7 +316,7 @@ func MergeCaptions(existing, addition string) (string, bool) {
 		return existing, false
 	}
 	trimmed := strings.TrimRight(existing, "\n")
-	for _, block := range strings.Split(trimmed, "\n"+MergeCaptionSeparator+"\n") {
+	for block := range strings.SplitSeq(trimmed, "\n"+MergeCaptionSeparator+"\n") {
 		if strings.TrimSpace(block) == addition {
 			return existing, false
 		}

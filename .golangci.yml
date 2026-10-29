@@ -10,6 +10,20 @@ linters:
     - gocritic
     - misspell
     - errcheck
+    - depguard
+  settings:
+    depguard:
+      rules:
+        core:
+          files: ["**/core/**/*.go", "!$test"]
+          deny:
+            - pkg: database/sql
+            - pkg: net/http
+            - pkg: github.com/gotd/td
+            - pkg: modernc.org/sqlite
+            - pkg: github.com/spf13/cobra
+            - pkg: github.com/thedavidweng/tg-drive/adapters
+            - pkg: github.com/thedavidweng/tg-drive/internal
 
 run:
   timeout: 5m

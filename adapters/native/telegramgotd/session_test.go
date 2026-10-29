@@ -35,9 +35,7 @@ func TestSessionStorageNeverExposesTornWrites(t *testing.T) {
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := 0; ; i++ {
 			select {
 			case <-stop:
@@ -53,7 +51,7 @@ func TestSessionStorageNeverExposesTornWrites(t *testing.T) {
 				return
 			}
 		}
-	}()
+	})
 	for range 300 {
 		got, err := reader.LoadSession(ctx)
 		if err != nil {

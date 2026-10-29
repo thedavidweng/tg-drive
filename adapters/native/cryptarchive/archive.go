@@ -52,7 +52,7 @@ func validName(name string) bool {
 	if name == "." || name == manifestName || !fs.ValidPath(name) {
 		return false
 	}
-	for _, part := range strings.Split(name, "/") {
+	for part := range strings.SplitSeq(name, "/") {
 		if strings.TrimRight(part, " .") != part || strings.ContainsAny(part, `<>:"\|?*`) {
 			return false
 		}
