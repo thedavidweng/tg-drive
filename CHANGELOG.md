@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0](https://github.com/thedavidweng/tg-drive/compare/v1.1.1...v1.2.0) (2026-10-29)
+
+
+### Features
+
+* **get:** stream Transfer stages under td get --events ([#206](https://github.com/thedavidweng/tg-drive/issues/206)) ([a893851](https://github.com/thedavidweng/tg-drive/commit/a89385156cebe6dc73affb2c431d9970c26cae87))
+* **settings:** report restart-required keys, and apply live ones at once ([#209](https://github.com/thedavidweng/tg-drive/issues/209)) ([0fa58bc](https://github.com/thedavidweng/tg-drive/commit/0fa58bc69063b2dc72391166a68e70dec172ffce))
+
+
+### Bug Fixes
+
+* **auth:** let a new login replace one whose prompt was lost ([#212](https://github.com/thedavidweng/tg-drive/issues/212)) ([9513a45](https://github.com/thedavidweng/tg-drive/commit/9513a452772ba8f859acc62d2699f07ec3ef59c1))
+* **config:** save only file-level values when a key is set ([#211](https://github.com/thedavidweng/tg-drive/issues/211)) ([1881dbd](https://github.com/thedavidweng/tg-drive/commit/1881dbdbab3c3593d8b09586e004e61c0eb0d99d))
+* **gui:** count only this GUI's Transfers when asking to quit ([#213](https://github.com/thedavidweng/tg-drive/issues/213)) ([a461859](https://github.com/thedavidweng/tg-drive/commit/a461859c0085676b408223d5a0496664c4fb1244))
+* **status:** report a busy Telegram session without waiting for it ([#205](https://github.com/thedavidweng/tg-drive/issues/205)) ([e51eb33](https://github.com/thedavidweng/tg-drive/commit/e51eb33f3dd7030c13e7777d929d1f52c84cb39d))
+* **transfer:** report each item group's stage in album and recursive Transfers ([#210](https://github.com/thedavidweng/tg-drive/issues/210)) ([2886fc6](https://github.com/thedavidweng/tg-drive/commit/2886fc636e3abeb5be05cfc198ce399ed54b5db3))
+* **transfer:** stop an expired owner reviving a Transfer, and cut cancel latency ([#202](https://github.com/thedavidweng/tg-drive/issues/202)) ([cfa7268](https://github.com/thedavidweng/tg-drive/commit/cfa72681f21684984826da095c1f24b6dc67273b))
+* **ui-preview:** treat the recorded artifact as untrusted when publishing ([#199](https://github.com/thedavidweng/tg-drive/issues/199)) ([3b3c251](https://github.com/thedavidweng/tg-drive/commit/3b3c25149ce7d521491522b5fb5c3cc8f577df6b))
+
 ## [1.1.1](https://github.com/thedavidweng/tg-drive/compare/v1.1.0...v1.1.1) (2026-10-25)
 
 
