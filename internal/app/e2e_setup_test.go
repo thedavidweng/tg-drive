@@ -293,6 +293,42 @@ func TestE2EConfigRedaction(t *testing.T) {
 	runE2EExpectError(t, bin, cfgPath, dbPath, statePath, 3, "ERR_CONFIG_INVALID", "config", "set", "delete.mode", "shred")
 }
 
+// TestE2EConfigSetKeepsOverridesOutOfTheFile: config set saves the one key
+// it was given. Paths and credentials that came from flags or the
+// environment for this run (--db, TD_SESSION, TD_API_HASH) are not written
+// into the config file, so a front end with its own session path (the GUI)
+// or a secret supplied by the environment never leaks into every later run.
+func TestE2EConfigSetKeepsOverridesOutOfTheFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	dbPath := filepath.Join(dir, "override.db")
+	statePath := filepath.Join(dir, "fake-state.json")
+	if err := os.WriteFile(cfgPath, []byte("[telegram]\napi_id = 12345\napi_hash = \"deadbeef\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := buildBinary(t)
+	env := []string{"TD_API_HASH=from-the-environment"}
+	if _, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, env, "", "config", "set", "upload.threads", "3"); err != nil {
+		t.Fatalf("config set: %v stderr=%s", err, stderr)
+	}
+	if _, stderr, err := runTD(t, bin, cfgPath, dbPath, statePath, env, "", "auth", "setup"); err != nil {
+		t.Fatalf("auth setup: %v stderr=%s", err, stderr)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := string(data)
+	for _, leaked := range []string{"from-the-environment", dbPath, filepath.Join(dir, "session.json")} {
+		if strings.Contains(saved, leaked) {
+			t.Fatalf("config file saved the run's override %q:\n%s", leaked, saved)
+		}
+	}
+	if !strings.Contains(saved, "deadbeef") || !strings.Contains(saved, "threads = 3") {
+		t.Fatalf("config file lost its own values or the set key:\n%s", saved)
+	}
+}
+
 // TestE2EInitChannelChoice: without a channel, init offers the existing
 // channels (as error details in --json, as a picker otherwise), and a bare
 // --create-channel names the channel after --channel or the root directory.

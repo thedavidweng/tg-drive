@@ -4,9 +4,11 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/config"
 )
 
 // askFrom answers each asked field from answers and records the order asked.
@@ -111,5 +113,56 @@ func TestConfigureTelegramForLogin(t *testing.T) {
 	}
 	if _, err := os.Stat(other.ConfigPath); !os.IsNotExist(err) {
 		t.Fatalf("aborted setup wrote config: %v", err)
+	}
+}
+
+// TestConfigureTelegramWritesOnlyAnswers: environment overrides (TD_API_HASH,
+// TD_SESSION) must not be frozen into the shared config file when
+// ConfigureTelegram saves user answers.
+func TestConfigureTelegramWritesOnlyAnswers(t *testing.T) {
+	clearTelegramEnv(t)
+	opts := openOptions(t)
+	t.Setenv("TD_API_HASH", "env-secret-hash")
+	t.Setenv("TD_SESSION", "/tmp/env-session.json")
+
+	var asked []TelegramField
+	cfg, path, err := ConfigureTelegram(opts, true, askFrom(map[TelegramField]string{
+		TelegramAPIID: "777",
+		TelegramPhone: "+15550001111",
+	}, &asked))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []TelegramField{TelegramAPIID, TelegramPhone}; !reflect.DeepEqual(asked, want) {
+		t.Fatalf("asked %v, want %v (api_hash should come from env)", asked, want)
+	}
+	if cfg.Telegram.APIID != 777 || cfg.Telegram.APIHash != "env-secret-hash" || cfg.Telegram.Phone != "+15550001111" {
+		t.Fatalf("effective config = %+v", cfg.Telegram)
+	}
+
+	fileCfg, err := config.LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fileCfg.Telegram.APIID != 777 || fileCfg.Telegram.Phone != "+15550001111" || fileCfg.Telegram.APIHash != "" {
+		t.Fatalf("file config = %+v, want only answered fields", fileCfg.Telegram)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := string(data)
+	if strings.Contains(saved, "env-secret-hash") {
+		t.Fatalf("config file froze TD_API_HASH override:\n%s", saved)
+	}
+	if strings.Contains(saved, "env-session.json") {
+		t.Fatalf("config file froze TD_SESSION override:\n%s", saved)
+	}
+	if !strings.Contains(saved, "777") {
+		t.Fatalf("config file missing answered api_id:\n%s", saved)
+	}
+	if !strings.Contains(saved, "+15550001111") {
+		t.Fatalf("config file missing answered phone:\n%s", saved)
 	}
 }
