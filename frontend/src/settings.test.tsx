@@ -77,8 +77,39 @@ test("editing a key saves it through the backend and shows the saved value", asy
   expect((screen.getByLabelText("transfers.concurrency") as HTMLInputElement).value).toBe("5")
 })
 
-test("a rejected edit shows the service error", async () => {
-  const backend = memoryBackend(
+test("saving a startup-only key says the change needs a restart", async () => {
+  const backend = memoryBackend({ "/": [] }, { config: baseConfig, secrets: ["telegram.api_hash"] })
+  render(<App backend={backend} languages={["en"]} />)
+  await openSettings()
+
+  const input = (await screen.findByLabelText("telegram.api_id")) as HTMLInputElement
+  fireEvent.change(input, { target: { value: "999" } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Save telegram.api_id" }))
+  })
+
+  // The backend opened its client with the old value, so the row must not
+  // claim the change is live.
+  expect((await screen.findByRole("status")).textContent).toBe(
+    "Saved. This takes effect after restarting td-gui.",
+  )
+})
+
+test("saving a live key reports no restart", async () => {
+  const backend = memoryBackend({ "/": [] }, { config: baseConfig, secrets: ["telegram.api_hash"] })
+  render(<App backend={backend} languages={["en"]} />)
+  await openSettings()
+
+  const input = (await screen.findByLabelText("transfers.concurrency")) as HTMLInputElement
+  fireEvent.change(input, { target: { value: "5" } })
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Save transfers.concurrency" }))
+  })
+
+  expect(screen.queryByRole("status")).toBeNull()
+})
+
+test("a rejected edit shows the service error", async () => {  const backend = memoryBackend(
     { "/": [] },
     {
       config: baseConfig,

@@ -117,6 +117,49 @@ func TestSettingsSetRoundTrips(t *testing.T) {
 	}
 }
 
+// TestSettingsSetReportsRestartRequiredOnlyForStartupKeys: the running GUI
+// opened its Telegram client, Session lock, and database at start, so a key
+// that configures them cannot reach it. Set must say so instead of claiming
+// the change is live, and must not report a restart for the keys read per
+// call.
+func TestSettingsSetReportsRestartRequiredOnlyForStartupKeys(t *testing.T) {
+	seedConfig(t, nil)
+	svc := openGUI(t)
+	ctx := context.Background()
+
+	restart := []struct{ key, value string }{
+		{"telegram.api_id", "999"},
+		{"storage.db_path", filepath.Join(t.TempDir(), "other.db")},
+		{"rate_limit.max_wait_seconds", "42"},
+		{"locks.session_wait_seconds", "7"},
+	}
+	for _, kv := range restart {
+		entry, err := svc.Settings.Set(ctx, kv.key, kv.value)
+		if err != nil {
+			t.Fatalf("Set %s: %v", kv.key, err)
+		}
+		if !entry.RestartRequired {
+			t.Fatalf("Set %s = %+v, want RestartRequired", kv.key, entry)
+		}
+	}
+
+	live := []struct{ key, value string }{
+		{"transfers.concurrency", "3"},
+		{"upload.threads", "4"},
+		{"hash.enabled", "false"},
+		{"delete.mode", "tombstone"},
+	}
+	for _, kv := range live {
+		entry, err := svc.Settings.Set(ctx, kv.key, kv.value)
+		if err != nil {
+			t.Fatalf("Set %s: %v", kv.key, err)
+		}
+		if entry.RestartRequired {
+			t.Fatalf("Set %s = %+v, want it applied without a restart", kv.key, entry)
+		}
+	}
+}
+
 // TestSettingsVersionsReportsTheInstalledCLI builds a td binary stamped
 // with its own version, the way the release does, and puts it on PATH: the
 // td row reports that binary's version, not the GUI's stamp.

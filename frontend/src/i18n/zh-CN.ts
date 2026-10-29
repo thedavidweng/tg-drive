@@ -234,6 +234,7 @@ export const zhCN: Record<MessageKey, string> = {
   "settings.hide": "隐藏 {key}",
   "settings.save": "保存 {key}",
   "settings.saveShort": "保存",
+  "settings.restartRequired": "已保存。重启 td-gui 后生效。",
   "settings.loading": "正在加载…",
   "settings.cliMissing": "未安装",
   "language.system": "跟随系统",

@@ -303,6 +303,13 @@ export interface ConfigEntry {
      */
     "value": any;
     "secret": boolean;
+
+    /**
+     * RestartRequired marks a saved key the running GUI cannot apply: one
+     * its Telegram client or database was opened with. It takes effect
+     * when td-gui next starts; every other key applies at once.
+     */
+    "restart_required"?: boolean;
 }
 
 /**

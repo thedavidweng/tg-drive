@@ -9,8 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
+	apperr "github.com/thedavidweng/tg-drive/core/errors"
+	"github.com/thedavidweng/tg-drive/internal/config"
 	"github.com/thedavidweng/tg-drive/internal/service"
 	"github.com/thedavidweng/tg-drive/internal/version"
 )
@@ -30,6 +33,18 @@ type ConfigEntry struct {
 	// Value is redacted unless the caller revealed the secret.
 	Value  any  `json:"value"`
 	Secret bool `json:"secret"`
+	// RestartRequired marks a saved key the running GUI cannot apply: one
+	// its Telegram client or database was opened with. It takes effect
+	// when td-gui next starts; every other key applies at once.
+	RestartRequired bool `json:"restart_required,omitempty"`
+}
+
+// appliesOnRestart reports whether key configures what the GUI opened once
+// at start (the Telegram client, the Session lock, the database), so a
+// change to it cannot reach the running App.
+func appliesOnRestart(key string) bool {
+	return strings.HasPrefix(key, "telegram.") || strings.HasPrefix(key, "storage.") ||
+		strings.HasPrefix(key, "rate_limit.") || key == "locks.session_wait_seconds"
 }
 
 func configEntryOf(e service.ConfigEntry) ConfigEntry {
@@ -61,21 +76,63 @@ func (s *Settings) Reveal(ctx context.Context, key string, confirmed bool) (Conf
 }
 
 // Set validates and saves one config key, returning the entry as it now
-// displays (a secret stays redacted). transfers.concurrency applies to the
-// running Transfer queue at once; every other key applies the next time the
-// GUI starts, as it does for the next td command.
+// displays (a secret stays redacted). A key the GUI opened at start with —
+// its Telegram client, Session lock, or database — cannot be reapplied to the
+// running App, so it is reported RestartRequired instead of being claimed as
+// live; the rest reach later calls at once.
+// Live changes other than transfers.concurrency return ERR_OPERATION_LOCKED
+// while GUI transfers are running; retry after they finish.
+//
+// The order is prepare, persist, apply: the value is validated against the
+// running config before anything is written, and applying the prepared config
+// cannot fail. A save that succeeded is never reported as a failed one while
+// the disk and the App disagree.
 func (s *Settings) Set(ctx context.Context, key, value string) (ConfigEntry, error) {
-	if _, err := service.SetConfig(s.opts, key, value); err != nil {
-		return ConfigEntry{}, toError(err)
+	s.state.lifecycle.Lock()
+	defer s.state.lifecycle.Unlock()
+	if s.state.closing {
+		return ConfigEntry{}, toError(apperr.Cancelled())
 	}
-	view, err := service.GetConfig(s.opts, service.ConfigGetOptions{Key: key})
+	concurrency := key == "transfers.concurrency"
+	if !concurrency && !appliesOnRestart(key) && s.state.currentManager().Running() != 0 {
+		return ConfigEntry{}, toError(apperr.New(apperr.ErrOperationLocked, "cannot change live settings while GUI transfers are running"))
+	}
+	cfg, shown, err := s.state.prepared(key, value)
+	if err != nil {
+		return ConfigEntry{}, err
+	}
+	// Compute the value List will display before saving, including overrides,
+	// so reporting a successful save does not require another file read.
+	fileCfg, err := config.LoadFile(config.ConfigPath(s.opts.ConfigPath))
 	if err != nil {
 		return ConfigEntry{}, toError(err)
 	}
-	if n, ok := view.Entries[0].Value.(int); ok && key == "transfers.concurrency" && s.state != nil {
+	if err := config.SetValue(&fileCfg, key, value); err != nil {
+		return ConfigEntry{}, toError(err)
+	}
+	effective, err := config.ApplyOverrides(fileCfg, config.Overrides{
+		ConfigPath: s.opts.ConfigPath, DBPath: s.opts.DBPath, SessionPath: s.opts.SessionPath, Channel: s.opts.Channel,
+	})
+	if err != nil {
+		return ConfigEntry{}, toError(err)
+	}
+	display, err := config.GetValue(effective, key)
+	if err != nil {
+		return ConfigEntry{}, toError(err)
+	}
+	if _, err := service.SetConfig(s.opts, key, value); err != nil {
+		return ConfigEntry{}, toError(err)
+	}
+	entry := ConfigEntry{Key: key, Value: config.RedactValue(key, display, false), Secret: config.IsSecret(key)}
+	if appliesOnRestart(key) {
+		entry.RestartRequired = true
+		return entry, nil
+	}
+	if n, ok := shown.(int); ok && concurrency {
 		s.state.limiter.SetLimit(n)
 	}
-	return configEntryOf(view.Entries[0]), nil
+	s.state.applyConfig(cfg, !concurrency)
+	return entry, nil
 }
 
 // Versions are the versions the About rows show.

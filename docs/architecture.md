@@ -70,8 +70,14 @@ cmd/td-gui (build tag gui, the only package importing Wails)
   display alongside the max-upload check, and the path-codec doctor runs
   the codec's fixed vectors and a scoped round trip.
 - The Settings facade covers config get/set (secrets stay redacted unless a
-  call explicitly confirms revealing; `transfers.concurrency` applies to
-  the running queue, other keys at the next start), the About versions
+  call explicitly confirms revealing). Saving a key the GUI opened at start
+  with — its Telegram client, Session lock, or database, so `telegram.*`,
+  `storage.*`, `rate_limit.*`, and `locks.session_wait_seconds` — reports
+  `restart_required` instead of claiming the change is live; every other key
+  applies to later calls, and `transfers.concurrency` also resizes the queue.
+  Live saves other than `transfers.concurrency` return `ERR_OPERATION_LOCKED`
+  before writing while GUI transfers are running; retry after they finish.
+  It also covers the About versions
   (the GUI's own stamp, and the separately installed td CLI's version from
   running `td version --json` found on PATH, in `TD_INSTALL_DIR`, or in the
   installer's default directory), and Omarchy mode: on a detected

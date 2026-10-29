@@ -249,6 +249,12 @@ func Load(ov Overrides) (Config, string, error) {
 	if err != nil {
 		return cfg, configPath, err
 	}
+	cfg, err = ApplyOverrides(cfg, ov)
+	return cfg, configPath, err
+}
+
+// ApplyOverrides resolves paths and environment values on a file-level snapshot.
+func ApplyOverrides(cfg Config, ov Overrides) (Config, error) {
 	sessionPath, dbPath := resolveDataPaths(ov, cfg)
 	cfg.Storage.SessionPath = sessionPath
 	cfg.Storage.DBPath = dbPath
@@ -256,7 +262,7 @@ func Load(ov Overrides) (Config, string, error) {
 	if v := os.Getenv("TD_API_ID"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
-			return cfg, configPath, apperr.Wrap(apperr.ErrConfigInvalid, "TD_API_ID", err)
+			return cfg, apperr.Wrap(apperr.ErrConfigInvalid, "TD_API_ID", err)
 		}
 		cfg.Telegram.APIID = id
 	}
@@ -275,7 +281,7 @@ func Load(ov Overrides) (Config, string, error) {
 	if ov.Phone != "" {
 		cfg.Telegram.Phone = ov.Phone
 	}
-	return cfg, configPath, nil
+	return cfg, nil
 }
 
 // Save writes config to path, creating parent dir with secure permissions.

@@ -153,6 +153,54 @@ func (s *appState) reopenLocked() error {
 	return nil
 }
 
+// prepared is the running App's config with one key changed, plus that key's
+// display value. It starts from the config the App is running with, never
+// from a fresh read of the file: a key saved earlier for the next start
+// (telegram.*, storage.*, rate_limit.*, locks.session_wait_seconds) is on
+// disk but is not what the open client, database, and Session lock use, so
+// reading it back would hand later calls a config those were not opened
+// with. The value copy leaves the config a running call is reading alone, and
+// nothing is published here: the caller decides whether to.
+func (s *appState) prepared(key, value string) (config.Config, any, error) {
+	s.mu.Lock()
+	cfg := s.app.Cfg
+	s.mu.Unlock()
+	if err := config.SetValue(&cfg, key, value); err != nil {
+		return config.Config{}, nil, toError(err)
+	}
+	v, err := config.GetValue(cfg, key)
+	if err != nil {
+		return config.Config{}, nil, toError(err)
+	}
+	return cfg, config.RedactValue(key, v, false), nil
+}
+
+// applyConfig gives later calls an App carrying cfg, sharing the open
+// database, Telegram client, and render mode. It cannot fail: everything that
+// could (validating the value) happened in prepared before the caller saved
+// anything, so a saved change is never reported as a failed one while the disk
+// and the App disagree. Calls and Transfers already running keep the App they
+// started with. A concurrency-only change keeps the Manager, which already
+// shares the updated Limiter, so its active Transfers remain visible.
+func (s *appState) applyConfig(cfg config.Config, replaceManager bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := s.app
+	app := &service.App{
+		Cfg:        cfg,
+		ConfigPath: current.ConfigPath,
+		DB:         current.DB,
+		TG:         current.TG,
+		Channel:    current.Channel,
+		Render:     current.Render,
+		Index:      current.Index,
+	}
+	s.app = app
+	if replaceManager {
+		s.manager = s.newManager(app)
+	}
+}
+
 // RunningTransfers is how many Transfers this GUI owns and has not finished:
 // the ones quitting would interrupt. Another front end's Transfers keep
 // running when the GUI quits, so they do not count.

@@ -168,6 +168,8 @@ function ConfigRow({
   const [baseline, setBaseline] = useState(String(entry.value))
   const [revealed, setRevealed] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set by a save whose key td-gui reads only at startup.
+  const [restartNote, setRestartNote] = useState(false)
   const masked = entry.secret && !revealed
   const dirty = !masked && draft !== baseline
 
@@ -206,6 +208,7 @@ function ConfigRow({
               onChange={(e) => {
                 setDraft(e.target.value)
                 setError(null)
+                setRestartNote(false)
               }}
               spellCheck={false}
               className="min-w-0 flex-1 rounded-control border border-line bg-card-2 px-2 py-1 font-mono text-[12px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -232,6 +235,7 @@ function ConfigRow({
                     (saved) => {
                       setDraft(String(saved.value))
                       setBaseline(String(saved.value))
+                      setRestartNote(saved.restart_required ?? false)
                       if (saved.secret) setRevealed(false)
                     },
                     (err: BackendError) => setError(err.message),
@@ -248,6 +252,11 @@ function ConfigRow({
       {error && (
         <p role="alert" className="pt-1 pl-2 text-[12px] text-red">
           {error}
+        </p>
+      )}
+      {restartNote && !error && (
+        <p role="status" className="pt-1 pl-2 text-[12px] text-muted-foreground">
+          {t("settings.restartRequired")}
         </p>
       )}
     </li>
