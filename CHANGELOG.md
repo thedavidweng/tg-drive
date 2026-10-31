@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.2](https://github.com/thedavidweng/tg-drive/compare/v1.2.1...v1.2.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* improve website accessibility and performance ([#219](https://github.com/thedavidweng/tg-drive/issues/219)) ([c66f27d](https://github.com/thedavidweng/tg-drive/commit/c66f27d7780938954513b5efedab524251132062))
+
+
+### Documentation
+
+* update Homebrew release process ([#221](https://github.com/thedavidweng/tg-drive/issues/221)) ([c9e9c6e](https://github.com/thedavidweng/tg-drive/commit/c9e9c6e920b806b411c920e51f2308c67215e232))
+
 ## [1.2.1](https://github.com/thedavidweng/tg-drive/compare/v1.2.0...v1.2.1) (2026-10-29)
 
 
