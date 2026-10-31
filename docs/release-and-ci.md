@@ -43,8 +43,8 @@ Publishing uses the built-in `GITHUB_TOKEN`:
   to trigger), because tags created with the built-in token do not fire
   the tag trigger.
 - The Homebrew cask is not pushed from this repo. The tap repository's
-  own Sync Releases workflow updates `Casks/tg-drive.rb` from the
-  published release assets (daily cron or manual dispatch).
+  Update casks workflow opens a pull request from the published release
+  assets every three hours or on manual dispatch.
 
 `RELEASE_PLEASE_TOKEN` is an optional override. `CODECOV_TOKEN` is only
 needed for private repos.
@@ -92,9 +92,8 @@ needed for private repos.
    natively per OS and upload the dmg, NSIS installer, AppImage, and deb
    (plus `.sha256` sidecars and Linux `.AppImage.zsync` sidecars) to the same
    release.
-8. The tap repository's Sync Releases workflow updates the Homebrew
-   cask from the published assets (daily cron; may lag by up to a day,
-   or run it manually after a release).
+8. The tap repository's Update casks workflow opens a pull request for
+   the new release (every three hours or manually after a release).
 
 ## Desktop GUI
 
