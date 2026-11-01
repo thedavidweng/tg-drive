@@ -58,6 +58,8 @@ jobs:
         env:
           PREVIEW_SHA: ${{ github.event.pull_request.head.sha }}
         run: ui-preview/run.sh out
+      - name: Check preview sanitization in Chromium
+        run: node --test ui-preview/sanitizer.test.mjs
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

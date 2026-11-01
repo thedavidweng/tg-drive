@@ -328,7 +328,12 @@ GUI tests are not part of the default gates; `mise run check-gui` runs them
   response ends; `.ts` routed to text despite its `video/mp2t` type, and a
   binary file under a text name falling back to Download; and the
   allowlist sanitiser itself, which the Markdown renderer's escaping keeps
-  end-to-end payloads from reaching. Office previews
+  end-to-end payloads from reaching. `node --test ui-preview/sanitizer.test.mjs`
+  also checks in Chromium that discarded images and frames make no resource
+  requests, with connected image and frame controls to verify interception.
+  It runs in the UI preview workflow and needs the frontend and ui-preview
+  dependencies and Playwright Chromium installed. Set `PLAYWRIGHT_BROWSER=webkit`
+  to run it locally with Playwright WebKit instead. Office previews
   (`preview-office.test.tsx`) cover routing, the 100 MiB warning, renderer
   failures falling back, a workbook's cells, and a Word document rendered
   through the rebuild into a shadow root, where Escape stays with the view.
