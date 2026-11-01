@@ -1,6 +1,13 @@
 BINARY_NAME=td
 DIST_DIR=dist
 
+ifeq ($(or $(GOOS),$(shell go env GOOS)),darwin)
+build check-gui gui-go-check gui-build: export GOTOOLCHAIN=go1.26.10
+build check-gui gui-go-check gui-build: export MACOSX_DEPLOYMENT_TARGET=12.0
+build check-gui gui-go-check gui-build: export CGO_CFLAGS := $(CGO_CFLAGS) -mmacosx-version-min=12.0
+build check-gui gui-go-check gui-build: export CGO_LDFLAGS := $(CGO_LDFLAGS) -mmacosx-version-min=12.0
+endif
+
 .PHONY: all bootstrap build test test-race clean lint fmt fmt-check vet ci-local mod-tidy mod-tidy-check snapshot goreleaser-check run-doctor \
 	gui-bindings gui-bindings-check gui-frontend-install gui-frontend-build gui-frontend-check gui-go-check check-gui gui-build \
 	gui-package-linux gui-package-darwin gui-package-windows

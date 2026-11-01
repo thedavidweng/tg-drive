@@ -79,6 +79,12 @@ needed for private repos.
 
 ## Release process
 
+macOS CLI and GUI binaries use Go 1.26.10 to retain the macOS 12 deployment
+target. Other platforms use the Go version pinned in `mise.toml`. Go 1.26
+stops receiving security fixes when Go 1.28 is released; reassess the macOS
+minimum and toolchain before then rather than shipping an unsupported Go
+runtime.
+
 1. Merge conventional commits into `main`.
 2. release-please opens or updates a release PR.
 3. Merge the release PR.

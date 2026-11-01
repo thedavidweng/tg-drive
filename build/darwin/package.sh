@@ -18,10 +18,10 @@ mkdir -p "$OUT" "$WORK"
 
 # Universal binary. Minimum macOS 12 matches the Wails v3 Taskfiles.
 for arch in arm64 amd64; do
-	CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" \
+	CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" GOTOOLCHAIN=go1.26.10 \
 		MACOSX_DEPLOYMENT_TARGET=12.0 \
-		CGO_CFLAGS="-mmacosx-version-min=12.0" \
-		CGO_LDFLAGS="-mmacosx-version-min=12.0" \
+		CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=12.0" \
+		CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=12.0" \
 		go build -tags gui -trimpath -ldflags "-s -w $VERSION_LDFLAGS" \
 		-o "$WORK/td-gui-$arch" ./cmd/td-gui
 done
