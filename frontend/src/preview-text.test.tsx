@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, spyOn, test } from "bun:test"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 
 import { App } from "@/App"
@@ -277,6 +277,19 @@ test("a file of unknown served length is complete only when the response ends", 
     expect(within(dialog).queryByRole("status")).toBeNull()
   } finally {
     server.restore()
+  }
+})
+
+test("parsing a discarded iframe does not try to load it", () => {
+  const errors = spyOn(console, "error")
+  try {
+    const fragment = sanitizedFragment('<iframe src="about:blank"></iframe><p>safe</p>', { p: [] })
+    const host = document.createElement("div")
+    host.append(fragment)
+    expect(host.innerHTML).toBe("<p>safe</p>")
+    expect(errors).not.toHaveBeenCalled()
+  } finally {
+    errors.mockRestore()
   }
 })
 

@@ -173,14 +173,15 @@ export function sanitizedCopy(from: Node, policy: SanitizePolicy, doc: Document 
 
 /**
  * Renderer-produced HTML rebuilt from scratch: the markup is parsed in an
- * inert document, and only allowlisted elements and attributes are created
+ * inert template, and only allowlisted elements and attributes are created
  * anew in the page, so nothing else (script, handlers, styles, frames,
  * resource loads) can survive. Rebuilding nodes rather than re-serialising
  * a string leaves no parse round trip to mutate the result.
  */
 export function sanitizedFragment(html: string, allow: Allowlist, doc: Document = document): DocumentFragment {
-  const parsed = new DOMParser().parseFromString(html, "text/html")
-  return sanitizedCopy(parsed.body, { allow }, doc)
+  const template = doc.createElement("template")
+  template.innerHTML = html
+  return sanitizedCopy(template.content, { allow }, doc)
 }
 
 /** An element whose children are html, sanitised against allow. */
