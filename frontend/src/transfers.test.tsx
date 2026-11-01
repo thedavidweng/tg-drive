@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { cleanup, fireEvent, render, screen, waitForElementToBeRemoved, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 
 import { App } from "@/App"
 import type { Transfer } from "@/backend"
@@ -63,12 +63,12 @@ test("stage pills and progress bars update on the typed events", async () => {
   expect(within(row).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("25")
 
   // Byte progress moves the bar within the stage.
-  backend.emitTransferProgress({ ...t1, bytes_done: 1536 })
+  act(() => backend.emitTransferProgress({ ...t1, bytes_done: 1536 }))
   expect((await screen.findByText(/75%/)).textContent).toContain("1.5 KB / 2 KB · 75%")
 
   // A stage event re-pills the row and lands it in the history.
-  backend.emitTransferStage({ ...t1, bytes_done: 2048, stage: "completed", finished_at: "2026-02-01T10:01:00Z" })
-  await waitForElementToBeRemoved(() => screen.queryByRole("list", { name: "Active transfers" }))
+  act(() => backend.emitTransferStage({ ...t1, bytes_done: 2048, stage: "completed", finished_at: "2026-02-01T10:01:00Z" }))
+  expect(screen.queryByRole("list", { name: "Active transfers" })).toBeNull()
   expect(within(rowIn(historyList(), "/big.bin")).getByText("Completed")).toBeTruthy()
 })
 
@@ -86,7 +86,7 @@ test("multi-item transfers count items, not bytes", async () => {
   await openTransfers(backend)
 
   expect(rowIn(activeList(), "/photos").textContent).toContain("1 / 4 items")
-  backend.emitTransferProgress({ ...t1, items_done: 3 })
+  act(() => backend.emitTransferProgress({ ...t1, items_done: 3 }))
   await screen.findByText("3 / 4 items")
 })
 
@@ -144,8 +144,8 @@ test("a transfer-removed event drops the row", async () => {
   await openTransfers(backend)
   expect(rowIn(historyList(), "/big.bin")).toBeTruthy()
 
-  backend.emitTransferRemoved({ id: "t1" })
-  await waitForElementToBeRemoved(() => screen.queryByText("/big.bin"))
+  act(() => backend.emitTransferRemoved({ id: "t1" }))
+  expect(screen.queryByText("/big.bin")).toBeNull()
 })
 
 test("clear finished empties the history through the backend", async () => {

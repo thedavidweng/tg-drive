@@ -34,15 +34,17 @@ test("every interactive control is a natively focusable element that takes focus
   // this; the number only guards against the walk silently finding nothing.
   expect(controls.length).toBeGreaterThan(15)
   const failures: string[] = []
-  for (const el of controls) {
-    const name = `${el.tagName.toLowerCase()} "${(el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "").slice(0, 40)}"`
-    // A positive tabindex hijacks the natural tab order. Inactive tabs
-    // carry -1 on purpose: the strip is a roving-tabindex widget reached
-    // by arrows from the active tab.
-    if (el.tabIndex > 0) failures.push(`${name} has tabindex ${el.tabIndex}`)
-    el.focus()
-    if (document.activeElement !== el) failures.push(`${name} did not take focus`)
-  }
+  await act(async () => {
+    for (const el of controls) {
+      const name = `${el.tagName.toLowerCase()} "${(el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "").slice(0, 40)}"`
+      // A positive tabindex hijacks the natural tab order. Inactive tabs
+      // carry -1 on purpose: the strip is a roving-tabindex widget reached
+      // by arrows from the active tab.
+      if (el.tabIndex > 0) failures.push(`${name} has tabindex ${el.tabIndex}`)
+      el.focus()
+      if (document.activeElement !== el) failures.push(`${name} did not take focus`)
+    }
+  })
   expect(failures).toEqual([])
 })
 
@@ -69,7 +71,7 @@ test("a sheet traps Tab, closes on Escape, and returns focus to its trigger", as
   render(<App backend={memoryBackend(seed)} languages={["en"]} />)
   await screen.findByRole("list", { name: "Files in /" })
   const trigger = screen.getByRole("button", { name: "New folder" })
-  trigger.focus()
+  act(() => trigger.focus())
 
   fireEvent.click(trigger)
   const dialog = await screen.findByRole("dialog", { name: "New folder" })
