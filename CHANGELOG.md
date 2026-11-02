@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.2.2](https://github.com/thedavidweng/tg-drive/compare/v1.2.1...v1.2.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **gui:** parse preview HTML in inert templates ([#231](https://github.com/thedavidweng/tg-drive/issues/231)) ([0cd556f](https://github.com/thedavidweng/tg-drive/commit/0cd556fcf1b3a47fdd488ac186c9e70ec21a499f))
+* improve website accessibility and performance ([#219](https://github.com/thedavidweng/tg-drive/issues/219)) ([c66f27d](https://github.com/thedavidweng/tg-drive/commit/c66f27d7780938954513b5efedab524251132062))
+* keep generated bindings LF on Windows ([#223](https://github.com/thedavidweng/tg-drive/issues/223)) ([057e2ab](https://github.com/thedavidweng/tg-drive/commit/057e2ab285a2c1d365bd9e7d23abd835cedd45ef))
+* preserve macOS 12 build support ([#228](https://github.com/thedavidweng/tg-drive/issues/228)) ([be33529](https://github.com/thedavidweng/tg-drive/commit/be33529f7b20dc069b46ab879c680ffc8aac029e))
+
+
+### Documentation
+
+* update Homebrew release process ([#221](https://github.com/thedavidweng/tg-drive/issues/221)) ([c9e9c6e](https://github.com/thedavidweng/tg-drive/commit/c9e9c6e920b806b411c920e51f2308c67215e232))
+
 ## [1.2.1](https://github.com/thedavidweng/tg-drive/compare/v1.2.0...v1.2.1) (2026-10-29)
 
 
