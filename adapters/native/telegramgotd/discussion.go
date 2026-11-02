@@ -271,7 +271,7 @@ func (c *Client) StreamThreadHistory(ctx context.Context, channelID int64, after
 func (c *Client) threadMessageFromTG(msg *tg.Message) tgtelegram.ThreadMessage {
 	if hdr, ok := msg.GetFwdFrom(); ok && hdr.ChannelPost != 0 {
 		return tgtelegram.ThreadMessage{
-			ID:        msg.ID,
+			Message:   tgtelegram.Message{ID: msg.ID},
 			RootMsgID: msg.ID,
 			PostID:    int(hdr.ChannelPost),
 		}

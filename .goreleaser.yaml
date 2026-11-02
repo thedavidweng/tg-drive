@@ -8,6 +8,7 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
+      - 'GOTOOLCHAIN={{ if eq .Os "darwin" }}go1.26.10{{ else }}auto{{ end }}'
       # Each cross-compiled go build can balloon past 3 GiB of heap
       # (modernc.org/sqlite is heavy to compile) and the default GC lets
       # four parallel builds OOM a 16 GiB runner. Cap each build's heap
