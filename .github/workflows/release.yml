@@ -14,7 +14,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Same group for the tag push and a manual dispatch of the same tag.
+  group: ${{ github.workflow }}-${{ inputs.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 jobs:

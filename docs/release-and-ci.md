@@ -34,19 +34,19 @@ unlock period. They remove the keychain and API key on success or failure.
 No Apple ID login is used. The required signing identity is
 `Developer ID Application: MOE AI LLC (NCFNX3LJ83)`.
 
-Publishing uses the built-in `GITHUB_TOKEN`:
+Publishing:
 
-- release-please creates the release PR and, after the merge, the tag and
-  the GitHub Release.
-- The Release Please workflow then dispatches the Release workflow via
-  `workflow_dispatch` (the one event type the built-in token is allowed
-  to trigger), because tags created with the built-in token do not fire
-  the tag trigger.
+- release-please runs through the shared workflow in `thedavidweng/.github`
+  with a token from the `thedavidweng-release` GitHub App
+  (`RELEASE_APP_ID` variable, `RELEASE_APP_PRIVATE_KEY` secret). It creates
+  the release PR and, after the merge, the tag and the GitHub Release.
+- The App's tag push starts the Release workflow through its `v*` tag
+  trigger. `workflow_dispatch` is only a manual fallback.
 - The Homebrew cask is not pushed from this repo. The tap repository's
   Update casks workflow opens a pull request from the published release
   assets every three hours or on manual dispatch.
 
-`RELEASE_PLEASE_TOKEN` is an optional override. `CODECOV_TOKEN` is only
+`CODECOV_TOKEN` is only
 needed for private repos.
 
 ## Workflows
@@ -89,9 +89,7 @@ runtime.
 2. release-please opens or updates a release PR.
 3. Merge the release PR.
 4. release-please creates a tag and the GitHub Release.
-5. The Release Please workflow dispatches the Release workflow on the
-   tag (`workflow_dispatch`), because tags created with the built-in
-   token do not fire the tag trigger.
+5. The tag push starts the Release workflow through its `v*` tag trigger.
 6. GoReleaser uploads archives, packages, checksums, signatures, and
    SBOMs to the release.
 7. The `gui-linux`, `gui-darwin`, and `gui-windows` jobs build td-gui

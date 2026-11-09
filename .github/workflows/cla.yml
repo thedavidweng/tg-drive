@@ -64,7 +64,7 @@ jobs:
           path-to-document: https://github.com/thedavidweng/tg-drive/blob/cb4785014fbf8f5e41fc3392993885e86219f144/CLA.md
           path-to-signatures: signatures/version1/cla.json
           branch: cla-signatures
-          allowlist: thedavidweng,dependabot[bot],github-actions[bot]
+          allowlist: thedavidweng,dependabot[bot],github-actions[bot],thedavidweng-release[bot]
           custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
           custom-allsigned-prcomment: CLA acceptance received. The CLA check will confirm that signatures were saved.
           lock-pullrequest-aftermerge: false
