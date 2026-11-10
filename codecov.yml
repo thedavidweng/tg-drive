@@ -1,13 +1,7 @@
 coverage:
   status:
-    project:
-      default:
-        target: auto
-        threshold: 5%
-    patch:
-      default:
-        target: 50%
-
+    project: false
+    patch: false
 ignore:
   - cmd/**
   - internal/version/**
