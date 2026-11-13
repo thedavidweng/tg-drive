@@ -15,7 +15,7 @@
   "dependencies": {
     "@embedpdf/pdfium": "2.15.1",
     "@embedpdf/react-pdf-viewer": "2.15.1",
-    "@tailwindcss/vite": "4.3.3",
+    "@tailwindcss/vite": "4.3.5",
     "@wailsio/runtime": "3.0.0",
     "artplayer": "5.4.0",
     "chart.js": "4.6.1",
