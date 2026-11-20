@@ -8,7 +8,7 @@ require (
 	filippo.io/age v1.3.2
 	github.com/go-faster/errors v0.8.0
 	github.com/google/uuid v1.6.0
-	github.com/gotd/td v0.163.0
+	github.com/gotd/td v0.166.0
 	github.com/hanwen/go-fuse/v2 v2.12.1
 	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/mozillazg/go-unidecode v0.2.0
