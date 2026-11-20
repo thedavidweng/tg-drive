@@ -52,7 +52,7 @@
     "globals": "17.13.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "8.72.2",
-    "vite": "8.3.6"
+    "vite": "8.3.8"
   },
   "overrides": {
     "uuid": "14.0.3"
